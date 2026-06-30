@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "required": ["version", "goals"],
+  "properties": {
+    "version": {"type": "integer"},
+    "updatedAt": {"type": "string"},
+    "goals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "string"},
+          "evidence": {"type": "array"}
+        }
+      }
+    }
+  }
+}
+

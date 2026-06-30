@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "goals": [
+    {
+      "id": "G001",
+      "title": "Finished example",
+      "status": "done",
+      "evidence": []
+    },
+    {
+      "id": "G002",
+      "title": "In progress with evidence",
+      "status": "in_progress",
+      "evidence": [
+        {
+          "path": ".omo/evidence/example.txt",
+          "note": "Representative proof."
+        }
+      ]
+    }
+  ]
+}
+

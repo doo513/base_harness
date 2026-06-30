@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "goals": [
+    {
+      "id": "G001",
+      "title": "Maintain base harness scaffold",
+      "status": "in_progress",
+      "criteria": [
+        "Strict validation passes",
+        "Hook happy and failure paths are covered",
+        "Commit and push stay explicitly gated"
+      ],
+      "evidence": [
+        {
+          "path": "state/ledger.jsonl",
+          "note": "Initial scaffold keeps an evidence ledger path available."
+        }
+      ]
+    }
+  ]
+}
+
