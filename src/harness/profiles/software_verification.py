@@ -4,7 +4,6 @@ import hashlib
 import json
 from typing import Any
 
-from harness.core.storage import IntegrityError
 from harness.core.verification import (
     VerificationLevel,
     VerificationResult,
@@ -70,6 +69,8 @@ class _SoftwareBooleanExecutionResultVerifier(_SoftwareExecutionEvidenceVerifier
         raw, refs, error = self._load(context)
         if error is not None:
             return VerificationResult(False, self.level, error, evidence_refs=refs)
+        if raw is None:
+            return VerificationResult(False, self.level, "verified execution evidence is unavailable", evidence_refs=refs)
         if not isinstance(candidate, dict) or set(candidate) != {"succeeded"} or not isinstance(candidate.get("succeeded"), bool):
             return VerificationResult(
                 False,
@@ -78,7 +79,6 @@ class _SoftwareBooleanExecutionResultVerifier(_SoftwareExecutionEvidenceVerifier
                 evidence_refs=refs,
             )
 
-        assert raw is not None
         actual = self._execution_success(raw)
         expected = candidate["succeeded"]
         ok = actual == expected
@@ -124,6 +124,8 @@ class SoftwareBehavioralAcceptanceVerifier(_SoftwareExecutionEvidenceVerifier):
         raw, refs, error = self._load(context)
         if error is not None:
             return VerificationResult(False, self.level, error, evidence_refs=refs)
+        if raw is None:
+            return VerificationResult(False, self.level, "verified execution evidence is unavailable", evidence_refs=refs)
         if not isinstance(candidate, dict) or set(candidate) != {"stdout_equals"} or not isinstance(candidate.get("stdout_equals"), str):
             return VerificationResult(
                 False,
@@ -132,7 +134,6 @@ class SoftwareBehavioralAcceptanceVerifier(_SoftwareExecutionEvidenceVerifier):
                 evidence_refs=refs,
             )
 
-        assert raw is not None
         output = raw["output"]
         successful = self._execution_success(raw)
         expected = candidate["stdout_equals"]
