@@ -1,0 +1,24 @@
+{
+  "stage": "00",
+  "scope": "retrospective canonical genealogy",
+  "status": "CLOSED_DOCUMENTATION_ONLY",
+  "taxonomy": "Research / contracts",
+  "git_boundary": {
+    "initial_commit": "35cbce265852ce5cc689ad1b4cfde14e3fb76221",
+    "initial_tree": "bc2aa1f66ff8c14c8020ce2a85606add06a9630d",
+    "first_explicit_research_stage_commit": "96a89afb5052ed116a2844e1e6215b7e03de533e",
+    "independent_stage00_git_commit_found": false
+  },
+  "archive_provenance": [
+    {"name":"deep-research-report.md","sha256":"9ced661a07cfe2491515f06f32299bdf310c22608084e8368f73a60975b4f0d4"},
+    {"name":"verified_state_harness_research_workpack.zip","sha256":"0aba1cc7cb3f54e7d632b0296026f6274a3cecb412f19ec00eccb0c0eca39292"},
+    {"name":"base_harness_verified_state_branch_ready.zip","sha256":"8242473c56a7e46bb18eefc0eda23767e07034a17217e899d70c1b49298e180d"},
+    {"name":"develop_verified_state_harness_branch_payload.zip","sha256":"6d334ce267a5da71fc3f88340190c02e21570bce835fb6456be92af1d11d2c9c"}
+  ],
+  "limitations": [
+    "archive bytes are not present in the current repository",
+    "artifact internal claims are not reconstructed",
+    "Stage00 label is a current retrospective taxonomy, not proven historical wording",
+    "closure does not create mechanism validation evidence"
+  ]
+}

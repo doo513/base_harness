@@ -1,0 +1,25 @@
+{
+  "stage": "01",
+  "scope": "retrospective canonical genealogy",
+  "status": "CLOSED_DOCUMENTATION_ONLY",
+  "taxonomy": "Truth + execution integrity",
+  "git_boundary": {
+    "initial_commit": "35cbce265852ce5cc689ad1b4cfde14e3fb76221",
+    "first_explicit_research_stage_commit": "96a89afb5052ed116a2844e1e6215b7e03de533e",
+    "independent_stage01_git_commit_found": false
+  },
+  "archive_provenance": [
+    {"name":"verified_state_harness_v0_1.zip","sha256":"ba6deadaa2be9b79ff1994260eb49835410e8d2384ce6afb6d473ab8f1dcebbf"},
+    {"name":"verified_state_harness_v0_2_hardening.zip","sha256":"ff9427ea2368b89a9381b456add1bbdba7985cd684f8d98cfb520598ce0cf2d7"},
+    {"name":"verified_state_harness_stage2_workpack.zip","sha256":"100ec6676d7551a217ed012f89b15fa13c9d3ab83d7565eed81d0a4ebc34c78e"},
+    {"name":"verified_state_harness_v0_3_stage2_rc1.zip","sha256":"83c73bb3fca0543d1dba4c873bd2ac6a24ef4a43da45db2414a90ef823d7bd5c"},
+    {"name":"verified_state_harness_handoff_pack_stage02_partial.zip","sha256":"0e8c8dd94532d21cf5d2e2242487e94df01fc581e26c47232e806bfcbbbbf0ed","historical_status":"PARTIAL_NOT_EXITED"}
+  ],
+  "limitations": [
+    "archive bytes are not present in the current repository",
+    "v0.1/v0.2 internal tests and contracts are not reconstructed",
+    "Stage01 label is a current retrospective taxonomy",
+    "later Stage02 PASS does not rewrite the archived PARTIAL handoff state",
+    "closure does not create mechanism validation evidence"
+  ]
+}

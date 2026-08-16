@@ -41,15 +41,29 @@ Residual: a failed preparation may leave unreferenced physical content-addressed
 
 ### O00-001 — Stage00 retrospective canonical reconstruction
 
-상태: **OPEN**
+상태: **CLOSED — documentation/genealogy only**
 
-과거 artifact index, commit, report를 근거로 canonical `docs/stages/stage-00-*` package를 복원해야 한다. 존재하지 않았던 contract/evidence를 소급해 만들어내면 안 된다. 당시 근거로 확인 가능한 내용과 retrospective 해석을 구분한다.
+조치:
+
+- `docs/stages/stage-00-research-contracts/` canonical retrospective package 생성;
+- initial Git commit, first explicit Stage02 research commit, archive artifact filename/SHA-256를 연결;
+- 원본 archive bytes가 repo에 없다는 사실과 confidence boundary를 명시;
+- 존재하지 않았던 historical `CONTRACT.md`나 내부 내용을 소급 생성하지 않음.
+
+이 closure는 Stage00 mechanism을 새로 검증했다는 의미가 아니다.
 
 ### O01-001 — Stage01 retrospective canonical reconstruction
 
-상태: **OPEN**
+상태: **CLOSED — documentation/genealogy only**
 
-초기 hardening 기록을 Stage01 canonical lineage로 정리하되 원본 SHA/commit provenance를 유지한다.
+조치:
+
+- `docs/stages/stage-01-truth-execution-integrity/` canonical retrospective package 생성;
+- `v0.1`, `v0.2 hardening`, Stage02 transition artifact의 보존 SHA를 lineage로 연결;
+- Stage00/01의 독립 Git commit이 surviving history에 없음을 명시;
+- historical Stage02 partial handoff를 later PASS로 소급 재작성하지 않음.
+
+이 closure 역시 truth/execution-integrity mechanism의 신규 validation을 뜻하지 않는다.
 
 ## Stage02 coverage
 

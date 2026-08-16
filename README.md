@@ -37,8 +37,8 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 
 | Stage | Scope | Status |
 |---|---|---|
-| 00 | Research / contracts | COMPLETE (canonical retrospective reconstruction still open) |
-| 01 | Truth + execution integrity | COMPLETE (canonical retrospective reconstruction still open) |
+| 00 | Research / contracts | HISTORICAL COMPLETE — retrospective canonical genealogy reconstructed |
+| 01 | Truth + execution integrity | HISTORICAL COMPLETE — retrospective canonical genealogy reconstructed |
 | 02 | Capability isolation + sealed oracle | PASS / EXITED + remediation hardening |
 | 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) + provenance hardening |
 | 04 | Semantic verification | PASS / EXITED (`v0.5.0`) + claim-class hardening |
@@ -48,6 +48,8 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 08 | Retrieval / Memory Gateway | **PASS / EXITED (`v0.9.0`)** |
 
 Current package version: **v0.9.0**.
+
+Stage00/01 canonical directories are retrospective provenance packages. They do not claim the labels/contracts existed in the original archive artifacts; missing archive contents are not reconstructed from memory.
 
 ## Stage 08 result
 
