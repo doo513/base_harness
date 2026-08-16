@@ -4,6 +4,7 @@ import json
 
 VALID_DECISIONS = {"propose", "verify_claim", "tool", "complete", "refute"}
 
+
 @dataclass
 class Decision:
     kind: str
@@ -49,8 +50,10 @@ class Decision:
             if not isinstance(reason, str):
                 raise ValueError("complete.reason must be a string")
 
+
 class Controller(Protocol):
     def decide(self, goal, state, context) -> Decision: ...
+
 
 class DirectController:
     """Deterministic smoke-test controller, not an LLM."""
@@ -61,7 +64,15 @@ class DirectController:
             return Decision("verify_claim", {"key": "demo.started"})
         return Decision("complete", {"reason": "demo complete"})
 
+
 class ScriptedController:
+    """Deterministic controller with an explicit durable cursor.
+
+    Stage 03/05 resume cannot safely infer this cursor from harness step because
+    recovery transitions consume steps without consuming Actor decisions. The
+    controller therefore exposes a small checkpoint protocol used by the kernel.
+    """
+
     def __init__(self, decisions: Iterable[Decision]):
         self.decisions = list(decisions)
         self.index = 0
@@ -73,8 +84,23 @@ class ScriptedController:
         self.index += 1
         return decision
 
+    def snapshot_state(self) -> dict[str, int]:
+        return {"index": self.index}
+
+    def restore_state(self, raw: dict[str, Any]) -> None:
+        if not isinstance(raw, dict):
+            raise ValueError("scripted controller state must be an object")
+        index = raw.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise ValueError("scripted controller index must be an integer")
+        if index < 0 or index > len(self.decisions):
+            raise ValueError("scripted controller index is outside decision script")
+        self.index = index
+
+
 class ModelAdapter(Protocol):
     def complete(self, *, system: str, user: str) -> str: ...
+
 
 class LLMController:
     SYSTEM = """You are the actor inside a verified-state agent harness.

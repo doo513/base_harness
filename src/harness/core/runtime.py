@@ -1,32 +1,27 @@
 from pathlib import Path
-from time import monotonic
 from typing import Any
-import json
-import platform
-import sys
 import uuid
-import hashlib
-import inspect
 
 from harness import __version__
 
-from .state import HarnessState, Claim, ClaimStatus, Authority, Observation
-from .events import EventLog, Event, JsonlLog, utc_now
+from .state import HarnessState
+from .events import EventLog, Event, JsonlLog
 from .storage import (
     CheckpointStore, ArtifactStore, RunManifestStore, ReceiptStore,
-    PersistenceError, IntegrityError, ResumeConflict, canonical_hash, atomic_write_json,
+    ResumeConflict, canonical_hash, atomic_write_json,
 )
-from .tools import ActionRuntime, ToolCall, ToolResult
+from .tools import ActionRuntime
 from .security import Principal, Capability, CapabilityPolicy, SecurityConfig, SecurityLayout, SecurityViolation
 from .sandbox import NetworkPolicy
-from .verification import VerifierChain, VerificationLevel
+from .verification import VerifierChain
 from .failures import Failure, FailureKind, FailureRouter
 from .budget import Budget
+from .runtime_controller_state import RuntimeControllerStateMixin
 from .runtime_persistence import RuntimePersistenceMixin
 from .runtime_execution import RuntimeExecutionMixin
 
 
-class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
+class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, RuntimeExecutionMixin):
     """Single-actor verified-state kernel.
 
     Actor output may create hypotheses and request completion, but only the
