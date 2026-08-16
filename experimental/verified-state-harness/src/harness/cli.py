@@ -10,7 +10,7 @@ from harness.adapters.model import CommandModelAdapter
 from harness.profiles import CTFProfile, HackathonProfile, SoftwareProfile, DemoProfile
 
 def main():
-    parser = argparse.ArgumentParser(description="Verified-State Harness v0.3.0")
+    parser = argparse.ArgumentParser(description="Verified-State Harness v0.4.0")
     parser.add_argument("--profile", choices=["demo", "ctf", "hackathon", "software"], default="demo")
     parser.add_argument("--run-dir", default="./run")
     parser.add_argument("--workspace", default=".")
@@ -20,6 +20,14 @@ def main():
     parser.add_argument("--model-command",
                         help="Local model command: JSON {system,user} on stdin -> Decision JSON on stdout.")
     parser.add_argument("--max-steps", type=int, default=30)
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume the persisted run in --run-dir instead of creating a new run.")
+    parser.add_argument("--task-revision",
+                        help="Stable task/input revision recorded in the run manifest.")
+    parser.add_argument("--model-revision",
+                        help="Stable model/provider revision recorded in the run manifest.")
+    parser.add_argument("--require-complete-provenance", action="store_true",
+                        help="Fail closed when required reproducibility provenance is missing.")
     parser.add_argument("--sealed-oracle-root",
                         help="Operator-owned acceptance assets outside the actor workspace (software/hackathon).")
     parser.add_argument("--execution-backend", choices=["local", "linux-namespace"], default="local",
@@ -93,7 +101,8 @@ def main():
         if args.model_command
         else DirectController()
     )
-    runtime = HarnessRuntime(
+    runtime_factory = HarnessRuntime.resume if args.resume else HarnessRuntime
+    runtime = runtime_factory(
         goal=goal,
         profile=profile,
         controller=controller,
@@ -106,6 +115,9 @@ def main():
             network_policy=args.network_policy,
             require_sealed_oracle=args.require_sealed_oracle,
         ),
+        task_revision=args.task_revision,
+        model_revision=args.model_revision,
+        require_complete_provenance=args.require_complete_provenance,
     )
     state = runtime.run()
     print(f"completed={state.completed} steps={state.step}")

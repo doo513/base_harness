@@ -1,0 +1,27 @@
+{
+  "compileall": "PASS",
+  "guarantee": "at-most-once automatic execution for non-idempotent calls; PREPARED-only ambiguity fails closed",
+  "next_allowed_stage": "Stage 04 — Semantic Verification",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "pytest_full": "...........................................................              [100%]\n59 passed in 13.30s",
+  "pytest_stage3": "............                                                             [100%]\n12 passed in 2.18s",
+  "python": "3.13.5",
+  "stage": "03",
+  "stage2_regression": {
+    "defense_in_depth_pass": true,
+    "required_attacks_blocked": true,
+    "required_pass_count": 12,
+    "required_probe_count": 12,
+    "runtime_attestation_pass": true,
+    "stage2_runtime_boundary_pass": true,
+    "workspace_positive_control": true
+  },
+  "stage3_direct_probe": {
+    "all_passed": true,
+    "duplicate_external_actions": 0,
+    "passed_count": 4,
+    "probe_count": 4
+  },
+  "status": "PASS / EXITED",
+  "version": "v0.4.0"
+}

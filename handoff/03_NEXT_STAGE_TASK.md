@@ -1,28 +1,40 @@
 # 03 — Next Stage Task
 
-# Stage 03 — Persistence / Resume / Reproducibility
+# Stage 04 — Semantic Verification
 
-Goal: move from “checkpoint files exist” to **an interrupted run can actually resume safely and reproducibly**.
+Version target: `v0.5.0` only after PASS.
 
-Required targets:
-1. atomic checkpoint restore path
-2. explicit run manifest
-3. duplicate side-effect prevention / idempotency receipts
-4. event replay and canonical state hash
-5. checkpoint corruption detection + fail-closed recovery
-6. state/event consistency checks
-7. provenance for model/config/tool/runtime/task revision
-8. public resume entry point
+## Entry condition
 
-Required scenarios: forced termination after persisted transition; restart same run; continue without replaying committed external effects; corrupted/truncated checkpoint; event/checkpoint mismatch; duplicate external action; deterministic replay to same trusted-state hash; missing provenance field warning/failure.
+Stage 03 Persistence / Resume / Reproducibility must be PASS with direct forced-kill, duplicate-effect, corruption, replay-hash, and provenance evidence.
 
-Exit minimum:
+Entry condition is satisfied by `v0.4.0`.
 
-```text
-forced kill → resume succeeds
-duplicate external action = 0
-checkpoint corruption behavior demonstrated
-deterministic replay state hash matches
-```
+## First action
 
-Non-goals: RAG, vector DB, memory graph, subagent swarm, planner hierarchy, automatic skill learning, model router. Do not conflate checkpoint file with resume semantics, memory with state, or replay with re-executing side effects.
+Do **not** immediately add new verifier breadth.
+
+First re-review and freeze:
+
+1. what a verifier is allowed to treat as evidence,
+2. how evidence is bound to the exact claim being verified,
+3. semantic false-positive / false-negative threat cases,
+4. minimum independence required for each verification level,
+5. when execution-level evidence is stronger than schema/logical evidence,
+6. how Domain Profiles may customize verification without forking Kernel truth authority.
+
+## Working objective
+
+Move from “a verifier ran and returned true” toward **claim-bound semantic evidence whose relevance, authority, and independence are explicit and adversarially tested**.
+
+## Required preservation rules
+
+- Actor cannot promote trusted facts.
+- Verifier cannot mutate Actor workspace unless explicitly using a separately authorized subprocess boundary.
+- Oracle remains separate from Actor truth claims.
+- resume/event/checkpoint/receipt invariants remain intact.
+- no RAG, skill system, subagent swarm, planner hierarchy, or unrelated feature breadth.
+
+## Exit rule
+
+Stage 04 exit criteria must be written before implementation begins. If the semantic verifier still has known false-positive paths that can promote an incorrect claim, Stage 04 is PARTIAL/FAIL and Stage 05 must not begin.

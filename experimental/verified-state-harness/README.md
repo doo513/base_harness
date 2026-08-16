@@ -1,12 +1,12 @@
-# Verified-State Harness v0.3.0 — Stage 02
+# Verified-State Harness v0.4.0 — Stage 03
 
-> Current status: **Stage 02 PASS / EXITED on the verified Linux namespace backend.**
+> Current status: **Stage 03 PASS / EXITED.**
 >
-> Inherited status at the start of this work was **PARTIAL / NOT EXITED**. The blocker was a missing production sandbox plus missing real filesystem/network attack evidence. This version closes that blocker with a live-probed Linux namespace backend and direct attack probes. The PASS is conditional on the backend's runtime attestation succeeding on the host; unsupported hosts fail closed.
+> Stage 02 production isolation remains PASS on `LinuxNamespaceSandboxBackend` when its live `runtime_probe` succeeds.
 
-The core invariant remains:
+Core invariant:
 
-> **Actor output may propose and act; only harness-side verification/oracles may promote truth or success.**
+> **Actor output may propose and act; only harness-side verification/oracles may promote truth or success. Persisted state must also prove that it belongs to the same run/configuration before it can be trusted after restart.**
 
 ## Kernel + Domain Profile
 
@@ -28,6 +28,10 @@ Evidence / Hypothesis
 Verifier Chain
         ↓
 Kernel-owned State Commit
+        ↓
+Hashed Event Snapshot
+        ↓
+Atomic Checkpoint
 
 Completion request
         ↓
@@ -40,69 +44,120 @@ Kernel accepts / rejects
   memory_policy() · verification_contract() · completion_oracle()
 ```
 
-## Stage 02 production boundary
+## Stage 03 persistence model
 
-`LinuxNamespaceSandboxBackend` provides a real Linux process boundary using:
-
-- user namespace with root mapped only inside the namespace,
-- mount namespace,
-- PID namespace,
-- fresh network namespace when `network_policy=deny`,
-- chroot with no host root filesystem bind,
-- read-only runtime mounts,
-- writable actor workspace only as an explicit host-backed mount,
-- read-only verifier/oracle candidate workspace,
-- read-only sealed-oracle mounts,
-- namespace-local ephemeral scratch (`/vsh-tmp`),
-- all capabilities dropped before actor command execution,
-- `no_new_privs` + locked `noroot` securebit,
-- sanitized environment,
-- workspace preflight rejection of special-file host channels and external hard links,
-- live runtime attestation; configuration alone never counts as production evidence.
-
-`LocalProcessBackend` remains available for non-strict local use, but deliberately attests filesystem/network isolation as false.
-
-## Real attack evidence
-
-The Stage 02 rc2 attack probe verifies the required 12 attacks plus four defense-in-depth probes:
-
-1. `../` path traversal
-2. absolute read outside workspace
-3. absolute write outside workspace
-4. harness-private read
-5. harness-private write
-6. sealed-oracle read by Actor
-7. symlink escape
-8. loopback connection
-9. external network connection
-10. parent secret environment inheritance
-11. verifier candidate mutation
-12. oracle asset mutation
-13. rootfs chmod/write escape
-14. nested user-namespace remount escape
-15. workspace AF_UNIX host-channel escape
-16. external hard-link escape
-
-Current evidence:
+Every run now has:
 
 ```text
-required probes:       12 / 12 PASS
-defense-in-depth:       4 / 4 PASS
-workspace control:           PASS
-runtime attestation:         PASS
-full pytest suite:      47 passed
-compileall:                  PASS
+run_manifest.json      run/config/provenance identity
+checkpoint.json        atomic state + event anchor
+events.jsonl           sequence + hash-chained event ledger
+receipts/*.json        durable non-idempotent action receipts
+tool_calls.jsonl       tool-call audit log
+artifacts/              opaque evidence artifacts
 ```
 
-See `evidence/stage2_rc2_attack_probe.json` and `docs/STAGE2_RC2_IMPLEMENTATION_REPORT.md`.
+### Resume contract
 
-## Strict execution example
+`HarnessRuntime.resume(...)` and CLI `--resume` require:
+
+1. valid manifest envelope,
+2. valid event hash chain,
+3. valid checkpoint envelope/state hash,
+4. checkpoint → event anchor match,
+5. same run id and manifest hash,
+6. current configuration fingerprint match,
+7. reconstructable canonical state.
+
+If a valid `state.snapshot` event is newer than the checkpoint because the process died between event fsync and checkpoint replacement, resume recovers that newer event state and rewrites the checkpoint.
+
+## Non-idempotent side effects
+
+For `ToolSpec.idempotent=False`:
+
+```text
+PREPARED receipt
+    ↓
+execute tool
+    ↓
+COMMITTED receipt
+    ↓
+state transition persistence
+```
+
+Resume rules:
+
+- `COMMITTED` → return the persisted ToolResult; do **not** execute again.
+- `PREPARED` only → halt/fail closed because the external effect is ambiguous.
+
+This is an **at-most-once automatic execution** guarantee. The harness does not claim arbitrary exactly-once transactions for external systems.
+
+## Reproducibility manifest
+
+The run manifest records and fingerprints:
+
+- task/model revision,
+- goal/acceptance/constraints,
+- profile and verifier identities/source hashes,
+- controller/model-adapter identity and command hash,
+- tool policy/provenance/handler source hash,
+- security and budget configuration,
+- oracle identity/seal/backend,
+- harness/Python/platform revision.
+
+Missing provenance is recorded as a warning. `--require-complete-provenance` converts the warning into a fail-closed construction error.
+
+## Current direct evidence
+
+```text
+Stage 03 targeted tests:       12 passed
+full pytest suite:             59 passed
+Stage 03 direct probe:          4 / 4 PASS
+duplicate external actions:     0
+compileall:                     PASS
+Stage 02 required attacks:     12 / 12 PASS
+Stage 02 defense probes:        4 / 4 PASS
+```
+
+See:
+
+- `docs/STAGE3_PREFLIGHT_REREVIEW.md`
+- `docs/STAGE3_IMPLEMENTATION_REPORT.md`
+- `docs/STAGE3_EVIDENCE_MATRIX.md`
+- `docs/STAGE3_FINAL_REREVIEW.md`
+- `docs/STAGE3_EXIT_DECISION.md`
+- `evidence/stage3_resume_probe.json`
+
+## CLI examples
+
+New run:
+
+```bash
+PYTHONPATH=src python -m harness.cli \
+  --profile demo \
+  --workspace /path/to/workspace \
+  --run-dir /private/path/run \
+  --task-revision task-v1
+```
+
+Resume the same run:
+
+```bash
+PYTHONPATH=src python -m harness.cli \
+  --profile demo \
+  --workspace /path/to/workspace \
+  --run-dir /private/path/run \
+  --task-revision task-v1 \
+  --resume
+```
+
+Production software example keeps the Stage 02 isolation boundary:
 
 ```bash
 PYTHONPATH=src python -m harness.cli \
   --profile software \
   --workspace /path/to/actor-workspace \
-  --run-dir /separate/path/run \
+  --run-dir /operator/private/run \
   --execution-backend linux-namespace \
   --network-policy deny \
   --strict-tool-isolation \
@@ -110,23 +165,25 @@ PYTHONPATH=src python -m harness.cli \
   --accept-command 'pytest -q {workspace}' \
   --sealed-oracle-root /operator/private/acceptance \
   --require-sealed-oracle \
-  --require-oracle-isolation
+  --require-oracle-isolation \
+  --task-revision git:abc123 \
+  --model-revision provider:model-revision \
+  --require-complete-provenance
 ```
 
-The Actor backend does **not** mount the sealed root. The Oracle backend is a separate namespace backend that sees the candidate workspace read-only and the sealed root read-only.
+## Scope / non-claims
 
-## Scope and non-claims
+Stage 03 does **not** claim:
 
-Stage 02 PASS means the declared Stage 02 isolation requirements were demonstrated on the recorded Linux environment. It does **not** mean:
+- multi-writer run-directory safety,
+- distributed transactions or arbitrary exactly-once side effects,
+- authenticated persistence if an attacker can write the private run directory,
+- automatic migration from v0.3 unhashed event logs,
+- deterministic behavior from a stochastic external model,
+- cross-platform Stage 02 sandbox parity.
 
-- cross-platform sandbox support exists,
-- resource exhaustion / cgroup isolation is solved,
-- arbitrary in-process Python verifier plugins are untrusted/sandboxed,
-- all semantic verification problems are solved,
-- universal or benchmark superiority is proven.
-
-Built-in in-process verifiers remain part of the trusted computing base. Untrusted verifier subprocesses must be launched through the read-only namespace backend.
+The Stage 03 integrity model depends on the Stage 02 rule that `run_dir` is outside Actor write access in production.
 
 ## Next allowed stage
 
-Stage 03 may now begin: **Persistence / Resume / Reproducibility**. Do not add RAG, skills, planners, subagents, or other feature breadth unless a later stage explicitly requires them.
+Stage 04 — **Semantic Verification** (`v0.5.0`).

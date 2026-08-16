@@ -9,5 +9,6 @@ class Budget:
 
     def start(self): return time.monotonic()
 
-    def hard_exceeded(self, step, started_at):
-        return step >= self.hard_max_steps or (time.monotonic()-started_at) >= self.hard_wall_seconds
+    def hard_exceeded(self, step, started_at, elapsed_before=0.0):
+        elapsed = float(elapsed_before) + (time.monotonic() - started_at)
+        return step >= self.hard_max_steps or elapsed >= self.hard_wall_seconds

@@ -1,33 +1,70 @@
 # 02 — Current Status
 
 ## Stage 00 — Research Contract
-COMPLETE.
+
+Status: **COMPLETE**.
 
 ## Stage 01 — Truth / Execution Hardening
-COMPLETE for scoped P0 defects.
+
+Status: **COMPLETE** for the scoped P0 defects.
 
 ## Stage 02 — Capability Isolation + Sealed Oracle
 
-Historical entry state at rc2 start:
+Status: **PASS / EXITED** for `LinuxNamespaceSandboxBackend` when live `runtime_probe` succeeds.
+
+Stage 03 changes were regression-tested against the real Stage 02 attack probe:
 
 ```text
-PARTIAL / NOT EXITED
+required attacks      12 / 12 PASS
+defense-in-depth       4 / 4 PASS
+runtime attestation   PASS
+workspace control     PASS
 ```
 
-Blockers were real local filesystem escape, loopback reachability, no productive OS sandbox, hidden-oracle confidentiality not demonstrated, and untrusted verifier process confinement not demonstrated.
+## Stage 03 — Persistence / Resume / Reproducibility
 
-rc2 added: `LinuxNamespaceSandboxBackend`; user/mount/PID/network namespaces; chroot read-only root/runtime mounts; capability drop/no-new-privs; sanitized environment; live production attestation; separate Actor/Oracle backends; read-only verifier/oracle candidate workspace; read-only sealed root; `/vsh-tmp`; AF_UNIX/special-file and external-hard-link preflight; 12 required + 4 defense-in-depth probes; profile integration.
+Status: **PASS / EXITED**.
+
+Version: `v0.4.0`.
+
+Implemented and directly verified:
+
+- integrity-bound `run_manifest.json`
+- hash-chained `events.jsonl`
+- canonical `state.snapshot` replay
+- atomic checkpoint envelope with event anchor
+- event-ahead checkpoint recovery
+- public `HarnessRuntime.resume(...)`
+- CLI `--resume`
+- cumulative wall-budget continuity
+- non-idempotent PREPARED/COMMITTED receipts
+- committed-action deduplication
+- PREPARED-only ambiguity fail-closed behavior
+- task/model/profile/verifier/tool/security/budget/oracle provenance fingerprinting
+- dirty run-directory fail-closed behavior
 
 Final evidence:
 
 ```text
-pytest                47 passed
-required attacks      12 / 12 PASS
-defense-in-depth       4 / 4 PASS
-runtime attestation   PASS / source=runtime_probe
-compileall             PASS
+Stage 03 tests          12 passed
+full pytest             59 passed
+direct Stage 03 probe    4 / 4 PASS
+duplicate external       0
+compileall               PASS
+Stage 02 regression      PASS
 ```
 
-Current verdict: **Stage 02 = PASS / EXITED** for Linux namespace backend when live probe succeeds. Unsupported hosts fail closed.
+Important guarantee boundary:
 
-Next unresolved architectural work: Stage 03. Existing checkpoint-save code is not proof of resume semantics.
+```text
+non-idempotent tools => at-most-once automatic execution
+PREPARED-only receipt => ambiguous, therefore halt/fail closed
+```
+
+The project does not claim universal exactly-once semantics for arbitrary external systems.
+
+## Current unresolved work
+
+The next allowed stage is **Stage 04 — Semantic Verification (`v0.5.0`)**.
+
+Before implementation, freeze the Stage 04 verification contract and adversarial false-positive/false-negative test matrix. Do not weaken Stage 01–03 gates to make semantic verification easier.

@@ -1,41 +1,60 @@
 # Verified-State Harness — Current Agent Handoff
 
-The inherited handoff explicitly stated **Stage 02 PARTIAL / NOT EXITED**. That historical state is preserved in `handoff/prompts/GENERAL_CONTINUATION_PROMPT_INHERITED_STAGE02.md` and the artifact index. The agent producing this branch therefore did not skip ahead: its first task was **Production Sandbox Backend + actual filesystem/network attack probe**.
+Historical Stage 02 PARTIAL material remains preserved in the archive. Stage 02 was subsequently closed by the production Linux namespace backend and direct attack probes.
 
 ## Current status
 
 ```text
 Stage 00  COMPLETE
 Stage 01  COMPLETE for scoped P0 defects
-Stage 02  PASS / EXITED after rc2 direct runtime evidence
-Stage 03  NEXT / NOT STARTED
+Stage 02  PASS / EXITED
+Stage 03  PASS / EXITED
+Stage 04  NEXT / NOT STARTED
 ```
 
-Stage 02 final evidence:
+Current implementation version: `v0.4.0`.
+
+## Stage 03 evidence
 
 ```text
-12/12 required attacks PASS
-4/4 defense-in-depth attacks PASS
-47 pytest tests PASS
-compileall PASS
-runtime attestation source = runtime_probe
+12 Stage 03 tests PASS
+59 full pytest tests PASS
+4/4 direct resume probes PASS
+duplicate external actions = 0
+checkpoint corruption = fail closed
+event/checkpoint mismatch = fail closed
+canonical replay state hash = match
+Stage 02 attack regression = PASS
+compileall = PASS
 ```
 
-The PASS is conditional on `LinuxNamespaceSandboxBackend` live attestation succeeding on the execution host. The local subprocess backend still does not count as a sandbox.
+Stage 03 guarantee boundary:
+
+```text
+COMMITTED non-idempotent receipt -> deduplicate, never automatically execute again
+PREPARED-only receipt            -> ambiguous, halt/fail closed
+```
+
+Do not rewrite this as a universal exactly-once guarantee.
 
 ## Project objective
 
-Build a **General Harness Kernel + Domain Profile** architecture whose central invariant is:
-
-> Actor output may propose and act, but only sufficiently strong harness-side verification/oracles may promote trusted truth or completion.
+Build a **General Harness Kernel + Domain Profile** architecture where Actor output may propose and act, but trusted truth/completion/state transitions remain harness-owned and evidence-gated.
 
 ## Mandatory workflow
 
 ```text
-Inspect → Reproduce current evidence → Freeze active stage contract
-→ Implement active stage only → Unit/integration/adversarial tests
-→ Full regression → Logic/security re-review → Freeze raw evidence
-→ Detailed stage report → PASS/PARTIAL/FAIL → Continue only on PASS
+Inspect current implementation/evidence
+→ Reproduce baseline
+→ Freeze active stage contract
+→ Implement active stage only
+→ Unit/integration/adversarial tests
+→ Full regression
+→ Logic/security/integrity re-review
+→ Freeze raw evidence
+→ Detailed stage report + decision log + evidence matrix
+→ PASS/PARTIAL/FAIL
+→ Continue only on PASS
 ```
 
 ## Read order
@@ -47,7 +66,10 @@ Inspect → Reproduce current evidence → Freeze active stage contract
 5. `04_EXECUTION_PROTOCOL.md`
 6. `05_VALIDATION_GATES.md`
 7. `06_EVIDENCE_STANDARD.md`
-8. `15_DO_NOT_DO.md`
-9. Stage 02 rc2 reports/evidence
+8. `08_AGENT_OPERATING_RULES.md`
+9. `15_DO_NOT_DO.md`
+10. Stage 03 reports/evidence
 
-Then inspect code; documentation is not a substitute for runtime verification.
+Historical Stage 03 entry contract is preserved at `history/STAGE03_ENTRY_TASK.md`.
+
+The next agent must re-review Stage 04 semantic-verification requirements before implementing them.

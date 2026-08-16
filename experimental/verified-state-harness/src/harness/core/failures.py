@@ -13,6 +13,7 @@ class FailureKind(str, Enum):
     STRATEGY_EXHAUSTED = "strategy_exhausted"
     VERIFICATION_FAILED = "verification_failed"
     BUDGET_EXCEEDED = "budget_exceeded"
+    PERSISTENCE_ERROR = "persistence_error"
 
 class RecoveryAction(str, Enum):
     RETRY = "retry"
@@ -48,6 +49,7 @@ class FailureRouter:
         FailureKind.STRATEGY_EXHAUSTED: RecoveryAction.ESCALATE,
         FailureKind.VERIFICATION_FAILED: RecoveryAction.REPLAN,
         FailureKind.BUDGET_EXCEEDED: RecoveryAction.CHECKPOINT_STOP,
+        FailureKind.PERSISTENCE_ERROR: RecoveryAction.CHECKPOINT_STOP,
     }
 
     def __init__(self, repeat_limit: int = 3):
@@ -56,6 +58,7 @@ class FailureRouter:
     def route(self, failure, repeat_count: int = 1):
         if repeat_count >= self.repeat_limit and failure.kind not in {
             FailureKind.BUDGET_EXCEEDED,
+            FailureKind.PERSISTENCE_ERROR,
             FailureKind.MISSING_INFO,
         }:
             return RecoveryAction.SWITCH_STRATEGY
