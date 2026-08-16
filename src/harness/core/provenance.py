@@ -14,7 +14,6 @@ from .storage import canonical_hash
 
 
 PROVENANCE_SCHEMA_VERSION = 1
-SEMANTIC_SOURCE_PATHS = ("src/harness", "pyproject.toml", "requirements-ci.lock")
 TOOLCHAIN_COMMANDS = {
     "git": ("git", "--version"),
     "mount": ("mount", "--version"),
@@ -103,8 +102,13 @@ def _git_audit(root: Path | None) -> dict[str, Any]:
             "status_entries": None,
         }
 
-    commit = _run_text(["git", "rev-parse", "HEAD"], cwd=root)
-    tree = _run_text(["git", "rev-parse", "HEAD^{tree}"], cwd=root)
+    revisions = _run_text(["git", "rev-parse", "HEAD", "HEAD^{tree}"], cwd=root)
+    commit = None
+    tree = None
+    if revisions:
+        lines = revisions.splitlines()
+        if len(lines) >= 2:
+            commit, tree = lines[0], lines[1]
     tracked_status = _run_text(["git", "status", "--porcelain", "--untracked-files=no"], cwd=root)
     all_status = _run_text(["git", "status", "--porcelain", "--untracked-files=all"], cwd=root)
     available = commit is not None and tree is not None
@@ -153,14 +157,18 @@ class BuildProvenance:
     warnings: tuple[str, ...] = ()
 
     def semantic_descriptor(self) -> dict[str, Any]:
-        # Git commit/full tree are audit identifiers. They are intentionally not
-        # semantic resume keys because docs/evidence-only commits must not alter
-        # runtime meaning. Actual code/config/lock bytes are independently hashed.
+        # Git commit/full tree and executable installation path are audit data,
+        # not semantic resume keys. Docs-only commits and equivalent Python
+        # installations must not create false resume conflicts. Runtime/toolchain
+        # versions and actual source/config/lock bytes remain semantic keys.
         return {
             "schema_version": self.schema_version,
             "source_semantic_hash": self.source_semantic_hash,
             "dependency_lock_sha256": self.dependency_lock_sha256,
-            "python": dict(self.python),
+            "python": {
+                "implementation": self.python.get("implementation"),
+                "version": self.python.get("version"),
+            },
             "platform": dict(self.platform),
             "toolchain": dict(self.toolchain),
             "environment": {
@@ -203,7 +211,9 @@ def capture_build_provenance() -> BuildProvenance:
         candidate = root / "requirements-ci.lock"
         if candidate.is_file():
             lock_path = candidate.relative_to(root).as_posix()
-            lock_hash = _sha256_file(candidate)
+            # Reuse the content digest already computed as a semantic source
+            # input instead of performing a redundant second file read/hash.
+            lock_hash = source_hashes.get(lock_path)
         else:
             warnings.append("requirements-ci.lock is unavailable")
 
