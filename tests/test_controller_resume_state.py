@@ -25,7 +25,9 @@ def test_scripted_controller_cursor_is_restored_before_resume_actor_call(tmp_pat
 
     runtime.log("run.start", {"run_id": runtime.run_id, "manifest_hash": runtime.manifest_hash})
     runtime._persist_state("manual.start")
-    assert runtime.step_once() is None
+    # Stage 05 makes step_once explicit: False means an Actor step was executed;
+    # True means a kernel recovery transition consumed the step.
+    assert runtime.step_once() is False
     runtime.state.step += 1
     runtime._persist_state("manual.after-first-actor")
     assert first_controller.index == 1
