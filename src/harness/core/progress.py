@@ -142,7 +142,7 @@ class ProgressPolicy:
             "progress_authority": {
                 "activity_novelty": "credit_0_no_reset",
                 "verified_fact_hash_change": "epistemic_credit_1",
-                "task_world_progress": "profile_explicit_future_signal_only",
+                "task_world_progress": "profile_explicit_deterministic_snapshot_delta_credit_1",
             },
             "speculative_state_counts_as_progress": False,
             "failed_observation_counts_as_progress": False,
