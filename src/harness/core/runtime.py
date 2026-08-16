@@ -25,11 +25,13 @@ from .budget import Budget
 from .runtime_persistence import RuntimePersistenceMixin
 from .runtime_execution import RuntimeExecutionMixin
 
-class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
-    """v0.1 single-agent kernel.
 
-    Important invariant: actor output can create hypotheses and request completion,
-    but only verifier/oracle results can mutate trusted facts or completed=True.
+class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
+    """Single-actor verified-state kernel.
+
+    Actor output may create hypotheses and request completion, but only the
+    configured verifier contract and completion oracle may mutate trusted facts
+    or completed=True.
     """
 
     def __init__(
@@ -133,6 +135,28 @@ class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
         kwargs["resume"] = True
         return cls(**kwargs)
 
+    def _config_descriptor(self) -> dict[str, Any]:
+        """Extend Stage-03 provenance with the Stage-04 verification contract.
+
+        The durable persistence implementation remains Stage-03 code.  This
+        override only enriches its configuration fingerprint, avoiding a
+        persistence rewrite while making resume fail closed on verifier-contract
+        drift.
+        """
+        descriptor = super()._config_descriptor()
+        contract = self.profile.verification_contract()
+        descriptor["profile"]["verification_contract"] = contract.dump()
+        descriptor["profile"]["verifiers"] = [
+            {
+                "name": getattr(v, "name", type(v).__name__),
+                "class": f"{type(v).__module__}.{type(v).__qualname__}",
+                "level": int(v.level),
+                "coverage": sorted(str(x) for x in getattr(v, "covers", ())),
+                "source_hash": self._source_hash(v),
+            }
+            for v in getattr(self.verifiers, "verifiers", [])
+        ]
+        return descriptor
 
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.capability_policy.require(Principal.KERNEL, Capability.LEDGER_WRITE)
@@ -159,7 +183,6 @@ class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
         self.state.failures.append(record)
         self.metrics["failures"] += 1
         self.log("failure", record)
-
 
     def run(self) -> HarnessState:
         self.goal.validate()

@@ -61,19 +61,21 @@ class RuntimePersistenceMixin:
         return descriptor
 
     def _tool_descriptors(self) -> list[dict[str, Any]]:
-        return [{
-            "name": name,
-            "side_effect": spec.side_effect.value,
-            "idempotent": bool(spec.idempotent),
-            "permission": spec.permission,
-            "provenance": dict(spec.provenance),
-            "backend": getattr(spec.execution_backend, "name", None),
-            "handler_source_hash": self._source_hash(spec.handler),
-        } for name, spec in sorted(self.actions.tools.items())]
+        return [
+            {
+                "name": name,
+                "side_effect": spec.side_effect.value,
+                "idempotent": bool(spec.idempotent),
+                "permission": spec.permission,
+                "provenance": dict(spec.provenance),
+                "backend": getattr(spec.execution_backend, "name", None),
+                "handler_source_hash": self._source_hash(spec.handler),
+            }
+            for name, spec in sorted(self.actions.tools.items())
+        ]
 
     def _config_descriptor(self) -> dict[str, Any]:
         verifiers = list(getattr(self.verifiers, "verifiers", []))
-        contract = self.profile.verification_contract()
         return {
             "goal": self._goal_descriptor(),
             "profile": {
@@ -81,14 +83,13 @@ class RuntimePersistenceMixin:
                 "class": f"{type(self.profile).__module__}.{type(self.profile).__qualname__}",
                 "source_hash": self._source_hash(self.profile),
                 "minimum_verification_level": int(self.profile.minimum_verification_level()),
-                "verification_contract": contract.dump(),
-                "verifiers": [{
-                    "name": getattr(v, "name", type(v).__name__),
-                    "class": f"{type(v).__module__}.{type(v).__qualname__}",
-                    "level": int(v.level),
-                    "coverage": sorted(str(x) for x in getattr(v, "covers", ())),
-                    "source_hash": self._source_hash(v),
-                } for v in verifiers],
+                "verifiers": [
+                    {
+                        "class": f"{type(v).__module__}.{type(v).__qualname__}",
+                        "source_hash": self._source_hash(v),
+                    }
+                    for v in verifiers
+                ],
             },
             "controller": self._controller_descriptor(),
             "workspace": str(self.workspace),
@@ -125,7 +126,8 @@ class RuntimePersistenceMixin:
         task_revision = self.task_revision or "UNSPECIFIED"
         model_revision = self.model_revision or (
             f"not_applicable:{type(self.controller).__name__}"
-            if type(self.controller).__name__ != "LLMController" else "UNSPECIFIED"
+            if type(self.controller).__name__ != "LLMController"
+            else "UNSPECIFIED"
         )
         warnings = self._provenance_warnings(task_revision=task_revision, model_revision=model_revision)
         if self.require_complete_provenance and warnings:
@@ -176,117 +178,160 @@ class RuntimePersistenceMixin:
         if anchor is None or anchor.get("record_hash") != checkpoint.get("event_hash"):
             raise IntegrityError("checkpoint event anchor does not exist or hash does not match")
         if anchor.get("kind") != "state.snapshot":
-            raise IntegrityError("checkpoint must anchor a state.snapshot event")
-        if anchor.get("payload", {}).get("state_hash") != checkpoint.get("state_hash"):
-            raise IntegrityError("checkpoint state hash does not match anchored event")
+            raise IntegrityError("checkpoint event anchor is not a state snapshot")
+        anchor_payload = anchor.get("payload", {})
+        if anchor_payload.get("manifest_hash") != self.manifest_hash:
+            raise IntegrityError("state snapshot manifest hash mismatch")
+        if anchor_payload.get("state_hash") != checkpoint.get("state_hash"):
+            raise IntegrityError("checkpoint state hash disagrees with anchored event")
+        if canonical_hash(anchor_payload.get("state")) != checkpoint.get("state_hash"):
+            raise IntegrityError("anchored event state payload hash mismatch")
 
-        replayed, replay_hash, replay_seq, replay_event_hash = self._replay_state_records(records)
-        if replay_seq < int(checkpoint.get("event_seq", 0)):
-            raise IntegrityError("event replay ended before checkpoint anchor")
-        if replay_hash != canonical_hash(replayed.snapshot()):
-            raise IntegrityError("replayed state hash is not canonical")
+        latest = self.events.latest_state_snapshot()
+        if latest is None:
+            raise IntegrityError("event log contains no state snapshot")
+        latest_payload = latest.get("payload", {})
+        if latest_payload.get("manifest_hash") != self.manifest_hash:
+            raise IntegrityError("latest state snapshot manifest hash mismatch")
+        if latest_payload.get("state_hash") != canonical_hash(latest_payload.get("state")):
+            raise IntegrityError("latest state snapshot payload hash mismatch")
+        if int(latest["seq"]) < int(anchor["seq"]):
+            raise IntegrityError("event log is behind checkpoint")
 
-        checkpoint_state = HarnessState.from_snapshot(checkpoint["state"])
-        checkpoint_hash = canonical_hash(checkpoint_state.snapshot())
-        if checkpoint_hash != checkpoint.get("state_hash"):
-            raise IntegrityError("checkpoint state payload hash mismatch")
-
-        if replay_seq == int(checkpoint.get("event_seq", 0)):
-            if replay_hash != checkpoint_hash:
-                raise IntegrityError("event replay state differs from checkpoint state")
-            self.state = checkpoint_state
+        if int(latest["seq"]) > int(anchor["seq"]):
+            self.state = HarnessState.from_snapshot(latest_payload["state"])
+            runtime_meta = dict(latest_payload.get("runtime_meta", {}))
+            self.checkpoints.save(
+                self.state.snapshot(), run_id=self.run_id, manifest_hash=self.manifest_hash,
+                event_seq=int(latest["seq"]), event_hash=str(latest["record_hash"]),
+                runtime_meta=runtime_meta,
+            )
         else:
-            self.state = replayed
-            self._write_checkpoint_from_anchor(replay_event_hash, replay_seq, reason="resume.event_ahead_recovery")
+            self.state = HarnessState.from_snapshot(checkpoint["state"])
+            runtime_meta = dict(checkpoint.get("runtime_meta", {}))
 
+        persisted_metrics = runtime_meta.get("metrics")
+        if isinstance(persisted_metrics, dict):
+            self.metrics.update(persisted_metrics)
         self.metrics["run_id"] = self.run_id
-        self.metrics["resume_count"] = 1
-        prior_metrics = self._load_prior_metrics()
-        self.elapsed_before_resume = float(prior_metrics.get("wall_seconds", 0.0))
-        for key in self.metrics:
-            if key in prior_metrics and key not in {"run_id", "completed", "resume_count"}:
-                self.metrics[key] = prior_metrics[key]
-        self.metrics["resume_count"] = int(prior_metrics.get("resume_count", 0)) + 1
-        self.metrics["completed"] = self.state.completed
-        self._validate_receipts_for_resume()
-
-    def _load_prior_metrics(self) -> dict[str, Any]:
-        path = self.run_dir / "metrics.json"
-        if not path.exists():
-            return {}
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+        self.metrics["resume_count"] = int(self.metrics.get("resume_count", 0)) + 1
+        self.elapsed_before_resume = float(runtime_meta.get("elapsed_wall_seconds", 0.0) or 0.0)
 
     def _wall_elapsed(self) -> float:
         return self.elapsed_before_resume + (monotonic() - self.started_at)
 
-    def _persist_state(self, reason: str) -> None:
+    def _runtime_meta(self) -> dict[str, Any]:
+        return {
+            "metrics": dict(self.metrics),
+            "elapsed_wall_seconds": self._wall_elapsed(),
+        }
+
+    def _persist_state(self, reason: str) -> dict[str, Any]:
         snapshot = self.state.snapshot()
         state_hash = canonical_hash(snapshot)
-        event_record = self.log("state.snapshot", {"state": snapshot, "state_hash": state_hash, "reason": reason})
-        self._write_checkpoint_from_anchor(event_record["record_hash"], event_record["seq"], reason=reason)
+        runtime_meta = self._runtime_meta()
+        record = self.events.append_event(Event(
+            "state.snapshot",
+            {
+                "reason": reason,
+                "state_hash": state_hash,
+                "state": snapshot,
+                "manifest_hash": self.manifest_hash,
+                "runtime_meta": runtime_meta,
+            },
+            self.state.step,
+        ))
+        self.checkpoints.save(
+            snapshot,
+            run_id=self.run_id,
+            manifest_hash=self.manifest_hash,
+            event_seq=int(record["seq"]),
+            event_hash=str(record["record_hash"]),
+            runtime_meta=runtime_meta,
+        )
+        return record
 
-    def _write_checkpoint_from_anchor(self, event_hash: str, event_seq: int, *, reason: str) -> None:
-        self.checkpoints.save({
-            "run_id": self.run_id,
-            "manifest_hash": self.manifest_hash,
-            "event_seq": event_seq,
-            "event_hash": event_hash,
-            "state_hash": canonical_hash(self.state.snapshot()),
-            "state": self.state.snapshot(),
-            "reason": reason,
-        })
-
-    def _replay_state_records(self, records):
-        state = None
-        state_hash = None
-        seq = 0
-        event_hash = ""
-        for record in records:
+    def replay_state(self) -> HarnessState:
+        latest_state: dict[str, Any] | None = None
+        last_step = -1
+        for record in self.events.verify_chain():
             if record.get("kind") != "state.snapshot":
                 continue
             payload = record.get("payload", {})
-            candidate = HarnessState.from_snapshot(payload.get("state", {}))
-            candidate_hash = canonical_hash(candidate.snapshot())
-            if candidate_hash != payload.get("state_hash"):
-                raise IntegrityError(f"state.snapshot hash mismatch at event seq {record.get('seq')}")
-            state = candidate
-            state_hash = candidate_hash
-            seq = int(record.get("seq", 0))
-            event_hash = str(record.get("record_hash", ""))
-        if state is None:
-            raise IntegrityError("event log contains no state.snapshot records")
-        return state, state_hash, seq, event_hash
+            state = payload.get("state")
+            if not isinstance(state, dict):
+                raise IntegrityError("state snapshot event has no state object")
+            if payload.get("manifest_hash") != self.manifest_hash:
+                raise IntegrityError("replay encountered a state snapshot from another manifest")
+            actual = canonical_hash(state)
+            if payload.get("state_hash") != actual:
+                raise IntegrityError("replayed state hash mismatch")
+            step = int(state.get("step", -1))
+            if step < last_step:
+                raise IntegrityError("state snapshot step regressed during replay")
+            last_step = step
+            latest_state = state
+        if latest_state is None:
+            raise IntegrityError("event log contains no state snapshot")
+        return HarnessState.from_snapshot(latest_state)
 
-    def _receipt_id(self, call: ToolCall) -> str:
-        return canonical_hash({"tool": call.tool, "args": call.args})
+    def replay_state_hash(self) -> str:
+        return canonical_hash(self.replay_state().snapshot())
 
-    def _execute_tool_durable(self, call: ToolCall):
+    @staticmethod
+    def _tool_result_to_dict(result: ToolResult) -> dict[str, Any]:
+        return {
+            "ok": result.ok,
+            "output": result.output,
+            "error": result.error,
+            "approval_required": result.approval_required,
+            "security_violation": result.security_violation,
+            "isolation": result.isolation,
+        }
+
+    @staticmethod
+    def _tool_result_from_dict(raw: dict[str, Any]) -> ToolResult:
+        return ToolResult(
+            ok=bool(raw.get("ok")),
+            output=raw.get("output"),
+            error=raw.get("error"),
+            approval_required=bool(raw.get("approval_required", False)),
+            security_violation=bool(raw.get("security_violation", False)),
+            isolation=raw.get("isolation"),
+        )
+
+    def _execute_tool_durable(self, call: ToolCall) -> tuple[ToolResult, str | None, bool]:
         spec = self.actions.tools.get(call.tool)
         if spec is None or spec.idempotent:
             return self.actions.execute(call), None, False
 
-        receipt_id = self._receipt_id(call)
-        existing = self.receipts.load(receipt_id)
-        if existing:
-            status = existing.get("status")
-            if status == "COMMITTED":
+        action_id = self.receipts.action_id(
+            run_id=self.run_id, step=self.state.step, tool=call.tool, args=call.args
+        )
+        receipt = self.receipts.load(action_id)
+        if receipt is not None:
+            if receipt.get("status") == "committed":
                 self.metrics["receipt_deduplications"] += 1
-                return ToolResult.from_dict(existing["result"]), receipt_id, True
-            if status == "PREPARED":
+                self.log("tool.receipt.deduplicated", {"action_id": action_id, "tool": call.tool})
+                return self._tool_result_from_dict(receipt["result"]), action_id, True
+            if receipt.get("status") == "prepared":
                 self.metrics["ambiguous_side_effects"] += 1
-                raise ResumeConflict(f"non-idempotent action has PREPARED-only receipt and is ambiguous: {call.tool}")
-            raise IntegrityError(f"unknown receipt status: {status}")
+                raise ResumeConflict(
+                    f"non-idempotent action {action_id} is PREPARED without COMMITTED result; "
+                    "automatic replay is blocked because the external effect is ambiguous"
+                )
+            raise IntegrityError(f"invalid receipt status: {receipt.get('status')}")
 
-        self.receipts.prepare(receipt_id, {"run_id": self.run_id, "tool": call.tool, "args": call.args})
+        self.receipts.prepare(
+            action_id=action_id, run_id=self.run_id, step=self.state.step, tool=call.tool, args=call.args
+        )
+        self.log("tool.receipt.prepared", {"action_id": action_id, "tool": call.tool})
         result = self.actions.execute(call)
-        self.receipts.commit(receipt_id, {"run_id": self.run_id, "tool": call.tool, "args": call.args, "result": result.to_dict()})
-        return result, receipt_id, False
-
-    def _validate_receipts_for_resume(self) -> None:
-        ambiguous = self.receipts.prepared_receipts()
-        if ambiguous:
-            self.metrics["ambiguous_side_effects"] += len(ambiguous)
-            raise ResumeConflict("resume blocked by PREPARED-only non-idempotent side-effect receipt(s)")
+        # Normalize through JSON before persisting and before exposing the result
+        # to the state/context. This makes the first execution and receipt replay
+        # observe the same value even when a tool returns non-JSON Python objects.
+        normalized = json.loads(json.dumps(self._tool_result_to_dict(result), ensure_ascii=False, default=str))
+        self.receipts.commit(action_id=action_id, result=normalized)
+        stable_result = self._tool_result_from_dict(normalized)
+        self.log("tool.receipt.committed", {"action_id": action_id, "tool": call.tool, "ok": stable_result.ok})
+        return stable_result, action_id, False
