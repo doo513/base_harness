@@ -1,26 +1,20 @@
-# Stage06 remediation — Activity Novelty vs Semantic Progress
+# Stage06 remediation — Activity, Epistemic, and Task/World Progress
 
 Finding ID: `R06-PROGRESS-001`  
-Status: **PASS for activity / epistemic boundary**
+Status: **PASS for implemented progress-authority mechanism; profile/domain coverage remains bounded**
 
 ## 문제
 
-기존 Stage06는 다음 두 신호를 progress authority로 사용했다.
+초기 Stage06는 verified fact change와 novel successful observation content를 모두 progress authority로 사용했다. 하지만 새 bytes가 생겼다는 사실은 goal을 향해 진전했다는 뜻이 아니다. timestamp/nonce/counter처럼 매번 달라지는 output은 task state를 개선하지 않으면서 no-progress horizon을 계속 reset할 수 있었다.
 
-- verified fact content change
-- novel integrity-checked successful observation content
+## 1차 remediation — activity와 epistemic progress 분리
 
-두 번째는 replay/duplicate loop를 줄이는 데 유용하지만 **새롭다는 사실과 goal을 향해 진전했다는 사실은 다르다.**
-
-예를 들어 tool이 매 호출마다 timestamp/nonce/counter를 다르게 반환하면 모든 output bytes는 새롭지만 task state는 전혀 개선되지 않을 수 있다. 기존 rule에서는 이런 activity가 no-progress streak를 reset할 수 있었다.
-
-## 새 contract
+새 contract는 다음과 같다.
 
 ```text
 Activity Novelty
-- new successful observation bytes/content
-- integrity verification 필요
-- 기록/진단에는 사용
+- 새 successful observation content
+- artifact integrity verification 필요
 - progress credit = 0
 - no-progress reset 권한 없음
 
@@ -28,79 +22,91 @@ Epistemic Progress
 - verified fact semantic content transition
 - progress credit = 1
 - no-progress reset 가능
-
-Task / World Progress
-- 향후 profile/oracle가 evidence-backed milestone로 선언
-- 현재 remediation에서는 임의 LLM semantic judge를 추가하지 않음
 ```
 
-## 구현
+구현 과정에서 기존 test/probe가 `first novel observation = progress`를 전제로 하고 있어 두 번 red가 발생했다.
 
-main semantic split: `f6bfc6e...`
+- CI `31950606445`: `147 passed / 5 skipped / 1 failed`
+- CI `31950681824`: full pytest는 `148 passed / 5 skipped`, Stage06 strategy direct probe FAIL
 
-- observation artifact fingerprinting과 tamper detection은 유지.
-- novel fingerprints는 `activity_reasons`로 기록.
-- `made_progress`는 credit-bearing reason에서만 true.
-- verified fact hash는 evidence-ref metadata churn을 제외하고 value/status/authority semantic content를 기준으로 유지.
-- recovery transition, speculative churn, failed observation은 계속 progress가 아님.
+production rule을 과거 의미로 되돌리지 않고 stale test/probe oracle을 activity/epistemic contract에 맞춰 migration했다. 최종 CI `31950847647`에서 green이 됐다.
 
-## Contract migration 과정
+## 2차 remediation — explicit task/world progress authority
 
-이번 변경은 production code만 바꾸면 기존 test oracle이 green일 수 없는 **의도적 semantic contract 변경**이었다.
+후속 전체 구조 재검토에서 verified fact 증가도 goal과 무관할 수 있다는 한계가 남아 있음을 확인했다. 이를 해결하기 위해 `DomainProfile.task_progress_snapshot()`이라는 명시적 profile-owned extension point를 추가했다.
 
-### Candidate 1 — CI `31950606445`
+기본 profile은 `None`을 반환하며 **task/world progress authority를 전혀 갖지 않는다.** Opt-in profile만 다음 deterministic schema를 제공할 수 있다.
 
 ```text
-147 passed / 5 skipped / 1 failed
+{
+  "milestones": [unique stable strings...],
+  "score": finite non-negative number
+}
 ```
 
-실패한 unit test는 `첫 novel successful observation = progress`를 기대했다. 새 보장을 되돌리지 않고 test의 의미를 다음처럼 교정했다.
+Kernel은 다음 조건에서만 TASK progress credit 1을 부여한다.
+
+- 기존 milestone이 제거되지 않은 상태에서 새 milestone이 추가됨;
+- 기존 score가 감소하지 않은 상태에서 score가 증가함.
+
+다음은 progress가 아니다.
+
+- milestone 제거;
+- score 감소;
+- arbitrary snapshot churn;
+- Actor prose;
+- retrieval content;
+- default profile의 state 변화.
+
+또한 hook은 durable `HarnessState`에 대해 pure해야 한다. 호출 전후 state hash가 달라지면 `IntegrityError`로 fail closed한다. snapshot schema는 deterministic JSON이어야 하고 milestone 수/길이와 전체 serialized byte 크기를 제한한다.
+
+## 구조 재검토에서 발견한 추가 오류와 수정
+
+첫 task/world 구현 candidate는 deterministic snapshot의 **hash가 달라지기만 하면 progress**로 판단했다. 이 candidate는 CI가 green이었지만, 재검토에서 다음 구조 오류를 발견했다.
 
 ```text
-first novel observation = activity only
-same evidence after strategy switch = activity only
-verified fact transition = actual epistemic progress
+milestone A -> milestone 없음
+score 10 -> 2
 ```
 
-commit: `7350770...`.
+도 단순 hash change이므로 progress로 오인될 수 있었다.
 
-### Candidate 2 — CI `31950681824`
+Green CI를 완료 근거로 사용하지 않고 contract를 monotonic milestone/score advancement로 좁혔다. regression은 `progress.task_regression`으로 기록하되 credit 0으로 처리한다. 한 transition 중 task-progress authority가 `None <-> object`로 토글되는 경우도 fail closed한다.
 
-full pytest:
+## Evidence
+
+새 unit tests는 다음을 검증한다.
+
+- profile-explicit monotonic advance만 task progress;
+- default profile에는 task authority 없음;
+- milestone regression은 progress가 아님;
+- score 감소는 progress가 아님;
+- snapshot hook의 durable-state mutation 차단;
+- unsupported schema 차단;
+- milestone bound;
+- authority availability toggle 차단.
+
+Direct probe: `scripts/stage6_task_world_progress_probe.py` (`task-world-progress-v2`).
+
+최종 검증 HEAD `d72f7e9b468702fb2a787870278e4008919acabb`, CI `31957540019`에서:
 
 ```text
-148 passed / 5 skipped
+Full pytest: 205 passed / 5 skipped
+Stage06 base/adversarial/resume/boundary/strategy: PASS
+Stage06 task-world progress probe: PASS
+implicit_task_authority = 0
+regressions_credited = 0
+snapshot_state_mutations_accepted = 0
 ```
 
-그러나 별도 Stage06 strategy direct probe가 같은 legacy assumption을 보유해 FAIL했다. direct probe도 test와 동일하게 **oracle 자체를 새 contract로 migration**했다.
+## 현재 주장 가능한 범위
 
-commit: `8aaf70a...`.
-
-### Final — CI `31950847647`
-
-전체 workflow SUCCESS.
-
-Stage07 후속 변경이 올라간 최종 integration CI `31950971636`에서도 Stage06 base/adversarial/resume/boundary/strategy probes가 모두 SUCCESS였다.
-
-## Direct evidence
-
-semantic progress probe에서:
-
-```text
-novel volatile outputs:
-  activity_events = 3
-  progress_events = 0
-  no_progress_failures = 1
-
-verified fact delta:
-  epistemic_events = 1
-  max_credit = 1.0
-```
-
-따라서 “새 output을 계속 만들면 no-progress를 무기한 회피”하는 기존 조건은 제거되었다.
+- novel activity는 progress authority가 아니다.
+- verified fact semantic transition은 epistemic progress로 구분된다.
+- profile이 명시적으로 제공한 deterministic monotonic milestone/score advance만 task/world progress authority를 갖는다.
+- task regression/churn은 no-progress horizon을 reset하지 않는다.
+- arbitrary LLM semantic judge는 progress authority가 아니다.
 
 ## 잔여 한계
 
-verified fact 증가도 goal과 무관할 수 있다. 따라서 현재 Stage06가 **완전한 semantic task progress**를 해결했다고 주장하지 않는다.
-
-향후에는 profile/oracle이 acceptance coverage, verified goal claim, external task state transition 같은 evidence-backed task/world milestone을 제공하는 방향이 필요하다. `../04_OPEN_ITEMS.md` 참조.
+이 mechanism은 **goal-distance를 자동 추론하지 않는다.** built-in profile마다 실제 어떤 milestone/score가 domain상 올바른지는 별도 profile contract와 benchmark가 필요하다. 즉 mechanism은 닫혔지만 software/CTF/hackathon별 task-progress semantics의 empirical coverage까지 증명한 것은 아니다.
