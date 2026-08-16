@@ -10,6 +10,11 @@ from harness.core.verification import (
 from harness.core.claim_contracts import ClaimContractRegistry, ClaimContractRule
 from harness.core.oracles import CommandCompletionOracle, SealedCommandCompletionOracle, NeverAcceptOracle
 from harness.core.tools import make_shell_tool
+from .software_verification import (
+    SoftwareBuildResultVerifier,
+    SoftwareTestResultVerifier,
+    SoftwareBehavioralAcceptanceVerifier,
+)
 from .base import DomainProfile
 
 
@@ -45,7 +50,14 @@ class SoftwareProfile(DomainProfile):
         return {"shell": make_shell_tool(self.workspace, backend=self.execution_backend)}
 
     def verifiers(self):
-        return [ExistsVerifier(), EvidenceRefVerifier(), StructuredArtifactAssertionVerifier()]
+        return [
+            ExistsVerifier(),
+            EvidenceRefVerifier(),
+            StructuredArtifactAssertionVerifier(),
+            SoftwareBuildResultVerifier(),
+            SoftwareTestResultVerifier(),
+            SoftwareBehavioralAcceptanceVerifier(),
+        ]
 
     def minimum_verification_level(self):
         return VerificationLevel.EXECUTION
@@ -60,6 +72,17 @@ class SoftwareProfile(DomainProfile):
             ),
         )
 
+    @staticmethod
+    def _software_execution_contract(coverage: str):
+        return VerificationContract(
+            minimum_level=VerificationLevel.EXECUTION,
+            requirements=(
+                VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),
+                VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
+                VerificationRequirement(coverage, VerificationLevel.EXECUTION, require_evidence=True, minimum_confidence=1.0),
+            ),
+        )
+
     def claim_verification_registry(self):
         return ClaimContractRegistry((
             ClaimContractRule(
@@ -67,6 +90,24 @@ class SoftwareProfile(DomainProfile):
                 key_prefix="artifact_assertion.",
                 contract=self.verification_contract(),
                 allowed_verifiers=("exists", "evidence_ref", "structured_artifact_assertion"),
+            ),
+            ClaimContractRule(
+                claim_class="software.build_result",
+                key_prefix="software.build_result.",
+                contract=self._software_execution_contract("software_build_execution"),
+                allowed_verifiers=("exists", "evidence_ref", "software_build_result"),
+            ),
+            ClaimContractRule(
+                claim_class="software.test_result",
+                key_prefix="software.test_result.",
+                contract=self._software_execution_contract("software_test_execution"),
+                allowed_verifiers=("exists", "evidence_ref", "software_test_result"),
+            ),
+            ClaimContractRule(
+                claim_class="software.behavioral_acceptance",
+                key_prefix="software.behavioral_acceptance.",
+                contract=self._software_execution_contract("software_behavior_execution"),
+                allowed_verifiers=("exists", "evidence_ref", "software_behavioral_acceptance"),
             ),
         ))
 
