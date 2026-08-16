@@ -59,3 +59,5 @@ jobs:
         run: python scripts/stage2_nested_submount_probe.py
       - name: Stage 02 mount-topology cost probe
         run: python scripts/remediation_mount_topology_cost_probe.py
+      - name: Stage 02 backend-execution binding probe
+        run: python scripts/stage2_tool_backend_binding_probe.py
