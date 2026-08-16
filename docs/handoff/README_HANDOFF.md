@@ -1,61 +1,61 @@
 # Verified-State Harness — Current Agent Handoff
 
-Historical Stage 02 PARTIAL material remains preserved in the archive. Stage 02 was subsequently closed by the production Linux namespace backend and direct attack probes.
-
 ## Current status
 
 ```text
 Stage 00  COMPLETE
-Stage 01  COMPLETE for scoped P0 defects
+Stage 01  COMPLETE
 Stage 02  PASS / EXITED
 Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
-Stage 05  NEXT / NOT STARTED
+Stage 05  PASS / EXITED   v0.6.0
+Stage 06  NEXT / NOT STARTED
 ```
 
-## Most recent evidence
+## Stage 05 final evidence
 
-Stage 04 promotion candidate `v0.5.0-rc3`:
+Final candidate `v0.6.0-rc6`:
 
 ```text
-GitHub Actions run         31934328945
-pytest                     69 passed / 5 skipped
-semantic matrix            8 / 8 PASS
-false positives            0
-false negatives            0
-level inflation            blocked
-artifact content tamper    blocked
-semantic-key masquerade    blocked
-cross-version resume       blocked
+commit                     c50a4bd15a86b3e26bf1fe52c15edde61738edd0
+GitHub Actions             31936441736
+pytest                     94 passed / 5 skipped
+Stage 03 resume            4 / 4 PASS; duplicate=0
+Stage 04 semantic          8 / 8 PASS; FP=0/FN=0
+Stage 05 recovery          PASS
+Stage 05 adversarial       PASS
+Stage 05 terminal          PASS
+Stage 05 crash-window      PASS
+Stage 05 strategy-gen      PASS
 ```
 
-The five skips are live Linux namespace tests on a hosted environment that could not establish production `runtime_probe`; they do not replace Stage 02 direct production evidence.
+Five skips are hosted-environment live Linux namespace tests. They do not replace Stage 02 production isolation evidence.
 
-## Project objective
+## Stage 05 guarantee boundary
 
-Build a **General Harness Kernel + Domain Profile** architecture where Actor output may propose and act, but trusted truth/completion/state transitions remain harness-owned and evidence-gated.
+The kernel durably schedules/applies recovery control transitions and terminal fail-closed states. It does **not** guarantee that an LLM semantically follows REPAIR/REPLAN, does not provide exactly-once Actor directive delivery, and does not transactionally roll back arbitrary external systems.
 
 ## Mandatory workflow
 
 ```text
 Inspect current implementation/evidence
-→ Reproduce baseline
-→ Freeze active stage contract
-→ Implement active stage only
-→ Unit/integration/adversarial tests
-→ Full regression
-→ Logic/security/integrity re-review
-→ Freeze raw evidence
-→ Detailed stage report + decision log + evidence matrix
-→ PASS/PARTIAL/FAIL
-→ Continue only on PASS
+-> reproduce baseline
+-> freeze active Stage contract
+-> implement one semantic axis
+-> targeted + adversarial tests
+-> full regression + prior Stage probes
+-> logic/security/integrity re-review
+-> freeze evidence
+-> implementation/error/methodology + final-review + exit MD
+-> PASS/PARTIAL/FAIL
+-> continue only on PASS
 ```
 
 ## Branch rule
 
-Use the existing `research/verified-state-stage03` branch as the single continuing development branch. Do not create a new Stage branch. `main` remains the preserved legacy Base Harness.
+Continue only on `research/verified-state-stage03`. Do not create a Stage branch. Do not modify `main` as part of this development line.
 
-## Next agent read order
+## Read order
 
 1. `00_PROJECT_CONTEXT.md`
 2. `01_ARCHITECTURE.md`
@@ -66,8 +66,9 @@ Use the existing `research/verified-state-stage03` branch as the single continui
 7. `06_EVIDENCE_STANDARD.md`
 8. `08_AGENT_OPERATING_RULES.md`
 9. `15_DO_NOT_DO.md`
-10. `../STAGE4_IMPLEMENTATION_REPORT.md`
-11. `../STAGE4_FINAL_REREVIEW.md`
-12. `../STAGE4_EXIT_DECISION.md`
+10. `../STAGE5_IMPLEMENTATION_REPORT.md`
+11. `../STAGE5_EVIDENCE_MATRIX.md`
+12. `../STAGE5_FINAL_REREVIEW.md`
+13. `../STAGE5_EXIT_DECISION.md`
 
-The next agent's first task is Stage 05 contract review, not feature expansion.
+The next agent's first task is to re-review the v0.6.0 baseline and freeze the Stage 06 Progress Contract. Do not start with embeddings or an LLM similarity judge.

@@ -1,46 +1,61 @@
 # Stage 05 — Failure Recovery
 
-Status: **NEXT / NOT STARTED**.
+Status: **PASS / EXITED**  
+Release: **v0.6.0**
 
-## Entry condition
+## Result
 
-Stage 04 Semantic Verification must be PASS / EXITED. Satisfied by `v0.5.0`.
-
-## Problem statement
-
-The current `FailureRouter` maps failure kinds to a `RecoveryAction` and changes the recommendation after repeated failures, but the runtime mostly records that recommendation. The next research question is whether recovery can become a **kernel-owned, durable transition** rather than advisory text.
-
-## First task
-
-Before implementation, freeze a Recovery Transition Contract covering:
-
-- which component owns recovery authorization;
-- allowed state mutations per recovery action;
-- rollback target and evidence requirements;
-- interaction with checkpoint/event/receipt state;
-- repeat/no-progress escalation rules;
-- recovery budget accounting;
-- how a recovery transition is prevented from bypassing verification, tool isolation, or completion oracle gates.
-
-## Required scenarios
-
-At minimum:
+Failure recovery is now a kernel-owned durable transition rather than a recommendation stored in logs.
 
 ```text
-tool error            → repair transition
-missing information   → observe transition
-verification failure  → replan transition
-refuted hypothesis    → rollback transition
-repeated same failure → switch strategy once threshold is reached
-persistence ambiguity → checkpoint-stop / fail closed
-security violation    → no unsafe automatic retry
-resume during recovery→ deterministic recovery state
+Failure
+ -> typed route
+ -> PENDING recovery
+ -> immediate checkpoint
+ -> apply before Actor
+ -> APPLIED / SUPERSEDED
+ -> immediate checkpoint
+ -> Actor directive or terminal halt
 ```
 
-## Non-goals
+## Implemented
 
-Stage 05 is not yet semantic loop detection, token optimization, RAG, skill learning, planner hierarchy, or subagent orchestration.
+- durable `RecoveryTransition` and `RecoveryStatus`;
+- pending/history/directive/strategy/terminal recovery state;
+- control-only REPAIR / OBSERVE / REPLAN / RETRY;
+- logical-only ROLLBACK of targeted untrusted hypothesis;
+- strategy generation and generation-scoped repeat counts;
+- terminal CHECKPOINT_STOP for security, persistence ambiguity, and hard budget;
+- immediate recovery scheduling/application checkpoints;
+- resume-before-Actor ordering;
+- explicit stateful-controller checkpoint protocol;
+- recovery boundary budget recheck;
+- meaningful-number-preserving failure signatures plus explicit `signature_key` override.
 
-## Exit direction
+## Final candidate
 
-A recovery recommendation printed in logs is insufficient. PASS requires direct evidence that the runtime transition changes safely and durably, with no bypass of Stage 01–04 gates.
+`v0.6.0-rc6` — commit `c50a4bd15a86b3e26bf1fe52c15edde61738edd0`
+
+GitHub Actions `31936441736`:
+
+```text
+94 passed / 5 skipped
+Stage 03 direct probe       PASS
+Stage 04 semantic probe     PASS
+Stage 05 recovery probe     PASS
+Stage 05 adversarial        PASS
+Stage 05 terminal           PASS
+Stage 05 crash-window       PASS
+Stage 05 strategy generation PASS
+```
+
+## Important boundary
+
+This Stage provides durable recovery **control semantics**. It does not prove that a model will follow a REPAIR/REPLAN directive semantically, and it does not roll back arbitrary external state.
+
+See:
+- `../../STAGE5_IMPLEMENTATION_REPORT.md`
+- `../../STAGE5_EVIDENCE_MATRIX.md`
+- `../../STAGE5_FINAL_REREVIEW.md`
+- `../../STAGE5_EXIT_DECISION.md`
+- `CONTRACT.md`

@@ -1,0 +1,62 @@
+{
+  "stage": "05",
+  "decision": "PASS",
+  "target_release": "v0.6.0",
+  "final_candidate": {
+    "version": "v0.6.0-rc6",
+    "commit": "c50a4bd15a86b3e26bf1fe52c15edde61738edd0",
+    "github_actions_run": 31936441736,
+    "pytest": {"passed": 94, "skipped": 5},
+    "compileall": "PASS"
+  },
+  "preflight": {
+    "v0.5.1_run": 31935087009,
+    "v0.5.2_run": 31935462946,
+    "provenance_drift_guards": "PASS",
+    "stateful_controller_resume": "PASS"
+  },
+  "stage03_regression": {
+    "probe_count": 4,
+    "passed": 4,
+    "duplicate_external_actions": 0,
+    "checkpoint_corruption_fail_closed": true,
+    "deterministic_replay": true,
+    "forced_kill_resume": true
+  },
+  "stage04_regression": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "artifact_tamper_blocked": true,
+    "semantic_key_masquerade_blocked": true
+  },
+  "stage05": {
+    "base_recovery_probe": "PASS",
+    "adversarial_probe": "PASS",
+    "terminal_probe": "PASS",
+    "crash_window_probe": "PASS",
+    "strategy_generation_probe": "PASS",
+    "unsafe_automatic_retries": 0,
+    "verified_fact_mutations": 0,
+    "ambiguous_external_executions": 0,
+    "lost_scheduled_recoveries": 0,
+    "hard_budget_step_overshoot": 0,
+    "audit_link_mismatches": 0,
+    "numeric_signature_collisions_in_test_matrix": 0,
+    "resume_recovery_divergence": 0,
+    "consecutive_strategy_switch_after_one_new_generation_failure": 0
+  },
+  "candidate_history": [
+    {"candidate": "rc1", "result": "FAIL", "finding": "legacy test expected old step_once return contract"},
+    {"candidate": "rc2", "result": "PASS_WITH_REREVIEW_FINDINGS", "findings": ["numeric failure signature collision", "budget step overshoot", "audit linkage mismatch"]},
+    {"candidate": "rc3", "result": "PASS_WITH_REREVIEW_FINDING", "finding": "persistence ambiguity could halt before terminal transition applied"},
+    {"candidate": "rc4", "result": "PASS_WITH_REREVIEW_FINDINGS", "findings": ["recovery scheduling crash window", "recovery-boundary budget race"]},
+    {"candidate": "rc5", "result": "PASS_WITH_REREVIEW_FINDING", "finding": "repeat count not scoped to strategy generation"},
+    {"candidate": "rc6", "result": "PASS", "unresolved_critical_high": 0}
+  ],
+  "environment": {
+    "hosted_namespace_tests_skipped": 5,
+    "interpretation": "not Stage 02 production evidence; live runtime_probe unavailable on hosted runner"
+  }
+}

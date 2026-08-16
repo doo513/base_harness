@@ -1,25 +1,22 @@
 # 02 — Current Status
 
-## Stage 00 — Research Contract
+## Stage status
 
-Status: **COMPLETE**.
+```text
+Stage 00  COMPLETE
+Stage 01  COMPLETE for scoped P0 defects
+Stage 02  PASS / EXITED
+Stage 03  PASS / EXITED   v0.4.0
+Stage 04  PASS / EXITED   v0.5.0
+Stage 05  PASS / EXITED   v0.6.0
+Stage 06  NEXT / NOT STARTED
+```
 
-## Stage 01 — Truth / Execution Hardening
+## Stage 02 boundary
 
-Status: **COMPLETE** for the scoped P0 defects.
+`LinuxNamespaceSandboxBackend` is production-isolated only when live `runtime_probe` succeeds. Five current hosted-CI namespace tests skip because that environment cannot establish the production probe; these skips are not treated as PASS evidence and do not replace the previously recorded direct Stage 02 attack evidence.
 
-## Stage 02 — Capability Isolation + Sealed Oracle
-
-Status: **PASS / EXITED** for `LinuxNamespaceSandboxBackend` when live `runtime_probe` succeeds.
-
-Stage 02 production guarantee remains environment-dependent and is not redefined by later hosted-CI skips.
-
-## Stage 03 — Persistence / Resume / Reproducibility
-
-Status: **PASS / EXITED**.  
-Version: `v0.4.0`.
-
-Core guarantee:
+## Stage 03 guarantee
 
 ```text
 COMMITTED non-idempotent receipt -> deduplicate
@@ -28,43 +25,51 @@ PREPARED-only receipt            -> ambiguous, halt/fail closed
 
 This is at-most-once automatic execution, not universal exactly-once semantics.
 
-## Stage 04 — Semantic Verification
+## Stage 04 guarantee
+
+Domain `VerificationContract` controls verifier coverage/strength/evidence requirements. Generic structured assertions are evidence-integrity checked and cannot masquerade as arbitrary domain-semantic facts. Natural-language truth is not generically solved.
+
+## Stage 05 — Failure Recovery
 
 Status: **PASS / EXITED**.  
-Version: `v0.5.0`.
+Version: `v0.6.0`.
 
 Implemented:
+- execution-semantic resume provenance hardening (`v0.5.1`);
+- explicit stateful-controller checkpoint protocol (`v0.5.2`);
+- durable `RecoveryTransition` PENDING/APPLIED/SUPERSEDED state;
+- immediate scheduling/application checkpoints;
+- recovery-before-Actor ordering on resume;
+- logical-only speculative rollback;
+- explicit retry-safety gate;
+- terminal fail-closed recovery for security/persistence/budget;
+- generation-scoped repeat escalation;
+- failure/recovery audit linkage and budget-boundary checks.
 
-- explicit Domain `VerificationContract`;
-- verifier level/coverage normalization;
-- evidence/strength/coverage requirements;
-- read-time content-address artifact integrity verification;
-- narrow `StructuredArtifactAssertionVerifier`;
-- generic assertion namespace `artifact_assertion.*`;
-- `SUPPORTED` authority for structural/logical facts;
-- verification contract/verifier metadata in reproducibility fingerprint;
-- fail-closed cross-version resume guard.
-
-Promotion candidate evidence:
+Final candidate evidence (`v0.6.0-rc6`, commit `c50a4bd15a86b3e26bf1fe52c15edde61738edd0`, Actions `31936441736`):
 
 ```text
-candidate                v0.5.0-rc3
-candidate commit          11e707cf04ea76f20a9b810d159a58fe1c1e2430
-GitHub Actions run        31934328945
-full pytest               69 passed / 5 skipped
-semantic matrix           8 / 8 PASS
-false positives           0
-false negatives           0
-level inflation           BLOCKED
-artifact tamper           BLOCKED
-semantic-key masquerade   BLOCKED
-version drift resume      BLOCKED
+pytest                             94 passed / 5 skipped
+Stage 03 resume probe              4 / 4 PASS
+duplicate external actions        0
+Stage 04 semantic matrix           8 / 8 PASS
+Stage 04 FP / FN                   0 / 0
+Stage 05 base recovery             PASS
+Stage 05 adversarial               PASS
+Stage 05 terminal                  PASS
+Stage 05 crash-window              PASS
+Stage 05 strategy generation       PASS
+unsafe automatic retries           0
+verified-fact recovery mutations   0
+ambiguous external executions      0
+lost scheduled recoveries          0
+hard-budget step overshoot          0
 ```
 
-Important scope: generic natural-language truth is not solved. Domain-semantic facts require Domain Profile verifier coverage.
+Important scope: Stage 05 proves durable recovery-control state, not guaranteed LLM semantic repair or external transaction rollback.
 
 ## Current unresolved work
 
-The next allowed Stage is **Stage 05 — Failure Recovery**.
+The next allowed Stage is **Stage 06 — Loop / Progress Control**.
 
-The current `FailureRouter` recommends `REPAIR`, `OBSERVE`, `ROLLBACK`, `REPLAN`, `SWITCH_STRATEGY`, etc., but recovery is not yet a first-class durable kernel transition. Stage 05 must freeze that transition contract before implementation.
+Before implementation, freeze a Progress Contract defining kernel-observable progress, no-progress identity, generation/reset semantics, escalation policy, and interaction with Stage 05 recovery. Do not begin with an embedding/LLM similarity heuristic.

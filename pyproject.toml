@@ -1,6 +1,6 @@
 [project]
 name = "verified-state-harness"
-version = "0.6.0rc6"
+version = "0.6.0"
 requires-python = ">=3.11"
 dependencies = []
 

@@ -1,55 +1,59 @@
 # 03 — Next Stage Task
 
-# Stage 05 — Failure Recovery
+# Stage 06 — Loop / Progress Control
 
-Version target: `v0.6.0` only after PASS.
+Version target: `v0.7.0` only after PASS.
 
 ## Entry condition
 
-Stage 04 Semantic Verification must be PASS / EXITED with no known false semantic promotion path in the declared generic contract. Entry is satisfied by `v0.5.0`.
+Stage 05 Failure Recovery must be PASS / EXITED with durable recovery scheduling/application, no known security/persistence retry bypass, and no unresolved Critical/High recovery defect. Entry is satisfied by `v0.6.0` once the release snapshot CI succeeds.
 
-## Current defect to address
+## Research question
 
-`FailureRouter` currently maps a `FailureKind` to a recommended `RecoveryAction`, and repeated failures may change the recommendation to `SWITCH_STRATEGY`. The runtime records this recommendation in failure history, but that is not equivalent to an actual recovery state transition.
+How can the Kernel distinguish **meaningful progress** from repeated/no-progress behavior without trusting the Actor to self-report progress and without turning a heuristic similarity score into truth authority?
 
 ## First action
 
-Do not immediately add planners, loop detectors, or agents.
+Freeze a **Progress Contract** before implementation.
 
-First freeze a **Recovery Transition Contract** specifying:
+It must define:
 
-1. recovery authority owner;
-2. legal transition for every RecoveryAction;
-3. what trusted state may be rolled back or preserved;
-4. checkpoint/event/receipt behavior during recovery;
-5. repeat threshold and strategy-switch semantics;
-6. budget accounting;
-7. security/persistence failures that must halt rather than retry;
-8. resume semantics for an interrupted recovery transition.
+1. which observable state changes count as progress;
+2. normalized action/failure/target/purpose signatures;
+3. relationship to `strategy_generation`;
+4. when progress resets a no-progress counter;
+5. when repetition triggers Stage 05 `REPLAN`, `SWITCH_STRATEGY`, or terminal escalation;
+6. budget accounting for repeated work;
+7. persistence/resume behavior for progress state;
+8. false-positive protection so equivalent useful retries are not blocked incorrectly;
+9. false-negative protection so cosmetic argument changes do not evade loop detection;
+10. evidence required before any semantic extension beyond deterministic signatures.
 
-## Required direct scenarios
+## Initial constraint
 
-- `TOOL_ERROR` → repair transition without replaying committed external effect;
-- `MISSING_INFO` → observe transition;
-- `VERIFICATION_FAILED` → replan transition without promoting rejected claim;
-- `HYPOTHESIS_REFUTED` → rollback transition;
-- repeated same signature → strategy switch at declared threshold;
-- `PERSISTENCE_ERROR` or ambiguous receipt → checkpoint-stop/fail closed;
-- security violation → no automatic unsafe retry;
-- forced interruption during recovery → deterministic resume;
-- recovery event/checkpoint mismatch → fail closed.
+Do **not** begin with embeddings, an LLM judge, a planner hierarchy, or a general semantic similarity subsystem. Start with deterministic, inspectable progress signals and a synthetic adversarial matrix.
 
-## Exit minimum
+## Candidate observable signals
 
-```text
-recovery recommendation changes actual runtime state     PASS
-recovery transition is durably replayable                PASS
-no truth/verification/oracle bypass                       PASS
-no duplicate non-idempotent external action              PASS
-repeated failure escalation deterministic                PASS
-full Stage 01–04 regression                              PASS
-```
+- verified fact set/hash change;
+- new integrity-checked evidence/artifact;
+- hypothesis/refutation state change;
+- completion-oracle result change;
+- tool target/purpose/action signature;
+- repeated failure signature within a strategy generation;
+- strategy generation change;
+- explicit unknown resolved/introduced.
 
-## Non-goals
+These are candidates, not yet frozen semantics.
 
-Semantic no-progress detection, optimization/budget policy research, RAG, skills, subagents, planner hierarchy, or model routing remain later work.
+## Required preservation
+
+- Actor cannot self-promote progress into truth.
+- Stage 03 receipt semantics remain authoritative for side effects.
+- Stage 04 verification remains authoritative for facts.
+- Stage 05 recovery remains kernel-owned.
+- no hidden retry loop outside hard budget.
+
+## Exit direction
+
+PASS requires direct evidence that repeated non-progress paths are bounded and cause deterministic recovery/escalation while legitimate evidence-producing retries continue, with Stage 01–05 regression preserved.
