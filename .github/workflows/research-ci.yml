@@ -57,3 +57,5 @@ jobs:
         run: python scripts/remediation_artifact_cost_probe.py
       - name: Stage 02 nested read-only submount probe
         run: python scripts/stage2_nested_submount_probe.py
+      - name: Stage 02 mount-topology cost probe
+        run: python scripts/remediation_mount_topology_cost_probe.py
