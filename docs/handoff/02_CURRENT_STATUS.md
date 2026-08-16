@@ -9,7 +9,8 @@ Stage 02  PASS / EXITED
 Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
 Stage 05  PASS / EXITED   v0.6.0
-Stage 06  PASS CANDIDATE  v0.7.0 release verification pending
+Stage 06  PASS / EXITED   v0.7.0
+Stage 07  NEXT / NOT STARTED
 ```
 
 ## Existing guarantee boundaries
@@ -18,10 +19,34 @@ Stage 06  PASS CANDIDATE  v0.7.0 release verification pending
 - Stage 03 non-idempotent execution is at-most-once automatic execution, not universal exactly-once semantics.
 - Stage 04 generic structured verification does not solve arbitrary natural-language truth.
 - Stage 05 proves durable recovery-control state, not guaranteed LLM semantic repair or arbitrary external rollback.
+- Stage 06 proves deterministic/syntactic progress control, not semantic usefulness or goal relevance.
 
-## Stage 06 candidate
+## Stage 06 — Loop / Progress Control
 
-Final candidate before release promotion: `v0.7.0-rc3`, commit `3188ea75f7ca3d503cd8557cd7dd8bd562eaa2d4`, GitHub Actions `31937830666`.
+Status: **PASS / EXITED**.  
+Version: `v0.7.0`.  
+Release commit: `02d0b262756cd8f7eb32b6757f3b3066d94b63f1`.  
+Release Actions: `31938225096`.
+
+Implemented:
+
+- deterministic `ProgressPolicy` in execution provenance;
+- durable checkpointed `ProgressState`;
+- Actor decision family and normalized exact identities;
+- Actor narrative/speculative churn excluded from progress authority;
+- verified fact semantic-content progress excluding evidence-ref metadata churn;
+- successful evidence novelty only after artifact integrity verification;
+- historical successful evidence revalidation before Actor continuation;
+- specific Stage 05 failure precedence;
+- same-family and global no-progress windows;
+- stable global no-progress Stage 05 repeat identity;
+- recovery transitions excluded from Actor progress sampling;
+- strategy switch resets local windows but is not progress;
+- identical evidence remains known after a strategy switch;
+- strategy exhaustion -> `STRATEGY_EXHAUSTED` -> terminal Stage 05 `ESCALATE`;
+- deterministic progress/controller resume and policy-drift fail closed.
+
+Release evidence:
 
 ```text
 pytest                              112 passed / 5 skipped
@@ -36,24 +61,15 @@ Stage 06 strategy                   6 / 6 PASS
 zero-tolerance Stage 06 counters    all 0
 ```
 
-Implemented candidate semantics:
+Known boundaries:
 
-- progress policy and state are durable/provenance-bound;
-- Actor narrative/speculation cannot self-declare progress;
-- verified fact semantic-content changes can be progress while evidence-ref metadata churn cannot;
-- successful evidence must be integrity checked and content-novel;
-- historical successful evidence is revalidated before Actor continuation;
-- specific Stage 05 failures outrank generic no-progress;
-- recovery is not an Actor progress sample;
-- same-family and global no-progress windows are deterministic;
-- strategy switch resets local windows but is not progress;
-- identical evidence remains known across strategies;
-- strategy exhaustion routes to terminal Stage 05 `ESCALATE`.
+- syntactic novelty is not semantic usefulness;
+- verified truth is not automatically goal relevance;
+- continually changing valid outputs can remain novel until hard budget;
+- historical successful-artifact revalidation has cumulative performance cost.
 
-Known boundaries: semantic relevance is not solved and historical evidence revalidation has cumulative performance cost.
+## Current unresolved work
 
-## Current gate
+The next allowed Stage is **Stage 07 — Context Governance**.
 
-The package/version is being promoted to the `v0.7.0` release snapshot. **Do not begin Stage 07 until the release snapshot independently passes the same CI/probe matrix and `STAGE6_EXIT_DECISION.md` records PASS / EXITED.**
-
-After that gate, the next planned Stage is **Stage 07 — Context Governance** with a Context Projection Contract first.
+The current `_context()` path exposes broad facts, hypotheses, refutations, observations, recent failures, recovery, progress, and tool metadata directly to the Actor. Stage 07 must freeze a **Context Projection Contract** before adding summaries, retrieval, long-term memory, or RAG.

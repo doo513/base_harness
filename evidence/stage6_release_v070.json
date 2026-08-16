@@ -1,0 +1,55 @@
+{
+  "stage": "06",
+  "decision": "PASS_EXITED",
+  "release_version": "0.7.0",
+  "release_commit": "02d0b262756cd8f7eb32b6757f3b3066d94b63f1",
+  "github_actions_run": 31938225096,
+  "pytest": {"passed": 112, "skipped": 5, "failed": 0},
+  "stage03_resume": {"passed": 4, "total": 4, "duplicate_external_actions": 0},
+  "stage04_semantic": {"passed": 8, "total": 8, "false_positives": 0, "false_negatives": 0},
+  "stage05": {
+    "base_recovery": true,
+    "adversarial": true,
+    "terminal": true,
+    "crash_window": true,
+    "strategy_generation": true
+  },
+  "stage06": {
+    "base": {"passed": 3, "total": 3, "actor_self_progress_acceptances": 0},
+    "adversarial": {
+      "passed": 3,
+      "total": 3,
+      "cosmetic_evasions": 0,
+      "specific_failure_supersessions": 0,
+      "tamper_progress_acceptances": 0
+    },
+    "resume": {
+      "passed": 3,
+      "total": 3,
+      "resume_progress_divergence": 0,
+      "policy_drift_acceptances": 0
+    },
+    "boundary": {
+      "passed": 4,
+      "total": 4,
+      "historical_tamper_actor_calls": 0,
+      "global_repeat_identity_divergence": 0,
+      "fact_metadata_false_progress": 0,
+      "whitespace_false_no_progress": 0
+    },
+    "strategy": {
+      "passed": 6,
+      "total": 6,
+      "recovery_actor_samples": 0,
+      "failed_output_progress_acceptances": 0,
+      "strategy_exhaustion_nonterminal": 0
+    }
+  },
+  "unresolved_critical_high_findings": 0,
+  "known_limits": [
+    "syntactically novel successful evidence is not proof of semantic usefulness or goal relevance",
+    "a newly verified fact can be true but irrelevant to the active goal",
+    "historical successful evidence is re-hashed before each Actor boundary, creating cumulative O(n^2)-like work over growing histories"
+  ],
+  "next_stage": "07-context-governance"
+}

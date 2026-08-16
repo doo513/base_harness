@@ -9,12 +9,13 @@ Stage 02  PASS / EXITED
 Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
 Stage 05  PASS / EXITED   v0.6.0
-Stage 06  PASS CANDIDATE  v0.7.0 release verification pending
+Stage 06  PASS / EXITED   v0.7.0
+Stage 07  NEXT / NOT STARTED
 ```
 
-## Stage 06 final candidate evidence
+## Stage 06 release evidence
 
-`v0.7.0-rc3` / commit `3188ea75f7ca3d503cd8557cd7dd8bd562eaa2d4` / Actions `31937830666`:
+`v0.7.0` / release commit `02d0b262756cd8f7eb32b6757f3b3066d94b63f1` / Actions `31938225096`:
 
 ```text
 pytest                     112 passed / 5 skipped
@@ -70,6 +71,7 @@ Continue only on `research/verified-state-stage03`. Do not create a Stage branch
 11. `../STAGE6_IMPLEMENTATION_REPORT.md`
 12. `../STAGE6_EVIDENCE_MATRIX.md`
 13. `../STAGE6_FINAL_REREVIEW.md`
-14. `../stages/stage-06-loop-progress/CONTRACT.md`
+14. `../STAGE6_EXIT_DECISION.md`
+15. `../stages/stage-06-loop-progress/CONTRACT.md`
 
-The immediate task is **release verification for `v0.7.0`**. Only after that succeeds and `STAGE6_EXIT_DECISION.md` is written may Stage 07 Context Governance begin.
+The next agent's first task is to re-review the `v0.7.0` baseline and freeze the **Stage 07 Context Projection Contract**. Do not start by adding RAG, embeddings, LLM summarization, or long-term memory.

@@ -35,34 +35,51 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) |
 | 04 | Semantic verification | PASS / EXITED (`v0.5.0`) |
 | 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
-| 06 | Loop / deterministic progress control | PASS CANDIDATE — `v0.7.0` release verification pending |
+| 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) |
+| 07 | Context Governance | NEXT / NOT STARTED |
 
-Release snapshot package version: **v0.7.0**.
+Current package version: **v0.7.0**.
 
-## Stage 06 candidate result
+## Stage 06 result
 
-- durable `ProgressPolicy` / `ProgressState`;
+Stage 06 adds deterministic, durable progress-control semantics:
+
+- kernel-owned `ProgressPolicy` and checkpointed `ProgressState`;
+- Actor decision family/exact identities resistant to cosmetic payload churn;
 - Actor narrative/speculative churn excluded from progress authority;
-- verified fact semantic-content progress excluding evidence-ref churn;
-- successful observation novelty only after integrity verification;
-- historical successful evidence revalidation before Actor continuation;
-- specific Stage 05 failure precedence;
-- family/global no-progress windows;
-- strategy-generation reset without treating strategy switch as progress;
-- identical evidence remains known after a switch;
-- strategy exhaustion -> Stage 05 terminal `ESCALATE`;
-- deterministic resume and progress-policy provenance.
+- verified fact semantic-content progress that excludes evidence-reference metadata churn;
+- successful observation novelty only after content-address integrity verification;
+- historical successful evidence revalidation before the next Actor boundary;
+- specific Stage 05 failure precedence over generic `NO_PROGRESS`;
+- same-family and global alternating-family no-progress windows;
+- strategy switch resets local windows but is not itself progress;
+- identical evidence remains known after strategy switching;
+- strategy exhaustion routes through Stage 05 terminal `ESCALATE`;
+- progress policy participates in execution provenance and resume determinism.
 
-`v0.7.0-rc3` passed 112 tests with 5 hosted-environment namespace skips plus all Stage 03-06 direct probes. The actual `v0.7.0` snapshot must independently pass the same gates before Stage 06 is EXITED.
+The actual `v0.7.0` release snapshot passed **112 tests with 5 hosted-environment namespace skips** plus all Stage 03–06 direct probes in GitHub Actions run `31938225096`.
 
 ## Guarantee boundaries
 
-Stage 06 is deterministic/syntactic progress control, not semantic usefulness. Novel evidence or a new verified fact is not automatically proven relevant to the active goal. Continually changing valid outputs can remain novel until hard budget. Historical successful-evidence scanning has a known cumulative performance cost.
+### Stage 02
+Production isolation requires a successful live `runtime_probe`. Hosted-runner skips do not count as production isolation proof.
+
+### Stage 03
+Non-idempotent effects are at-most-once automatically executed: COMMITTED receipts deduplicate; PREPARED-only receipts halt/fail closed. No universal exactly-once claim.
+
+### Stage 04
+Generic structured verification does not solve natural-language truth. Domain-semantic facts require domain-specific verifier coverage.
+
+### Stage 05
+Recovery guarantees durable **control transitions**, not guaranteed semantic repair by an LLM and not transactional rollback of arbitrary external systems.
+
+### Stage 06
+Progress control is deterministic/syntactic. Novel evidence or a newly verified fact is not automatically proven relevant to the active goal. Continually changing valid outputs can remain novel until the hard budget ends the run. Historical successful-evidence scanning also has a known cumulative performance cost.
 
 ## Development rule
 
-Use `research/verified-state-stage03` as the single continuing research branch. Do not create a branch per Stage. `main` remains preserved.
+Use `research/verified-state-stage03` as the single continuing research branch. Do not create a branch per Stage. Every completed Stage must include code, tests/probes, machine-readable evidence, implementation/review/exit Markdown reports, and full regression. `main` remains preserved.
 
-## Next work after release verification
+## Next work
 
-If `v0.7.0` release verification passes, the next Stage is **Stage 07 — Context Governance**. It must freeze a Context Projection Contract before summaries, retrieval, or memory are added.
+Stage 07 is **Context Governance**. The current Actor context exposes broad state/observation material directly. Before implementation, Stage 07 must freeze a **Context Projection Contract** defining trusted-vs-untrusted fields, freshness/staleness, bounded deterministic observation selection, raw-evidence retention, context-policy provenance, and the rule that context selection/compression may never rewrite truth authority.
