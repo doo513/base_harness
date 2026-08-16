@@ -80,6 +80,7 @@ class RuntimeContextMixin:
             state=self.state,
             tools=self.actions.tools,
         )
+        projected = self._project_retrieval_context(projected)
         return RuntimeContextProjection(
             projected,
             self._legacy_controller_context(),

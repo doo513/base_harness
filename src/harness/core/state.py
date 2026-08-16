@@ -4,6 +4,7 @@ from typing import Any
 
 from .failures import RecoveryTransition
 from .progress import ProgressState
+from .retrieval import RetrievalState
 
 
 class ClaimStatus(str, Enum):
@@ -81,6 +82,7 @@ class HarnessState:
     recovery_halted: bool = False
     recovery_halt_reason: str | None = None
     progress: ProgressState = field(default_factory=ProgressState)
+    retrieval: RetrievalState = field(default_factory=RetrievalState)
 
     def propose(self, claim: Claim) -> None:
         if claim.status == ClaimStatus.VERIFIED:
@@ -117,6 +119,7 @@ class HarnessState:
             "recovery_halted": self.recovery_halted,
             "recovery_halt_reason": self.recovery_halt_reason,
             "progress": self.progress.dump(),
+            "retrieval": self.retrieval.dump(),
         }
 
     @classmethod
@@ -152,4 +155,5 @@ class HarnessState:
             recovery_halted=bool(raw.get("recovery_halted", False)),
             recovery_halt_reason=raw.get("recovery_halt_reason"),
             progress=ProgressState.load(raw.get("progress", {})),
+            retrieval=RetrievalState.load(raw.get("retrieval")),
         )

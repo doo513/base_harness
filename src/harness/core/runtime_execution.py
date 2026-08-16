@@ -6,6 +6,7 @@ from .tools import ToolCall
 from .security import Principal, Capability
 from .verification import VerificationLevel, VerifierChain
 from .failures import Failure, FailureKind
+from .retrieval import RetrievalContractError, RetrievalUnavailable
 
 
 class RuntimeExecutionMixin:
@@ -269,6 +270,31 @@ class RuntimeExecutionMixin:
                     action=call.tool,
                 ))
 
+        elif decision.kind == "retrieve":
+            try:
+                self._handle_retrieval_request(decision.payload["query"])
+            except (PersistenceError, IntegrityError, ResumeConflict) as exc:
+                self.fail(Failure(
+                    FailureKind.PERSISTENCE_ERROR,
+                    f"retrieval persistence/integrity failure: {exc}",
+                    action="retrieval",
+                    signature_key="stage8:retrieval_persistence_integrity",
+                ))
+            except RetrievalUnavailable as exc:
+                self.fail(Failure(
+                    FailureKind.ENV_ERROR,
+                    str(exc),
+                    action="retrieval",
+                    signature_key="stage8:retrieval_unavailable",
+                ))
+            except RetrievalContractError as exc:
+                self.fail(Failure(
+                    FailureKind.IMPLEMENTATION_ERROR,
+                    f"retrieval contract violation: {exc}",
+                    action="retrieval",
+                    signature_key="stage8:retrieval_contract",
+                ))
+
         elif decision.kind == "complete":
             self._check_completion(decision.payload.get("reason", ""))
 
@@ -296,8 +322,17 @@ class RuntimeExecutionMixin:
 
         try:
             actor_state = HarnessState.from_snapshot(self.state.snapshot())
-            decision = self.controller.decide(self.goal.goal, actor_state, self._context())
+            context = self._context()
+            decision = self.controller.decide(self.goal.goal, actor_state, context)
             decision.validate()
+        except (PersistenceError, IntegrityError, ResumeConflict) as exc:
+            self.fail(Failure(
+                FailureKind.PERSISTENCE_ERROR,
+                f"controller context/state integrity failure: {exc}",
+                action="controller_context",
+                signature_key="stage8:context_retrieval_integrity",
+            ))
+            return False
         except Exception as exc:
             self.fail(Failure(FailureKind.IMPLEMENTATION_ERROR, f"controller error: {type(exc).__name__}: {exc}"))
             return False

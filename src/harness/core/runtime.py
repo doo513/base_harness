@@ -19,7 +19,9 @@ from .budget import Budget
 from .progress import ProgressPolicy
 from .context import ContextPolicy, ContextProjector
 from .provenance import capture_build_provenance
+from .retrieval import RetrievalPolicy
 from .runtime_recovery import RuntimeRecoveryMixin
+from .runtime_retrieval import RuntimeRetrievalMixin
 from .runtime_progress import RuntimeProgressMixin
 from .runtime_context import RuntimeContextMixin
 from .runtime_controller_state import RuntimeControllerStateMixin
@@ -29,13 +31,14 @@ from .runtime_execution import RuntimeExecutionMixin
 
 class HarnessRuntime(
     RuntimeRecoveryMixin,
+    RuntimeRetrievalMixin,
     RuntimeProgressMixin,
     RuntimeContextMixin,
     RuntimeControllerStateMixin,
     RuntimePersistenceMixin,
     RuntimeExecutionMixin,
 ):
-    """Single-actor verified-state kernel with recovery, progress, and context governance."""
+    """Single-actor verified-state kernel with recovery, progress, context, and bounded retrieval governance."""
 
     def __init__(
         self,
@@ -51,6 +54,8 @@ class HarnessRuntime(
         failure_router: FailureRouter | None = None,
         progress_policy: ProgressPolicy | None = None,
         context_policy: ContextPolicy | None = None,
+        retrieval_policy: RetrievalPolicy | None = None,
+        retrieval_gateway=None,
         resume: bool = False,
         task_revision: str | None = None,
         model_revision: str | None = None,
@@ -65,6 +70,17 @@ class HarnessRuntime(
         self.progress_policy = progress_policy or ProgressPolicy()
         self.context_policy = context_policy or ContextPolicy()
         self.context_projector = ContextProjector(self.context_policy)
+
+        self.retrieval_gateway = retrieval_gateway
+        if retrieval_policy is None:
+            self.retrieval_policy = RetrievalPolicy(enabled=retrieval_gateway is not None)
+        else:
+            self.retrieval_policy = retrieval_policy
+        if self.retrieval_policy.enabled and self.retrieval_gateway is None:
+            raise ValueError("enabled retrieval requires a retrieval_gateway")
+        if self.retrieval_gateway is not None and not self.retrieval_policy.enabled:
+            raise ValueError("retrieval_gateway cannot be supplied while retrieval policy is disabled")
+
         self.resume_mode = bool(resume)
         self.task_revision = task_revision
         self.model_revision = model_revision
@@ -142,6 +158,9 @@ class HarnessRuntime(
             "progress_events": 0,
             "no_progress_triggers": 0,
             "strategy_exhaustions": 0,
+            "retrieval_requests": 0,
+            "retrieval_results": 0,
+            "retrieval_items_admitted": 0,
         }
 
         if self.resume_mode:
@@ -166,6 +185,7 @@ class HarnessRuntime(
                 f"persisted={persisted_version!r}, current={__version__!r}"
             )
         super()._restore_run()
+        self._validate_retrieval_state_integrity()
         self.halted = bool(self.state.recovery_halted)
 
     def _config_descriptor(self) -> dict[str, Any]:
@@ -189,6 +209,7 @@ class HarnessRuntime(
         descriptor["failure_recovery"] = self.failure_router.descriptor()
         descriptor["progress_control"] = self.progress_policy.descriptor()
         descriptor["context_governance"] = self.context_policy.descriptor()
+        descriptor["retrieval_memory"] = self._retrieval_config_descriptor()
         # Only semantic build identity participates in resume equivalence. Git
         # commit/tree and CI presentation metadata stay in the audit manifest so
         # docs-only commits do not manufacture a false runtime conflict.
@@ -282,6 +303,7 @@ class HarnessRuntime(
                     ),
                     "progress": self.state.progress.dump(),
                     "context_governance": self.context_policy.descriptor(),
+                    "retrieval_memory": self._retrieval_config_descriptor(),
                 },
             )
             self._persist_state("resume.start")
@@ -300,6 +322,7 @@ class HarnessRuntime(
                     "provenance_warnings": self.manifest_body.get("provenance_warnings", []),
                     "progress_control": self.progress_policy.descriptor(),
                     "context_governance": self.context_policy.descriptor(),
+                    "retrieval_memory": self._retrieval_config_descriptor(),
                     "security": {
                         "strict_layout": self.security_config.strict_layout,
                         "strict_tool_isolation": self.security_config.strict_tool_isolation,
@@ -340,6 +363,11 @@ class HarnessRuntime(
                 "state_hash": canonical_hash(self.state.snapshot()),
                 "recovery_halted": self.state.recovery_halted,
                 "progress": self.state.progress.dump(),
+                "retrieval": {
+                    "items": len(self.state.retrieval.items),
+                    "snapshots": len(self.state.retrieval.results),
+                    "current_items": len(self.state.retrieval.current_item_ids),
+                },
             },
         )
         self._persist_state("run.end")
