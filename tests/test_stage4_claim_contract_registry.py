@@ -86,3 +86,18 @@ def test_ctf_catchall_class_is_explicitly_supported_only(tmp_path):
 
     assert runtime.state.facts[key].authority == Authority.SUPPORTED
     assert profile.claim_verification_registry().resolve(key).claim_class == "ctf.intermediate_supported"
+
+
+def test_claim_registry_policy_is_manifest_fingerprinted(tmp_path):
+    profile = SoftwareProfile(workspace=tmp_path, acceptance_commands=["false"])
+    runtime = HarnessRuntime(
+        goal=profile.default_goal(),
+        profile=profile,
+        controller=ScriptedController([]),
+        run_dir=tmp_path / "run",
+        workspace=tmp_path,
+    )
+    recorded = runtime.manifest_body["config"]["profile"]["claim_verification_registry"]
+    assert recorded == profile.claim_verification_registry().dump()
+    assert recorded["unknown_claim_policy"] == "fail_closed"
+    assert recorded["rules"][0]["claim_class"] == "software.artifact_assertion"
