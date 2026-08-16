@@ -45,11 +45,11 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
 | 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
 | 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
-| 08 | Retrieval / Memory Gateway | RELEASE CANDIDATE (`v0.9.0rc1`), exit pending same-commit CI |
+| 08 | Retrieval / Memory Gateway | RELEASE SNAPSHOT (`v0.9.0`), exit pending same-commit CI |
 
-Current package version: **v0.9.0rc1**.
+Current package version: **v0.9.0**.
 
-## Stage 08 candidate result
+## Stage 08 release snapshot
 
 Stage 08 introduces a bounded retrieval/evidence gateway without treating retrieval as truth or progress:
 
@@ -64,7 +64,7 @@ Stage 08 introduces a bounded retrieval/evidence gateway without treating retrie
 - supersession is an explicit Kernel transition; search ordering is not treated as freshness authority;
 - resume fails closed on missing/tampered artifacts or provider/index/config drift.
 
-The pre-release candidate at commit `a9fab5d446ff574d2bd090f51226f7f366585d15` passed **182 tests with 5 hosted-environment skips** and all Stage 03–08 plus remediation probes in GitHub Actions run `31954088822`. The `v0.9.0rc1` commit must reproduce those gates before Stage 08 is marked PASS / EXITED.
+The pre-release implementation at commit `a9fab5d446ff574d2bd090f51226f7f366585d15` passed **182 tests with 5 hosted-environment skips** and all Stage 03–08 plus remediation probes in GitHub Actions run `31954088822`. Release candidate `8bd4454d8f6d6ed7ec4ab568a70c9aca67629e06` (`v0.9.0rc1`) also passed the complete gate in run `31954351977`. The `v0.9.0` release snapshot must reproduce the gate before Stage 08 is marked PASS / EXITED.
 
 ## Guarantee boundaries
 

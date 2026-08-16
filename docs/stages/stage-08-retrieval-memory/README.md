@@ -1,6 +1,6 @@
 # Stage 08 — Retrieval / Memory Gateway
 
-Status: **RELEASE CANDIDATE — `v0.9.0rc1`; exit pending same-commit CI**
+Status: **RELEASE SNAPSHOT — `v0.9.0`; exit pending same-commit CI**
 
 Frozen contract: [`CONTRACT.md`](./CONTRACT.md)
 
@@ -46,7 +46,7 @@ Kernel-controlled or Kernel-validated:
 
 This Stage does **not** claim a semantic Kernel query planner. That is intentionally separate from the current frozen scope.
 
-## Core guarantees in the candidate
+## Core guarantees
 
 1. **Evidence, not truth** — retrieval items cannot directly enter `facts` or complete the task.
 2. **No instruction authority** — model-visible retrieval is always `untrusted_retrieval` / `instruction_authority=none`.
@@ -59,17 +59,25 @@ This Stage does **not** claim a semantic Kernel query planner. That is intention
 9. **Resume fail-closed** — state/artifact/provider/index/config drift is verified before restored retrieval becomes model-visible.
 10. **Stage07 compatibility** — retrieval projection uses an extension hook; Stage07-only runtimes keep their previous context contract.
 
-## Candidate evidence
+## Pre-release evidence
 
-Pre-release implementation commit:
+Implementation candidate:
 
 `a9fab5d446ff574d2bd090f51226f7f366585d15`
 
-GitHub Actions run:
+Candidate CI run:
 
 `31954088822`
 
-Results:
+Release candidate:
+
+`8bd4454d8f6d6ed7ec4ab568a70c9aca67629e06` (`v0.9.0rc1`)
+
+RC CI run:
+
+`31954351977` — SUCCESS
+
+Candidate results reproduced by RC:
 
 - full pytest: **182 passed / 5 skipped**;
 - Stage08 base: **4/4 PASS**;
@@ -80,7 +88,7 @@ Results:
 - Stage03–07 regression probes: **PASS**;
 - Stage02 remediation probes: **PASS**.
 
-The `v0.9.0rc1` snapshot must reproduce the complete gate before the Stage is marked PASS / EXITED.
+The final `v0.9.0` snapshot must reproduce this complete gate before Stage 08 is marked PASS / EXITED.
 
 ## Residual limitations
 
@@ -91,11 +99,11 @@ The `v0.9.0rc1` snapshot must reproduce the complete gate before the Stage is ma
 
 ## Exit artifacts
 
-After the release snapshot passes, this directory will contain:
+After final release CI passes, this directory is finalized with:
 
 - `IMPLEMENTATION_REPORT.md`
 - `EVIDENCE_MATRIX.md`
 - `COST_REPORT.md`
 - `FINAL_REREVIEW.md`
 
-and machine-readable Stage08 evidence will be stored under `evidence/`.
+and machine-readable Stage08 evidence under `evidence/`.
