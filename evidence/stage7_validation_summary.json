@@ -1,0 +1,44 @@
+{
+  "stage": "07",
+  "status": "pass_candidate",
+  "target_release": "v0.8.0",
+  "candidate": {
+    "commit": "757ec837c7a0eb83bdab71c497851fef196f13e8",
+    "version": "0.8.0rc5",
+    "github_actions_run": 31943066462,
+    "pytest": {"passed": 125, "skipped": 5, "failed": 0}
+  },
+  "prior_stage_regression": {
+    "stage03_resume": {"passed": 4, "total": 4, "duplicate_external_actions": 0},
+    "stage04_semantic": {"passed": 8, "total": 8, "false_positives": 0, "false_negatives": 0},
+    "stage05_probes": "pass",
+    "stage06_probes": "pass"
+  },
+  "stage07": {
+    "base_projection": {"passed": 4, "total": 4},
+    "adversarial": {"passed": 6, "total": 6},
+    "resume": {"passed": 3, "total": 3},
+    "compatibility": {"passed": 3, "total": 3},
+    "counters": {
+      "missing_constraints": 0,
+      "projection_state_mutations": 0,
+      "raw_evidence_deletions": 0,
+      "untrusted_authority_promotions": 0,
+      "superseded_current_truth_exposures": 0,
+      "policy_drift_acceptances": 0,
+      "projection_resume_divergence": 0,
+      "model_visible_legacy_raw_values": 0,
+      "moved_legacy_schema_breakages": 0,
+      "python_json_split_brain_keys": 0,
+      "unresolved_critical_high": 0
+    }
+  },
+  "candidate_history": [
+    {"candidate": "rc2", "result": "pass", "finding": "compatibility probe checked key access more strongly than old value schema"},
+    {"candidate": "rc3", "result": "fail", "pytest": {"passed": 122, "skipped": 5, "failed": 1}, "finding": "over-strong legacy tools expectation exposed collision boundary"},
+    {"candidate": "rc4", "result": "pass", "finding": "moved aliases separated from real Stage-07 keys; split-brain blocked"},
+    {"candidate": "rc5", "result": "pass", "finding": "dormant raw execution _context removed; Context Governor single boundary"},
+    {"candidate": "pre-release-hardening", "result": "pass", "finding": "pyproject/runtime version consistency enforced"}
+  ],
+  "hosted_runner_note": "Five live Linux namespace tests were skipped and are not counted as Stage 02 production isolation evidence."
+}
