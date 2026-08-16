@@ -53,3 +53,5 @@ jobs:
         run: python scripts/stage7_context_compat_probe.py
       - name: Stage 08 single-buffer artifact integrity probe
         run: python scripts/stage8_artifact_integrity_probe.py
+      - name: Verified-read cost probe
+        run: python scripts/remediation_artifact_cost_probe.py
