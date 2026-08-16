@@ -10,9 +10,11 @@ from harness.core.tools import ActionRuntime, SandboxedCommandToolSpec, SideEffe
 
 class CountingBackend:
     name = "counting_backend"
+
     def __init__(self):
         self.attestations = 0
         self.executions = 0
+
     def isolation_attestation(self, *, workspace):
         self.attestations += 1
         return IsolationAttestation(
@@ -21,6 +23,7 @@ class CountingBackend:
             environment_sanitized=True,
             source="test_fixture",
         )
+
     def run_shell(self, *, workspace, command, timeout_seconds, env=None):
         self.executions += 1
         return ExecutionResult(0, "ok", "")
@@ -81,7 +84,7 @@ def main() -> int:
                 "additional_backend_calls_for_valid_sandboxed_command": 0,
                 "additional_model_tokens": 0,
                 "additional_checkpoint_or_event_records": 0,
-                "invalid_mismatch_fails_before_attestation_or_execution": true,
+                "invalid_mismatch_fails_before_attestation_or_execution": True,
             },
         }
         report["passed"] = (
