@@ -11,12 +11,7 @@ _ARTIFACT_RE = re.compile(r"^artifact://([0-9a-f]{64})_.+$")
 
 
 class ContextProjection(dict):
-    """Namespaced governed context with non-serialized legacy read aliases.
-
-    The built-in LLM JSON serialization sees only the actual namespaced keys.
-    Existing in-process trusted Controller adapters can continue read-only
-    access to the previous top-level keys during the Stage-07 transition.
-    """
+    """Namespaced governed context with non-serialized legacy read aliases."""
 
     _LEGACY_PATHS = {
         "pinned_constraints": ("goal_contract", "pinned_constraints"),
@@ -73,6 +68,11 @@ class ContextPolicy:
     max_speculative_value_chars: int = 1200
     max_unknown_chars: int = 500
     max_evidence_refs_per_claim: int = 8
+    max_verified_facts: int = 64
+    max_verified_value_chars: int = 1200
+    max_total_verified_value_chars: int = 12000
+    max_verified_key_chars: int = 256
+    max_superseded_fact_keys: int = 64
 
     def __post_init__(self) -> None:
         integer_fields = (
@@ -88,6 +88,11 @@ class ContextPolicy:
             "max_speculative_value_chars",
             "max_unknown_chars",
             "max_evidence_refs_per_claim",
+            "max_verified_facts",
+            "max_verified_value_chars",
+            "max_total_verified_value_chars",
+            "max_verified_key_chars",
+            "max_superseded_fact_keys",
         )
         for name in integer_fields:
             value = getattr(self, name)
@@ -96,7 +101,7 @@ class ContextPolicy:
 
     def descriptor(self) -> dict[str, Any]:
         return {
-            "schema_version": "context-policy-v1",
+            "schema_version": "context-policy-v2",
             "max_observations": self.max_observations,
             "max_preview_chars_per_observation": self.max_preview_chars_per_observation,
             "max_total_observation_preview_chars": self.max_total_observation_preview_chars,
@@ -109,7 +114,15 @@ class ContextPolicy:
             "max_speculative_value_chars": self.max_speculative_value_chars,
             "max_unknown_chars": self.max_unknown_chars,
             "max_evidence_refs_per_claim": self.max_evidence_refs_per_claim,
-            "mandatory_sections_lossy": False,
+            "max_verified_facts": self.max_verified_facts,
+            "max_verified_value_chars": self.max_verified_value_chars,
+            "max_total_verified_value_chars": self.max_total_verified_value_chars,
+            "max_verified_key_chars": self.max_verified_key_chars,
+            "max_superseded_fact_keys": self.max_superseded_fact_keys,
+            "mandatory_goal_control_lossy": False,
+            "verified_fact_projection_bounded": True,
+            "verified_fact_selection": "authority_rank_then_key",
+            "verified_large_value_full_state_preserved": True,
             "observation_duplicate_identity": "source_plus_content_address_digest",
             "untrusted_instruction_authority": "none",
             "valid_until_wall_clock_interpretation": False,
@@ -154,7 +167,7 @@ def _artifact_digest(ref: str | None) -> str | None:
 class ContextProjector:
     """Pure deterministic projection from durable state to Actor-visible context."""
 
-    schema_version = "context-projection-v1"
+    schema_version = "context-projection-v2"
 
     def __init__(self, policy: ContextPolicy | None = None):
         self.policy = policy or ContextPolicy()
@@ -176,19 +189,74 @@ class ContextProjector:
             "superseded_by": claim.superseded_by,
         }
 
-    def _project_facts(self, state) -> tuple[dict[str, Any], list[str]]:
+    @staticmethod
+    def _fact_authority_rank(authority: str) -> int:
+        return {
+            "external_oracle": 0,
+            "environment": 1,
+            "trusted_tool": 2,
+            "supported": 3,
+            "user": 4,
+            "observed": 5,
+            "model": 6,
+            "untrusted_tool": 7,
+        }.get(authority, 8)
+
+    def _project_verified_fact(self, key: str, claim, *, remaining_chars: int) -> tuple[str, dict[str, Any], int]:
+        key_visible, key_truncated = _truncate_text(key, self.policy.max_verified_key_chars)
+        key_hash = canonical_hash({"key": key})
+        output_key = key if not key_truncated else f"fact:{key_hash[:24]}"
+        per_item_limit = min(self.policy.max_verified_value_chars, remaining_chars)
+        preview = _render_data_preview(claim.value, per_item_limit)
+        refs = list(claim.evidence_refs)
+        visible_refs = refs[: self.policy.max_evidence_refs_per_claim]
+        exact_value_visible = not preview["truncated"]
+        item = {
+            "key": key if not key_truncated else None,
+            "key_preview": key_visible,
+            "key_truncated": key_truncated,
+            "key_hash": key_hash,
+            "status": claim.status.value,
+            "authority": claim.authority.value,
+            "trust": "verified_fact",
+            "instruction_authority": "none",
+            "value": claim.value if exact_value_visible else None,
+            "value_preview": preview,
+            "value_hash": canonical_hash(claim.value),
+            "evidence_refs": visible_refs,
+            "omitted_evidence_ref_count": max(0, len(refs) - len(visible_refs)),
+            "valid_until": claim.valid_until,
+            "superseded_by": claim.superseded_by,
+        }
+        return output_key, item, preview["visible_chars"]
+
+    def _project_facts(self, state) -> tuple[dict[str, Any], list[str], dict[str, int]]:
+        superseded = sorted(key for key, claim in state.facts.items() if claim.superseded_by is not None)
+        current_items = [
+            (key, claim)
+            for key, claim in state.facts.items()
+            if claim.superseded_by is None
+        ]
+        current_items.sort(key=lambda pair: (self._fact_authority_rank(pair[1].authority.value), pair[0]))
+        selected = current_items[: self.policy.max_verified_facts]
+        remaining = self.policy.max_total_verified_value_chars
         current: dict[str, Any] = {}
-        superseded: list[str] = []
-        for key in sorted(state.facts):
-            claim = state.facts[key]
-            if claim.superseded_by is not None:
-                superseded.append(key)
-                continue
-            dumped = claim.dump()
-            dumped["trust"] = "verified_fact"
-            dumped["instruction_authority"] = "none"
-            current[key] = dumped
-        return current, superseded
+        visible_chars = 0
+        for key, claim in selected:
+            output_key, item, used = self._project_verified_fact(key, claim, remaining_chars=remaining)
+            current[output_key] = item
+            remaining = max(0, remaining - used)
+            visible_chars += used
+        visible_superseded = superseded[: self.policy.max_superseded_fact_keys]
+        stats = {
+            "raw_current_fact_count": len(current_items),
+            "selected_current_fact_count": len(selected),
+            "omitted_current_fact_count": max(0, len(current_items) - len(selected)),
+            "raw_superseded_fact_count": len(superseded),
+            "omitted_superseded_fact_key_count": max(0, len(superseded) - len(visible_superseded)),
+            "visible_verified_value_chars": visible_chars,
+        }
+        return current, visible_superseded, stats
 
     def _select_claims(self, claims: dict[str, Any], limit: int, *, trust: str) -> tuple[dict[str, Any], int]:
         keys = sorted(claims)
@@ -304,7 +372,7 @@ class ContextProjector:
         return result
 
     def project(self, *, goal, state, tools: dict[str, Any]) -> ContextProjection:
-        current_facts, superseded_fact_keys = self._project_facts(state)
+        current_facts, superseded_fact_keys, fact_stats = self._project_facts(state)
         hypotheses, omitted_hypotheses = self._select_claims(
             state.hypotheses, self.policy.max_hypotheses, trust="untrusted_speculation"
         )
@@ -321,14 +389,18 @@ class ContextProjector:
             "projection": {
                 "policy": self.policy.descriptor(),
                 "omissions": {
+                    "verified_facts": fact_stats["omitted_current_fact_count"],
+                    "superseded_fact_keys": fact_stats["omitted_superseded_fact_key_count"],
                     "hypotheses": omitted_hypotheses,
                     "refuted_hypotheses": omitted_refuted,
                     "unknowns": omitted_unknowns,
                     "failures": omitted_failures,
                     "observation_groups": observation_stats["omitted_observation_group_count"],
                 },
+                "fact_stats": fact_stats,
                 "observation_stats": observation_stats,
-                "mandatory_sections_lossy": False,
+                "mandatory_goal_control_lossy": False,
+                "durable_trusted_state_mutated": False,
                 "projection_is_read_only": True,
                 "legacy_aliases_model_visible": False,
             },
