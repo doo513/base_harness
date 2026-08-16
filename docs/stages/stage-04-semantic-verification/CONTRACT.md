@@ -1,36 +1,28 @@
 # Stage 04 Semantic Verification Contract
 
-Status: **FROZEN FOR v0.5.0-rc1**
+Status: **FROZEN FOR v0.5.0-rc2**
 
 ## Purpose
 
-Stage 04 closes the gap between:
+Stage 04 strengthens `only verifier may commit` into:
 
-```text
-only the verifier may commit
-```
+> **Only a configured, sufficiently strong, evidence-integrity-checked verifier satisfying the Domain Profile contract may commit that class of claim.**
 
-and:
-
-```text
-only an admissible, sufficiently strong verifier may commit this class of claim
-```
-
-The kernel must not treat a boolean return value, a stored artifact reference, or a verifier-provided level string as semantic truth by itself.
+The kernel must not treat a boolean return value, a stored artifact reference, a verifier-provided level string, or an arbitrary semantic claim key as truth by itself.
 
 ## Kernel requirements
 
-1. A verifier result cannot report a verification level different from the verifier implementation's configured level.
-2. Verification coverage is taken from trusted verifier configuration, not from result/candidate data.
+1. A verifier result cannot report a level different from the verifier implementation's configured level.
+2. Verification coverage comes from trusted verifier configuration, not result/candidate data.
 3. Domain Profiles provide an explicit `VerificationContract`.
-4. A contract may require named coverage, minimum strength, attached evidence, and minimum confidence.
-5. State commit occurs only when the complete contract assessment passes.
-6. Verification contract and verifier metadata are included in the reproducibility manifest fingerprint.
-7. Structural/logical support does not receive `TRUSTED_TOOL` semantic authority; it is recorded as `SUPPORTED`.
+4. Contracts may require named coverage, minimum strength, evidence, and confidence.
+5. Evidence artifacts used for semantic verification must pass their content-address SHA-256 check at read time.
+6. Generic structured artifact assertions may commit only under `artifact_assertion.*`; arbitrary domain-semantic fact keys require a domain-specific verifier.
+7. State commit occurs only when the complete contract passes.
+8. Verification contract and verifier metadata are included in the reproducibility manifest fingerprint.
+9. Structural/logical support is recorded with `SUPPORTED` authority rather than `TRUSTED_TOOL` semantic authority.
 
 ## Generic semantic primitive
-
-The kernel provides one deliberately narrow execution verifier:
 
 ```json
 {
@@ -41,29 +33,20 @@ The kernel provides one deliberately narrow execution verifier:
 }
 ```
 
-It proves only that one stored JSON evidence artifact equals the expected value at the declared path. It does **not** infer the truth of arbitrary free-form natural-language claims.
-
-Domain-specific semantics must be implemented by a Domain Profile verifier whose declared coverage satisfies that profile's contract.
+It proves only that one integrity-verified stored JSON artifact equals the expected value at the declared path. It does not infer arbitrary natural-language truth.
 
 ## Adversarial matrix
 
-Required negative cases:
-
+Required negatives include:
 - result-level inflation
 - result-supplied coverage spoof
-- evidence-free high-level boolean success
-- free-form claim presented to the generic semantic verifier
-- wrong expected value
-- missing artifact path
-- unsupported operator
-- unresolved/multiple evidence refs
+- evidence-free high-level success
+- free-form semantic claim
+- wrong expected value / missing path / unsupported operator
+- artifact content tamper after creation
+- generic assertion masquerading under an arbitrary domain-semantic key
 
-Required positive cases:
-
-- nested dict equality
-- list-index equality
-- boolean equality
-- software runtime claim commit with execution evidence
+Required positives include nested dict equality, list-index equality, boolean equality, and an execution-level runtime commit in the reserved assertion namespace.
 
 ## Exit criteria
 
@@ -73,8 +56,10 @@ full regression: PASS
 synthetic verifier FP: 0
 synthetic verifier FN: 0
 level inflation attack: blocked
+artifact content tamper: blocked
+semantic-key masquerade: blocked
 contract fingerprint persisted: PASS
 Stage 01–03 tests: no regression
 ```
 
-This Stage does not claim that generic natural-language truth is solved. Its guarantee is that semantic authority is explicit, contract-bound, evidence-bound, and cannot be self-promoted by a verifier result object.
+No claim is made that generic natural-language truth is solved. Domain semantic keys require domain-specific verifier code and coverage.

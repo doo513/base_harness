@@ -14,7 +14,6 @@ class VerificationLevel(IntEnum):
     TRANSITION = 3
     EXECUTION = 4
     EXTERNAL_ORACLE = 5
-    # Backward-compatible alias.
     SYNTAX = 0
 
 
@@ -110,9 +109,7 @@ class VerificationContract:
         for requirement in self.requirements:
             matches = []
             for result in results:
-                if not result.verified:
-                    continue
-                if requirement.id not in result.coverage:
+                if not result.verified or requirement.id not in result.coverage:
                     continue
                 if result.level < requirement.minimum_level:
                     continue
@@ -155,12 +152,7 @@ class Verifier(Protocol):
 
 
 class VerifierChain:
-    """Run trusted verifier implementations while enforcing declared metadata.
-
-    The result object is not allowed to self-promote its verification level or
-    coverage.  Both are normalized from the verifier object's declared metadata.
-    Domain profiles remain responsible for selecting trusted verifier code.
-    """
+    """Run trusted verifier implementations while enforcing declared metadata."""
 
     def __init__(self, verifiers):
         self.verifiers = sorted(verifiers, key=lambda x: int(x.level))
@@ -172,13 +164,7 @@ class VerifierChain:
         declared_coverage = sorted({str(x) for x in getattr(verifier, "covers", ()) if str(x)})
 
         if not isinstance(result, VerificationResult):
-            return VerificationResult(
-                False,
-                declared_level,
-                "verifier returned an invalid result object",
-                verifier=name,
-                coverage=declared_coverage,
-            )
+            return VerificationResult(False, declared_level, "verifier returned an invalid result object", verifier=name, coverage=declared_coverage)
 
         try:
             reported_level = VerificationLevel(int(result.level))
@@ -205,8 +191,6 @@ class VerifierChain:
                 coverage=declared_coverage,
             )
 
-        # Trusted metadata comes from the configured verifier, never from the
-        # candidate or the result object returned by verify().
         result.verifier = name
         result.level = declared_level
         result.coverage = declared_coverage
@@ -218,11 +202,7 @@ class VerifierChain:
             try:
                 raw = verifier.verify(candidate, context)
             except Exception as exc:
-                raw = VerificationResult(
-                    False,
-                    VerificationLevel(int(verifier.level)),
-                    f"{type(exc).__name__}: {exc}",
-                )
+                raw = VerificationResult(False, VerificationLevel(int(verifier.level)), f"{type(exc).__name__}: {exc}")
             result = self._normalize(verifier, raw)
             results.append(result)
             if not result.verified:
@@ -231,8 +211,28 @@ class VerifierChain:
 
     @staticmethod
     def accepted(results, minimum_level) -> bool:
-        # Backward-compatible API. New runtime code uses VerificationContract.
         return VerificationContract.legacy(VerificationLevel(minimum_level)).assess(results).accepted
+
+
+def _verified_artifact_path(artifact_root, ref: str):
+    """Resolve a content-addressed ArtifactStore ref and verify its SHA-256."""
+    from pathlib import Path
+    from .storage import ArtifactStore
+
+    root = Path(artifact_root).resolve()
+    path = ArtifactStore.resolve_ref_path(root, ref)
+    token = ArtifactStore._token_from_ref(ref)
+    if len(token) < 65 or token[64] != "_":
+        raise ValueError("artifact ref is not content-addressed")
+    expected = token[:64]
+    if any(ch not in "0123456789abcdef" for ch in expected):
+        raise ValueError("artifact ref digest is malformed")
+    if not path.is_file():
+        raise ValueError("artifact file is missing")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise ValueError("artifact content hash mismatch")
+    return path
 
 
 class ExistsVerifier:
@@ -259,31 +259,31 @@ class EvidenceRefVerifier:
         refs = list(context.get("claim_evidence_refs", []))
         known = set(context.get("state", {}).get("artifacts", []))
         missing = [r for r in refs if r not in known]
-        ok = bool(refs) and not missing
-        reason = "evidence refs resolve to stored artifacts" if ok else "missing or unresolved evidence refs"
+        corrupt = []
+        artifact_root = context.get("artifact_root")
+        if artifact_root:
+            for ref in refs:
+                if ref in missing:
+                    continue
+                try:
+                    _verified_artifact_path(artifact_root, ref)
+                except Exception:
+                    corrupt.append(ref)
+        ok = bool(refs) and not missing and not corrupt
+        reason = "evidence refs resolve to integrity-verified stored artifacts" if ok else "missing, unresolved, or integrity-invalid evidence refs"
         return VerificationResult(
             ok,
             self.level,
             reason,
             verifier=self.name,
             evidence_refs=refs,
-            details={"missing": missing},
-            confidence=1.0,
+            details={"missing": missing, "integrity_invalid": corrupt},
+            confidence=1.0 if ok else None,
         )
 
 
 class PredicateVerifier:
-    def __init__(
-        self,
-        *,
-        name: str,
-        level: VerificationLevel,
-        predicate: Callable[[Any, dict], bool],
-        pass_reason: str = "predicate passed",
-        fail_reason: str = "predicate failed",
-        covers: Iterable[str] = (),
-        confidence: float | None = None,
-    ):
+    def __init__(self, *, name: str, level: VerificationLevel, predicate: Callable[[Any, dict], bool], pass_reason: str = "predicate passed", fail_reason: str = "predicate failed", covers: Iterable[str] = (), confidence: float | None = None):
         self.name = name
         self.level = level
         self.predicate = predicate
@@ -297,45 +297,25 @@ class PredicateVerifier:
             ok = bool(self.predicate(candidate, context))
         except Exception as exc:
             return VerificationResult(False, self.level, f"{type(exc).__name__}: {exc}", verifier=self.name)
-        return VerificationResult(
-            ok,
-            self.level,
-            self.pass_reason if ok else self.fail_reason,
-            verifier=self.name,
-            confidence=self.confidence,
-        )
+        return VerificationResult(ok, self.level, self.pass_reason if ok else self.fail_reason, verifier=self.name, confidence=self.confidence)
 
 
 class ClaimBoundEvidenceVerifier:
-    """Reject structurally unrelated artifacts.
-
-    This remains a structural/logical helper, not a semantic truth verifier.
-    """
-
     name = "claim_bound_evidence"
     level = VerificationLevel.LOGICAL
     covers = ("claim_evidence_binding",)
 
     def verify(self, candidate, context):
-        from pathlib import Path
-        from .storage import ArtifactStore
-
         claim_key = context.get("claim_key")
         refs = list(context.get("claim_evidence_refs", []))
-        artifact_root = Path(context.get("artifact_root", "")).resolve()
-        if not claim_key or not refs or not artifact_root.exists():
-            return VerificationResult(
-                False,
-                self.level,
-                "claim-bound evidence unavailable",
-                verifier=self.name,
-                evidence_refs=refs,
-            )
+        artifact_root = context.get("artifact_root")
+        if not claim_key or not refs or not artifact_root:
+            return VerificationResult(False, self.level, "claim-bound evidence unavailable", verifier=self.name, evidence_refs=refs)
 
         bad = []
         for ref in refs:
             try:
-                p = ArtifactStore.resolve_ref_path(artifact_root, ref)
+                p = _verified_artifact_path(artifact_root, ref)
                 raw = json.loads(p.read_text(encoding="utf-8"))
             except Exception:
                 bad.append(ref)
@@ -347,7 +327,7 @@ class ClaimBoundEvidenceVerifier:
         return VerificationResult(
             ok,
             self.level,
-            "all evidence artifacts are explicitly bound to claim" if ok else "evidence is unresolved or not bound to claim",
+            "all evidence artifacts are explicitly bound to claim" if ok else "evidence is unresolved, integrity-invalid, or not bound to claim",
             verifier=self.name,
             evidence_refs=refs,
             details={"unbound": bad},
@@ -361,24 +341,16 @@ def _stable_hash(value: Any) -> str:
 
 
 class StructuredArtifactAssertionVerifier:
-    """Execution-level verifier for a narrow, explicit artifact proposition.
+    """Execution-level verifier for a narrow explicit assertion over one artifact.
 
-    Supported claim value:
-      {
-        "kind": "artifact_json_assertion",
-        "path": ["output", "returncode"],
-        "operator": "eq",
-        "expected": 0
-      }
-
-    The verifier proves only that the referenced stored JSON artifact currently
-    has the expected value at the declared path.  It deliberately does not try
-    to infer the meaning of free-form natural-language claims.
+    Generic assertions may only be committed under the `artifact_assertion.*`
+    key namespace. Domain-semantic fact names require a domain-specific verifier.
     """
 
     name = "structured_artifact_assertion"
     level = VerificationLevel.EXECUTION
     covers = ("artifact_semantics",)
+    CLAIM_NAMESPACE = "artifact_assertion."
 
     @staticmethod
     def _resolve_path(value: Any, path: list[Any]) -> Any:
@@ -395,18 +367,19 @@ class StructuredArtifactAssertionVerifier:
         return current
 
     def verify(self, candidate, context):
-        from pathlib import Path
-        from .storage import ArtifactStore
-
         refs = list(context.get("claim_evidence_refs", []))
-        artifact_root = Path(context.get("artifact_root", "")).resolve()
-        if not isinstance(candidate, dict) or candidate.get("kind") != "artifact_json_assertion":
+        artifact_root = context.get("artifact_root")
+        claim_key = context.get("claim_key")
+        if not isinstance(claim_key, str) or not claim_key.startswith(self.CLAIM_NAMESPACE):
             return VerificationResult(
                 False,
                 self.level,
-                "free-form or unsupported claim cannot satisfy structured artifact semantics",
+                "generic artifact assertion cannot authorize an arbitrary semantic claim key",
                 evidence_refs=refs,
+                details={"required_claim_namespace": self.CLAIM_NAMESPACE},
             )
+        if not isinstance(candidate, dict) or candidate.get("kind") != "artifact_json_assertion":
+            return VerificationResult(False, self.level, "free-form or unsupported claim cannot satisfy structured artifact semantics", evidence_refs=refs)
         path = candidate.get("path")
         operator = candidate.get("operator", "eq")
         if not isinstance(path, list) or not path:
@@ -417,18 +390,18 @@ class StructuredArtifactAssertionVerifier:
             return VerificationResult(False, self.level, "only deterministic eq assertions are supported", evidence_refs=refs)
         if "expected" not in candidate:
             return VerificationResult(False, self.level, "assertion expected value is required", evidence_refs=refs)
-        if len(refs) != 1 or not artifact_root.exists():
+        if len(refs) != 1 or not artifact_root:
             return VerificationResult(False, self.level, "exactly one resolvable evidence artifact is required", evidence_refs=refs)
 
         try:
-            artifact = ArtifactStore.resolve_ref_path(artifact_root, refs[0])
+            artifact = _verified_artifact_path(artifact_root, refs[0])
             raw = json.loads(artifact.read_text(encoding="utf-8"))
             actual = self._resolve_path(raw, path)
         except Exception as exc:
             return VerificationResult(
                 False,
                 self.level,
-                f"artifact assertion could not be evaluated: {type(exc).__name__}",
+                f"artifact assertion could not be evaluated: {type(exc).__name__}: {exc}",
                 evidence_refs=refs,
                 details={"path": path, "operator": operator},
             )

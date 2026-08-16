@@ -5,57 +5,36 @@ import tempfile
 from pathlib import Path
 
 from harness.core.storage import ArtifactStore
-from harness.core.verification import (
-    EvidenceRefVerifier,
-    ExistsVerifier,
-    StructuredArtifactAssertionVerifier,
-    VerificationContract,
-    VerificationLevel,
-    VerificationRequirement,
-    VerificationResult,
-    VerifierChain,
-)
+from harness.core.verification import EvidenceRefVerifier, ExistsVerifier, StructuredArtifactAssertionVerifier, VerificationContract, VerificationLevel, VerificationRequirement, VerificationResult, VerifierChain
 
 
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="vsh-stage4-") as td:
         root = Path(td)
         store = ArtifactStore(root / "artifacts")
-        ref = store.put_json("execution.json", {
-            "ok": True,
-            "output": {"returncode": 0, "stdout": "PASS"},
-            "meta": [3, 5],
-        })
-        ctx = {
-            "state": {"artifacts": [ref]},
-            "claim_evidence_refs": [ref],
-            "artifact_root": str(store.root),
-            "claim_key": "probe",
-        }
-        contract = VerificationContract(
-            VerificationLevel.EXECUTION,
-            (
-                VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),
-                VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
-                VerificationRequirement("artifact_semantics", VerificationLevel.EXECUTION, require_evidence=True, minimum_confidence=1.0),
-            ),
-        )
+        ref = store.put_json("execution.json", {"ok": True, "output": {"returncode": 0, "stdout": "PASS"}, "meta": [3, 5]})
+        ctx = {"state": {"artifacts": [ref]}, "claim_evidence_refs": [ref], "artifact_root": str(store.root), "claim_key": "artifact_assertion.probe"}
+        contract = VerificationContract(VerificationLevel.EXECUTION, (
+            VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),
+            VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
+            VerificationRequirement("artifact_semantics", VerificationLevel.EXECUTION, require_evidence=True, minimum_confidence=1.0),
+        ))
         chain = VerifierChain([ExistsVerifier(), EvidenceRefVerifier(), StructuredArtifactAssertionVerifier()])
+        def a(expected, path): return {"kind": "artifact_json_assertion", "path": path, "operator": "eq", "expected": expected}
         cases = [
-            ({"kind": "artifact_json_assertion", "path": ["output", "returncode"], "operator": "eq", "expected": 0}, True, "returncode_positive"),
-            ({"kind": "artifact_json_assertion", "path": ["output", "returncode"], "operator": "eq", "expected": 1}, False, "returncode_negative"),
-            ({"kind": "artifact_json_assertion", "path": ["output", "stdout"], "operator": "eq", "expected": "PASS"}, True, "stdout_positive"),
-            ({"kind": "artifact_json_assertion", "path": ["output", "stdout"], "operator": "eq", "expected": "FAIL"}, False, "stdout_negative"),
-            ({"kind": "artifact_json_assertion", "path": ["meta", 1], "operator": "eq", "expected": 5}, True, "list_positive"),
-            ({"kind": "artifact_json_assertion", "path": ["meta", 1], "operator": "eq", "expected": 3}, False, "list_negative"),
+            (a(0, ["output", "returncode"]), True, "returncode_positive"),
+            (a(1, ["output", "returncode"]), False, "returncode_negative"),
+            (a("PASS", ["output", "stdout"]), True, "stdout_positive"),
+            (a("FAIL", ["output", "stdout"]), False, "stdout_negative"),
+            (a(5, ["meta", 1]), True, "list_positive"),
+            (a(3, ["meta", 1]), False, "list_negative"),
             ("free-form semantic claim", False, "freeform_rejected"),
-            ({"kind": "artifact_json_assertion", "path": ["missing"], "operator": "eq", "expected": 1}, False, "missing_path_rejected"),
+            (a(1, ["missing"]), False, "missing_path_rejected"),
         ]
         outcomes = []
         fp = fn = 0
         for candidate, gold, case_id in cases:
-            results = chain.run(candidate, ctx)
-            predicted = contract.assess(results).accepted
+            predicted = contract.assess(chain.run(candidate, ctx)).accepted
             fp += int(predicted and not gold)
             fn += int((not predicted) and gold)
             outcomes.append({"id": case_id, "gold": gold, "predicted": predicted, "pass": predicted == gold})
@@ -64,21 +43,31 @@ def main() -> int:
             name = "inflating"
             level = VerificationLevel.STRUCTURAL
             covers = ("artifact_semantics",)
-            def verify(self, candidate, context):
-                return VerificationResult(True, VerificationLevel.EXTERNAL_ORACLE, "fake")
-
+            def verify(self, candidate, context): return VerificationResult(True, VerificationLevel.EXTERNAL_ORACLE, "fake")
         inflation_blocked = not VerifierChain([Inflating()]).run("x", {})[0].verified
+
+        masquerade_ctx = dict(ctx)
+        masquerade_ctx["claim_key"] = "security.sql_injection_success"
+        masquerade_blocked = not contract.assess(chain.run(a(0, ["output", "returncode"]), masquerade_ctx)).accepted
+
+        original = store.resolve(ref).read_text(encoding="utf-8")
+        store.resolve(ref).write_text(json.dumps({"ok": True, "output": {"returncode": 9}}), encoding="utf-8")
+        tamper_blocked = not contract.assess(chain.run(a(9, ["output", "returncode"]), ctx)).accepted
+        store.resolve(ref).write_text(original, encoding="utf-8")
+
         summary = {
             "stage": "04",
             "matrix_cases": len(cases),
             "false_positives": fp,
             "false_negatives": fn,
             "level_inflation_blocked": inflation_blocked,
+            "semantic_key_masquerade_blocked": masquerade_blocked,
+            "artifact_tamper_blocked": tamper_blocked,
             "all_cases_pass": all(x["pass"] for x in outcomes),
             "outcomes": outcomes,
         }
         print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 0 if fp == 0 and fn == 0 and inflation_blocked and summary["all_cases_pass"] else 1
+        return 0 if fp == 0 and fn == 0 and inflation_blocked and masquerade_blocked and tamper_blocked and summary["all_cases_pass"] else 1
 
 
 if __name__ == "__main__":
