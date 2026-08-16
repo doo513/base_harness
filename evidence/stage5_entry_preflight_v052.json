@@ -1,0 +1,25 @@
+{
+  "gate": "stage05_entry_preflight_controller_state",
+  "release": "v0.5.2",
+  "candidate_commit": "a4bd38f15646db35fc80da091cb0cf8a06d7d0c0",
+  "github_actions_run": 31935462946,
+  "result": "PASS",
+  "pytest": {"passed": 76, "skipped": 5},
+  "compileall": "PASS",
+  "controller_cursor_resume": "PASS",
+  "stage03_resume_probe": {
+    "passed": 4,
+    "total": 4,
+    "duplicate_external_actions": 0,
+    "all_passed": true
+  },
+  "stage04_semantic_probe": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "artifact_tamper_blocked": true,
+    "all_cases_pass": true
+  }
+}
