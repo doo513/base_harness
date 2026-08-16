@@ -75,9 +75,10 @@ class HarnessRuntime(
         self.workspace = Path(workspace or getattr(profile, "workspace", ".")).resolve()
         self.run_dir = Path(run_dir).resolve()
 
-        # Capture build/runtime identity before run_dir creation can alter a
-        # repository worktree. This value is immutable for the lifetime of this
-        # HarnessRuntime and is never recomputed per Actor turn.
+        # Capture build/runtime identity once before run_dir creation can alter a
+        # repository worktree. The immutable snapshot is reused for the manifest
+        # and the semantic resume fingerprint rather than being recomputed per
+        # Actor turn.
         self.build_provenance = capture_build_provenance()
 
         self.oracle = profile.completion_oracle()
@@ -184,7 +185,24 @@ class HarnessRuntime(
         descriptor["failure_recovery"] = self.failure_router.descriptor()
         descriptor["progress_control"] = self.progress_policy.descriptor()
         descriptor["context_governance"] = self.context_policy.descriptor()
+        # Only semantic build identity participates in resume equivalence. Git
+        # commit/tree and CI presentation metadata stay in the audit manifest so
+        # docs-only commits do not manufacture a false runtime conflict.
+        descriptor["build_provenance"] = self.build_provenance.semantic_descriptor()
         return descriptor
+
+    def _provenance_warnings(self, *, task_revision: str, model_revision: str) -> list[str]:
+        warnings = super()._provenance_warnings(
+            task_revision=task_revision,
+            model_revision=model_revision,
+        )
+        warnings.extend(self.build_provenance.warnings)
+        return list(dict.fromkeys(warnings))
+
+    def _build_manifest(self) -> dict[str, Any]:
+        manifest = super()._build_manifest()
+        manifest["build_provenance"] = self.build_provenance.dump()
+        return manifest
 
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.capability_policy.require(Principal.KERNEL, Capability.LEDGER_WRITE)
