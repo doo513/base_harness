@@ -4,6 +4,8 @@
   "promotion_candidate": "v0.5.0-rc3",
   "candidate_commit": "11e707cf04ea76f20a9b810d159a58fe1c1e2430",
   "candidate_ci_run_id": 31934328945,
+  "release_commit": "d659124cae444cc2a1193d97eb86f97325a22156",
+  "release_ci_run_id": 31934469736,
   "candidate_ci": {
     "compileall": "PASS",
     "pytest_passed": 69,
@@ -15,6 +17,16 @@
     "artifact_tamper_blocked": true,
     "semantic_key_masquerade_blocked": true,
     "all_matrix_cases_pass": true
+  },
+  "release_ci": {
+    "compileall": "PASS",
+    "pytest_passed": 69,
+    "pytest_skipped": 5,
+    "stage3_resume_probe": "4/4 PASS",
+    "duplicate_external_actions": 0,
+    "stage4_semantic_probe": "PASS",
+    "false_positives": 0,
+    "false_negatives": 0
   },
   "version_drift_resume_blocked": true,
   "status": "PASS / EXITED",

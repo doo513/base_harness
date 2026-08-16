@@ -1,0 +1,32 @@
+{
+  "stage": "04",
+  "release": "v0.5.0",
+  "release_commit": "d659124cae444cc2a1193d97eb86f97325a22156",
+  "workflow": "research-ci",
+  "run_id": 31934469736,
+  "conclusion": "success",
+  "compileall": "PASS",
+  "pytest": {
+    "passed": 69,
+    "skipped": 5
+  },
+  "stage3_resume_probe": {
+    "probe_count": 4,
+    "passed_count": 4,
+    "all_passed": true,
+    "duplicate_external_actions": 0,
+    "forced_kill_returncode": 73,
+    "checkpoint_corruption_fail_closed": true,
+    "deterministic_replay": true,
+    "prepared_only_ambiguity_fail_closed": true
+  },
+  "stage4_semantic_probe": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "artifact_tamper_blocked": true,
+    "all_cases_pass": true
+  }
+}

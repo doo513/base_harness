@@ -20,15 +20,34 @@ Release promoted: `v0.5.0`.
 | contract/verifier provenance fingerprinted | PASS | manifest test |
 | cross-version resume drift blocked | PASS | version provenance regression test |
 | full regression | PASS | 69 passed, 5 environment-dependent skips |
+| Stage 03 direct resume probe | PASS | 4/4; duplicate external action 0 |
 | compile | PASS | GitHub Actions |
 | unexplained earlier-Stage regression | NONE | rc1 regression was explained, repaired, and re-tested |
 
 ## Promotion evidence
 
-Promotion candidate commit: `11e707cf04ea76f20a9b810d159a58fe1c1e2430`  
-GitHub Actions run: `31934328945`.
+Promotion candidate:
 
-Stage 04 direct probe:
+```text
+version      v0.5.0-rc3
+commit       11e707cf04ea76f20a9b810d159a58fe1c1e2430
+CI run       31934328945
+pytest       69 passed / 5 skipped
+```
+
+Final release snapshot:
+
+```text
+version      v0.5.0
+commit       d659124cae444cc2a1193d97eb86f97325a22156
+CI run       31934469736
+pytest       69 passed / 5 skipped
+Stage 03     4/4 direct resume probes PASS
+duplicates   0 external duplicate actions
+Stage 04     semantic probe PASS; FP=0; FN=0
+```
+
+Stage 04 direct semantic evidence:
 
 ```text
 matrix cases                 8
