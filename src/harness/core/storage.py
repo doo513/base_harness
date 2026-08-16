@@ -5,6 +5,7 @@ from typing import Any
 import hashlib
 import json
 import os
+import stat
 import tempfile
 
 
@@ -134,8 +135,8 @@ class CheckpointStore:
 class ReceiptStore:
     """Durable at-most-once receipts for non-idempotent tool calls.
 
-    PREPARED means execution may or may not have happened.  A resumed run must not
-    execute it again automatically.  COMMITTED contains the recorded ToolResult
+    PREPARED means execution may or may not have happened. A resumed run must not
+    execute it again automatically. COMMITTED contains the recorded ToolResult
     and may be replayed without invoking the tool handler.
     """
 
@@ -199,12 +200,11 @@ class ReceiptStore:
 
 
 class ArtifactStore:
-    """Content-addressed artifact storage.
+    """Content-addressed artifact storage with single-buffer verified reads.
 
-    Path resolution and content verification are deliberately separate. A path is
-    never treated as a verified content object. `verified_read_bytes()` opens one
-    artifact, reads one logical byte buffer, verifies the digest over that exact
-    buffer, and returns that same buffer to the caller.
+    Path resolution is only path confinement/existence. Content verification is
+    performed by `verified_read_bytes()`, which hashes and returns the exact same
+    byte buffer read from one opened regular-file descriptor.
     """
 
     PREFIX = "artifact://"
@@ -234,7 +234,7 @@ class ArtifactStore:
 
     @classmethod
     def resolve_ref_path(cls, root: str | Path, ref: str) -> Path:
-        """Resolve one artifact ref for path confinement/existence only."""
+        """Resolve for path confinement/existence only; this does not verify bytes."""
         root_path = Path(root).resolve()
         token = cls._token_from_ref(ref)
         cls.digest_from_ref(ref)
@@ -249,14 +249,10 @@ class ArtifactStore:
 
     @classmethod
     def verified_read_bytes_from_root(cls, root: str | Path, ref: str) -> bytes:
-        """Read once, hash the exact returned buffer, and fail closed on mismatch."""
         root_path = Path(root).resolve()
         token = cls._token_from_ref(ref)
         expected = cls.digest_from_ref(ref)
 
-        # Open the artifact relative to an already-open directory. O_NOFOLLOW
-        # prevents final-component symlink substitution; fstat rejects any
-        # non-regular artifact. The bytes hashed below are the bytes returned.
         dir_flags = os.O_RDONLY
         if hasattr(os, "O_DIRECTORY"):
             dir_flags |= os.O_DIRECTORY
@@ -272,6 +268,7 @@ class ArtifactStore:
             file_flags |= os.O_CLOEXEC
         if hasattr(os, "O_NOFOLLOW"):
             file_flags |= os.O_NOFOLLOW
+
         try:
             try:
                 fd = os.open(token, file_flags, dir_fd=dir_fd)
@@ -281,9 +278,7 @@ class ArtifactStore:
                 raise IntegrityError(f"artifact file cannot be opened safely: {exc}") from exc
             try:
                 info = os.fstat(fd)
-                if not os.path.isfile(f"/proc/self/fd/{fd}") if Path("/proc/self/fd").exists() else False:
-                    pass
-                if not __import__('stat').S_ISREG(info.st_mode):
+                if not stat.S_ISREG(info.st_mode):
                     raise IntegrityError("artifact is not a regular file")
                 chunks: list[bytes] = []
                 while True:
