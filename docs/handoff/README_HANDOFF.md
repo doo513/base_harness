@@ -8,34 +8,28 @@ Historical Stage 02 PARTIAL material remains preserved in the archive. Stage 02 
 Stage 00  COMPLETE
 Stage 01  COMPLETE for scoped P0 defects
 Stage 02  PASS / EXITED
-Stage 03  PASS / EXITED
-Stage 04  NEXT / NOT STARTED
+Stage 03  PASS / EXITED   v0.4.0
+Stage 04  PASS / EXITED   v0.5.0
+Stage 05  NEXT / NOT STARTED
 ```
 
-Current implementation version: `v0.4.0`.
+## Most recent evidence
 
-## Stage 03 evidence
+Stage 04 promotion candidate `v0.5.0-rc3`:
 
 ```text
-12 Stage 03 tests PASS
-59 full pytest tests PASS
-4/4 direct resume probes PASS
-duplicate external actions = 0
-checkpoint corruption = fail closed
-event/checkpoint mismatch = fail closed
-canonical replay state hash = match
-Stage 02 attack regression = PASS
-compileall = PASS
+GitHub Actions run         31934328945
+pytest                     69 passed / 5 skipped
+semantic matrix            8 / 8 PASS
+false positives            0
+false negatives            0
+level inflation            blocked
+artifact content tamper    blocked
+semantic-key masquerade    blocked
+cross-version resume       blocked
 ```
 
-Stage 03 guarantee boundary:
-
-```text
-COMMITTED non-idempotent receipt -> deduplicate, never automatically execute again
-PREPARED-only receipt            -> ambiguous, halt/fail closed
-```
-
-Do not rewrite this as a universal exactly-once guarantee.
+The five skips are live Linux namespace tests on a hosted environment that could not establish production `runtime_probe`; they do not replace Stage 02 direct production evidence.
 
 ## Project objective
 
@@ -57,7 +51,11 @@ Inspect current implementation/evidence
 → Continue only on PASS
 ```
 
-## Read order
+## Branch rule
+
+Use the existing `research/verified-state-stage03` branch as the single continuing development branch. Do not create a new Stage branch. `main` remains the preserved legacy Base Harness.
+
+## Next agent read order
 
 1. `00_PROJECT_CONTEXT.md`
 2. `01_ARCHITECTURE.md`
@@ -68,8 +66,8 @@ Inspect current implementation/evidence
 7. `06_EVIDENCE_STANDARD.md`
 8. `08_AGENT_OPERATING_RULES.md`
 9. `15_DO_NOT_DO.md`
-10. Stage 03 reports/evidence
+10. `../STAGE4_IMPLEMENTATION_REPORT.md`
+11. `../STAGE4_FINAL_REREVIEW.md`
+12. `../STAGE4_EXIT_DECISION.md`
 
-Historical Stage 03 entry contract is preserved at `history/STAGE03_ENTRY_TASK.md`.
-
-The next agent must re-review Stage 04 semantic-verification requirements before implementing them.
+The next agent's first task is Stage 05 contract review, not feature expansion.

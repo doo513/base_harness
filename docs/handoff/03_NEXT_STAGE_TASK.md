@@ -1,40 +1,55 @@
 # 03 — Next Stage Task
 
-# Stage 04 — Semantic Verification
+# Stage 05 — Failure Recovery
 
-Version target: `v0.5.0` only after PASS.
+Version target: `v0.6.0` only after PASS.
 
 ## Entry condition
 
-Stage 03 Persistence / Resume / Reproducibility must be PASS with direct forced-kill, duplicate-effect, corruption, replay-hash, and provenance evidence.
+Stage 04 Semantic Verification must be PASS / EXITED with no known false semantic promotion path in the declared generic contract. Entry is satisfied by `v0.5.0`.
 
-Entry condition is satisfied by `v0.4.0`.
+## Current defect to address
+
+`FailureRouter` currently maps a `FailureKind` to a recommended `RecoveryAction`, and repeated failures may change the recommendation to `SWITCH_STRATEGY`. The runtime records this recommendation in failure history, but that is not equivalent to an actual recovery state transition.
 
 ## First action
 
-Do **not** immediately add new verifier breadth.
+Do not immediately add planners, loop detectors, or agents.
 
-First re-review and freeze:
+First freeze a **Recovery Transition Contract** specifying:
 
-1. what a verifier is allowed to treat as evidence,
-2. how evidence is bound to the exact claim being verified,
-3. semantic false-positive / false-negative threat cases,
-4. minimum independence required for each verification level,
-5. when execution-level evidence is stronger than schema/logical evidence,
-6. how Domain Profiles may customize verification without forking Kernel truth authority.
+1. recovery authority owner;
+2. legal transition for every RecoveryAction;
+3. what trusted state may be rolled back or preserved;
+4. checkpoint/event/receipt behavior during recovery;
+5. repeat threshold and strategy-switch semantics;
+6. budget accounting;
+7. security/persistence failures that must halt rather than retry;
+8. resume semantics for an interrupted recovery transition.
 
-## Working objective
+## Required direct scenarios
 
-Move from “a verifier ran and returned true” toward **claim-bound semantic evidence whose relevance, authority, and independence are explicit and adversarially tested**.
+- `TOOL_ERROR` → repair transition without replaying committed external effect;
+- `MISSING_INFO` → observe transition;
+- `VERIFICATION_FAILED` → replan transition without promoting rejected claim;
+- `HYPOTHESIS_REFUTED` → rollback transition;
+- repeated same signature → strategy switch at declared threshold;
+- `PERSISTENCE_ERROR` or ambiguous receipt → checkpoint-stop/fail closed;
+- security violation → no automatic unsafe retry;
+- forced interruption during recovery → deterministic resume;
+- recovery event/checkpoint mismatch → fail closed.
 
-## Required preservation rules
+## Exit minimum
 
-- Actor cannot promote trusted facts.
-- Verifier cannot mutate Actor workspace unless explicitly using a separately authorized subprocess boundary.
-- Oracle remains separate from Actor truth claims.
-- resume/event/checkpoint/receipt invariants remain intact.
-- no RAG, skill system, subagent swarm, planner hierarchy, or unrelated feature breadth.
+```text
+recovery recommendation changes actual runtime state     PASS
+recovery transition is durably replayable                PASS
+no truth/verification/oracle bypass                       PASS
+no duplicate non-idempotent external action              PASS
+repeated failure escalation deterministic                PASS
+full Stage 01–04 regression                              PASS
+```
 
-## Exit rule
+## Non-goals
 
-Stage 04 exit criteria must be written before implementation begins. If the semantic verifier still has known false-positive paths that can promote an incorrect claim, Stage 04 is PARTIAL/FAIL and Stage 05 must not begin.
+Semantic no-progress detection, optimization/budget policy research, RAG, skills, subagents, planner hierarchy, or model routing remain later work.

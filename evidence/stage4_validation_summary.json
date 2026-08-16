@@ -1,0 +1,27 @@
+{
+  "stage": "04",
+  "release": "v0.5.0",
+  "promotion_candidate": "v0.5.0-rc3",
+  "candidate_commit": "11e707cf04ea76f20a9b810d159a58fe1c1e2430",
+  "candidate_ci_run_id": 31934328945,
+  "candidate_ci": {
+    "compileall": "PASS",
+    "pytest_passed": 69,
+    "pytest_skipped": 5,
+    "semantic_matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "artifact_tamper_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "all_matrix_cases_pass": true
+  },
+  "version_drift_resume_blocked": true,
+  "status": "PASS / EXITED",
+  "scope": "contract-bound structured semantic verification; domain semantics require domain-specific verifier coverage",
+  "known_non_claims": [
+    "generic natural-language truth is not solved",
+    "trusted verifier implementation remains part of the TCB",
+    "synthetic FP/FN matrix is not a real-world benchmark"
+  ]
+}

@@ -19,5 +19,7 @@ jobs:
         run: python -m compileall -q src tests scripts
       - name: Full pytest regression
         run: pytest -q
+      - name: Stage 03 resume probe
+        run: python scripts/stage3_resume_probe.py
       - name: Stage 04 semantic probe
         run: python scripts/stage4_semantic_probe.py

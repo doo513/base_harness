@@ -12,59 +12,59 @@ Status: **COMPLETE** for the scoped P0 defects.
 
 Status: **PASS / EXITED** for `LinuxNamespaceSandboxBackend` when live `runtime_probe` succeeds.
 
-Stage 03 changes were regression-tested against the real Stage 02 attack probe:
-
-```text
-required attacks      12 / 12 PASS
-defense-in-depth       4 / 4 PASS
-runtime attestation   PASS
-workspace control     PASS
-```
+Stage 02 production guarantee remains environment-dependent and is not redefined by later hosted-CI skips.
 
 ## Stage 03 — Persistence / Resume / Reproducibility
 
-Status: **PASS / EXITED**.
-
+Status: **PASS / EXITED**.  
 Version: `v0.4.0`.
 
-Implemented and directly verified:
-
-- integrity-bound `run_manifest.json`
-- hash-chained `events.jsonl`
-- canonical `state.snapshot` replay
-- atomic checkpoint envelope with event anchor
-- event-ahead checkpoint recovery
-- public `HarnessRuntime.resume(...)`
-- CLI `--resume`
-- cumulative wall-budget continuity
-- non-idempotent PREPARED/COMMITTED receipts
-- committed-action deduplication
-- PREPARED-only ambiguity fail-closed behavior
-- task/model/profile/verifier/tool/security/budget/oracle provenance fingerprinting
-- dirty run-directory fail-closed behavior
-
-Final evidence:
+Core guarantee:
 
 ```text
-Stage 03 tests          12 passed
-full pytest             59 passed
-direct Stage 03 probe    4 / 4 PASS
-duplicate external       0
-compileall               PASS
-Stage 02 regression      PASS
+COMMITTED non-idempotent receipt -> deduplicate
+PREPARED-only receipt            -> ambiguous, halt/fail closed
 ```
 
-Important guarantee boundary:
+This is at-most-once automatic execution, not universal exactly-once semantics.
+
+## Stage 04 — Semantic Verification
+
+Status: **PASS / EXITED**.  
+Version: `v0.5.0`.
+
+Implemented:
+
+- explicit Domain `VerificationContract`;
+- verifier level/coverage normalization;
+- evidence/strength/coverage requirements;
+- read-time content-address artifact integrity verification;
+- narrow `StructuredArtifactAssertionVerifier`;
+- generic assertion namespace `artifact_assertion.*`;
+- `SUPPORTED` authority for structural/logical facts;
+- verification contract/verifier metadata in reproducibility fingerprint;
+- fail-closed cross-version resume guard.
+
+Promotion candidate evidence:
 
 ```text
-non-idempotent tools => at-most-once automatic execution
-PREPARED-only receipt => ambiguous, therefore halt/fail closed
+candidate                v0.5.0-rc3
+candidate commit          11e707cf04ea76f20a9b810d159a58fe1c1e2430
+GitHub Actions run        31934328945
+full pytest               69 passed / 5 skipped
+semantic matrix           8 / 8 PASS
+false positives           0
+false negatives           0
+level inflation           BLOCKED
+artifact tamper           BLOCKED
+semantic-key masquerade   BLOCKED
+version drift resume      BLOCKED
 ```
 
-The project does not claim universal exactly-once semantics for arbitrary external systems.
+Important scope: generic natural-language truth is not solved. Domain-semantic facts require Domain Profile verifier coverage.
 
 ## Current unresolved work
 
-The next allowed stage is **Stage 04 — Semantic Verification (`v0.5.0`)**.
+The next allowed Stage is **Stage 05 — Failure Recovery**.
 
-Before implementation, freeze the Stage 04 verification contract and adversarial false-positive/false-negative test matrix. Do not weaken Stage 01–03 gates to make semantic verification easier.
+The current `FailureRouter` recommends `REPAIR`, `OBSERVE`, `ROLLBACK`, `REPLAN`, `SWITCH_STRATEGY`, etc., but recovery is not yet a first-class durable kernel transition. Stage 05 must freeze that transition contract before implementation.

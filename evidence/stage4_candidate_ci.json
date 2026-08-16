@@ -1,0 +1,23 @@
+{
+  "workflow": "research-ci",
+  "run_id": 31934328945,
+  "head_sha": "11e707cf04ea76f20a9b810d159a58fe1c1e2430",
+  "candidate": "v0.5.0-rc3",
+  "conclusion": "success",
+  "steps": {
+    "install": "success",
+    "compile": "success",
+    "full_pytest_regression": "success",
+    "stage4_semantic_probe": "success"
+  },
+  "pytest": "69 passed, 5 skipped",
+  "semantic_probe": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "artifact_tamper_blocked": true,
+    "all_cases_pass": true
+  }
+}
