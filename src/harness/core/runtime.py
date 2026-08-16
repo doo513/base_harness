@@ -182,6 +182,10 @@ class HarnessRuntime(
             }
             for v in getattr(self.verifiers, "verifiers", [])
         ]
+        registry = self.profile.claim_verification_registry()
+        descriptor["profile"]["claim_verification_registry"] = (
+            registry.dump() if registry is not None else None
+        )
         descriptor["failure_recovery"] = self.failure_router.descriptor()
         descriptor["progress_control"] = self.progress_policy.descriptor()
         descriptor["context_governance"] = self.context_policy.descriptor()
