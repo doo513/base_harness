@@ -18,6 +18,7 @@ from .failures import Failure, FailureKind, FailureRouter, RecoveryAction
 from .budget import Budget
 from .progress import ProgressPolicy
 from .context import ContextPolicy, ContextProjector
+from .provenance import capture_build_provenance
 from .runtime_recovery import RuntimeRecoveryMixin
 from .runtime_progress import RuntimeProgressMixin
 from .runtime_context import RuntimeContextMixin
@@ -73,6 +74,11 @@ class HarnessRuntime(
 
         self.workspace = Path(workspace or getattr(profile, "workspace", ".")).resolve()
         self.run_dir = Path(run_dir).resolve()
+
+        # Capture build/runtime identity before run_dir creation can alter a
+        # repository worktree. This value is immutable for the lifetime of this
+        # HarnessRuntime and is never recomputed per Actor turn.
+        self.build_provenance = capture_build_provenance()
 
         self.oracle = profile.completion_oracle()
         oracle_root = getattr(getattr(self.oracle, "bundle", None), "root", None)
@@ -229,91 +235,3 @@ class HarnessRuntime(
             "strategy_generation": generation,
             "transition": transition.dump(),
         })
-
-    def _run_budget_terminalization(self) -> None:
-        self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))
-        self._apply_pending_recovery()
-        self.halted = True
-        self._persist_state("halted")
-        self._save_metrics()
-
-    def run(self) -> HarnessState:
-        self.goal.validate()
-        if self.resume_mode:
-            self.log(
-                "run.resume",
-                {
-                    "run_id": self.run_id,
-                    "restored_step": self.state.step,
-                    "state_hash": canonical_hash(self.state.snapshot()),
-                    "manifest_hash": self.manifest_hash,
-                    "recovery_halted": self.state.recovery_halted,
-                    "pending_recovery": (
-                        self.state.pending_recovery.dump()
-                        if self.state.pending_recovery is not None else None
-                    ),
-                    "progress": self.state.progress.dump(),
-                    "context_governance": self.context_policy.descriptor(),
-                },
-            )
-            self._persist_state("resume.start")
-        else:
-            self.log(
-                "run.start",
-                {
-                    "run_id": self.run_id,
-                    "goal": self.goal.goal,
-                    "acceptance": self.goal.acceptance,
-                    "constraints": self.goal.constraints,
-                    "pinned_constraints": self.goal.pinned_constraints,
-                    "workspace": str(self.workspace),
-                    "profile": self.profile.name,
-                    "manifest_hash": self.manifest_hash,
-                    "provenance_warnings": self.manifest_body.get("provenance_warnings", []),
-                    "progress_control": self.progress_policy.descriptor(),
-                    "context_governance": self.context_policy.descriptor(),
-                    "security": {
-                        "strict_layout": self.security_config.strict_layout,
-                        "strict_tool_isolation": self.security_config.strict_tool_isolation,
-                        "network_policy": self.security_config.network_policy,
-                        "require_sealed_oracle": self.security_config.require_sealed_oracle,
-                        "oracle_root_present": self.security_layout.oracle_root is not None,
-                    },
-                },
-            )
-            self._persist_state("run.start")
-
-        while not self.state.completed and not self.halted:
-            pending = self.state.pending_recovery
-            if pending is not None and pending.action in {
-                RecoveryAction.CHECKPOINT_STOP,
-                RecoveryAction.ESCALATE,
-            }:
-                recovery_applied = self.step_once()
-            elif self.budget.hard_exceeded(
-                self.state.step, self.started_at, elapsed_before=self.elapsed_before_resume
-            ):
-                self._run_budget_terminalization()
-                break
-            else:
-                recovery_applied = self.step_once()
-
-            if not recovery_applied and not self.halted:
-                self.state.step += 1
-            self._persist_state("halted" if self.halted else "step.transition")
-            self._save_metrics()
-
-        self.log(
-            "run.end",
-            {
-                "completed": self.state.completed,
-                "halted": self.halted,
-                "steps": self.state.step,
-                "state_hash": canonical_hash(self.state.snapshot()),
-                "recovery_halted": self.state.recovery_halted,
-                "progress": self.state.progress.dump(),
-            },
-        )
-        self._persist_state("run.end")
-        self._save_metrics()
-        return self.state
