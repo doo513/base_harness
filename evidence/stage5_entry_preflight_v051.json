@@ -1,0 +1,35 @@
+{
+  "gate": "stage05_entry_preflight",
+  "release": "v0.5.1",
+  "candidate_commit": "22066a8c95e262c924a3a4697f17f59084f8238f",
+  "github_actions_run": 31935087009,
+  "result": "PASS",
+  "pytest": {
+    "passed": 75,
+    "skipped": 5
+  },
+  "compileall": "PASS",
+  "stage03_resume_probe": {
+    "passed": 4,
+    "total": 4,
+    "duplicate_external_actions": 0,
+    "all_passed": true
+  },
+  "stage04_semantic_probe": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "artifact_tamper_blocked": true,
+    "all_cases_pass": true
+  },
+  "drift_guards": {
+    "scripted_controller": "FAIL_CLOSED",
+    "capability_policy": "FAIL_CLOSED",
+    "completion_oracle_commands": "FAIL_CLOSED",
+    "predicate_closure": "FAIL_CLOSED",
+    "tool_handler_closure": "FAIL_CLOSED",
+    "execution_backend_config": "FAIL_CLOSED"
+  }
+}
