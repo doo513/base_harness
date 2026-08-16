@@ -24,6 +24,9 @@ class GoalContract:
     task_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.validate()
+
     @classmethod
     def limits_descriptor(cls) -> dict[str, int | str]:
         return {
