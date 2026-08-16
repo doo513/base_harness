@@ -74,6 +74,16 @@ class RuntimeContextMixin:
             "progress": self.state.progress.dump(),
         }
 
+    def _project_retrieval_context(self, projected):
+        """No-op extension hook for runtimes that do not install Stage-08 retrieval.
+
+        HarnessRuntime places RuntimeRetrievalMixin earlier in the MRO, so the
+        real retrieval governor overrides this hook. Keeping the neutral hook
+        here preserves RuntimeContextMixin's independent Stage-07 contract and
+        compatibility test fixtures.
+        """
+        return projected
+
     def _context(self) -> dict:
         projected = self.context_projector.project(
             goal=self.goal,
