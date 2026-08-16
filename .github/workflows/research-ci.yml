@@ -49,3 +49,5 @@ jobs:
         run: python scripts/stage7_context_adversarial_probe.py
       - name: Stage 07 context resume probe
         run: python scripts/stage7_context_resume_probe.py
+      - name: Stage 07 compatibility projection probe
+        run: python scripts/stage7_context_compat_probe.py

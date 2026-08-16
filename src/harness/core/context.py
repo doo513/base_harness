@@ -10,6 +10,55 @@ from .storage import canonical_hash, canonical_json
 _ARTIFACT_RE = re.compile(r"^artifact://([0-9a-f]{64})_.+$")
 
 
+class ContextProjection(dict):
+    """Namespaced governed context with non-serialized legacy read aliases.
+
+    The built-in LLM JSON serialization sees only the actual namespaced keys.
+    Existing in-process trusted Controller adapters can continue read-only
+    access to the previous top-level keys during the Stage-07 transition.
+    """
+
+    _LEGACY_PATHS = {
+        "pinned_constraints": ("goal_contract", "pinned_constraints"),
+        "acceptance": ("goal_contract", "acceptance"),
+        "facts": ("trusted", "facts"),
+        "hypotheses": ("untrusted", "hypotheses"),
+        "refuted_hypotheses": ("untrusted", "refuted_hypotheses"),
+        "unknowns": ("untrusted", "unknowns"),
+        "observations": ("untrusted", "observations"),
+        "recent_failures": ("control", "recent_failures"),
+        "recovery_directive": ("control", "recovery_directive"),
+        "strategy_generation": ("control", "strategy_generation"),
+        "recovery_halted": ("control", "recovery_halted"),
+        "progress": ("control", "progress"),
+        "tools": ("tools",),
+    }
+
+    def _legacy_value(self, key: str):
+        path = self._LEGACY_PATHS.get(key)
+        if path is None:
+            raise KeyError(key)
+        value: Any = self
+        for part in path:
+            value = dict.__getitem__(value, part) if isinstance(value, ContextProjection) else value[part]
+        return value
+
+    def __getitem__(self, key):
+        try:
+            return dict.__getitem__(self, key)
+        except KeyError:
+            return self._legacy_value(key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key):
+        return dict.__contains__(self, key) or key in self._LEGACY_PATHS
+
+
 @dataclass(frozen=True)
 class ContextPolicy:
     max_observations: int = 12
@@ -44,10 +93,6 @@ class ContextPolicy:
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        if self.max_observations == 0 and self.max_total_observation_preview_chars != 0:
-            # Legal but usually accidental; keep behavior explicit rather than
-            # silently using an otherwise unreachable preview budget.
-            pass
 
     def descriptor(self) -> dict[str, Any]:
         return {
@@ -68,6 +113,7 @@ class ContextPolicy:
             "observation_duplicate_identity": "source_plus_content_address_digest",
             "untrusted_instruction_authority": "none",
             "valid_until_wall_clock_interpretation": False,
+            "legacy_aliases_serialized_to_model": False,
         }
 
 
@@ -147,10 +193,7 @@ class ContextProjector:
     def _select_claims(self, claims: dict[str, Any], limit: int, *, trust: str) -> tuple[dict[str, Any], int]:
         keys = sorted(claims)
         selected_keys = keys[:limit]
-        projected = {
-            key: self._project_claim(claims[key], trust=trust)
-            for key in selected_keys
-        }
+        projected = {key: self._project_claim(claims[key], trust=trust) for key in selected_keys}
         return projected, max(0, len(keys) - len(selected_keys))
 
     def _observation_identity(self, observation) -> str:
@@ -181,10 +224,7 @@ class ContextProjector:
                 group["latest_index"] = index
                 group["representative"] = observation
 
-        ordered = sorted(
-            groups.values(),
-            key=lambda item: (-item["latest_step"], item["identity"]),
-        )
+        ordered = sorted(groups.values(), key=lambda item: (-item["latest_step"], item["identity"]))
         selected = ordered[: self.policy.max_observations]
         remaining_chars = self.policy.max_total_observation_preview_chars
         projected: list[dict[str, Any]] = []
@@ -225,10 +265,7 @@ class ContextProjector:
         return projected, stats
 
     def _project_failures(self, failures: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-        if self.policy.max_recent_failures == 0:
-            selected = []
-        else:
-            selected = failures[-self.policy.max_recent_failures :]
+        selected = [] if self.policy.max_recent_failures == 0 else failures[-self.policy.max_recent_failures :]
         projected: list[dict[str, Any]] = []
         for record in selected:
             item = dict(record)
@@ -257,9 +294,7 @@ class ContextProjector:
         result: dict[str, Any] = {}
         for name in sorted(tools):
             spec = tools[name]
-            description, truncated = _truncate_text(
-                str(spec.description), self.policy.max_tool_description_chars
-            )
+            description, truncated = _truncate_text(str(spec.description), self.policy.max_tool_description_chars)
             result[name] = {
                 "description": description,
                 "description_truncated": truncated,
@@ -268,23 +303,20 @@ class ContextProjector:
             }
         return result
 
-    def project(self, *, goal, state, tools: dict[str, Any]) -> dict[str, Any]:
+    def project(self, *, goal, state, tools: dict[str, Any]) -> ContextProjection:
         current_facts, superseded_fact_keys = self._project_facts(state)
         hypotheses, omitted_hypotheses = self._select_claims(
-            state.hypotheses,
-            self.policy.max_hypotheses,
-            trust="untrusted_speculation",
+            state.hypotheses, self.policy.max_hypotheses, trust="untrusted_speculation"
         )
         refuted, omitted_refuted = self._select_claims(
-            state.refuted_hypotheses,
-            self.policy.max_refuted_hypotheses,
+            state.refuted_hypotheses, self.policy.max_refuted_hypotheses,
             trust="untrusted_refuted_speculation",
         )
         observations, observation_stats = self._project_observations(state.observations)
         failures, omitted_failures = self._project_failures(state.failures)
         unknowns, omitted_unknowns = self._project_unknowns(state.unknowns)
 
-        return {
+        return ContextProjection({
             "schema_version": self.schema_version,
             "projection": {
                 "policy": self.policy.descriptor(),
@@ -298,6 +330,7 @@ class ContextProjector:
                 "observation_stats": observation_stats,
                 "mandatory_sections_lossy": False,
                 "projection_is_read_only": True,
+                "legacy_aliases_model_visible": False,
             },
             "goal_contract": {
                 "goal": goal.goal,
@@ -319,15 +352,11 @@ class ContextProjector:
             "control": {
                 "step": int(state.step),
                 "recent_failures": failures,
-                "recovery_directive": (
-                    dict(state.recovery_directive)
-                    if state.recovery_directive is not None
-                    else None
-                ),
+                "recovery_directive": dict(state.recovery_directive) if state.recovery_directive is not None else None,
                 "strategy_generation": int(state.strategy_generation),
                 "recovery_halted": bool(state.recovery_halted),
                 "recovery_halt_reason": state.recovery_halt_reason,
                 "progress": state.progress.dump(),
             },
             "tools": self._project_tools(tools),
-        }
+        })
