@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -14,6 +15,8 @@ class RuntimeProgressMixin:
     Activity novelty is recorded but has zero reset authority. Progress-reset
     authority is reserved for trusted deterministic epistemic/task transitions.
     """
+
+    TASK_PROGRESS_SNAPSHOT_MAX_BYTES = 65_536
 
     def _sync_progress_generation(self) -> bool:
         progress = self.state.progress
@@ -36,6 +39,37 @@ class RuntimeProgressMixin:
             for key, claim in sorted(self.state.facts.items())
         }
         return canonical_hash(content)
+
+    def _task_progress_snapshot_hash(self) -> str | None:
+        hook = getattr(self.profile, "task_progress_snapshot", None)
+        if hook is None:
+            return None
+
+        state_before = canonical_hash(self.state.snapshot())
+        raw = hook(goal=self.goal, state=self.state)
+        state_after = canonical_hash(self.state.snapshot())
+        if state_before != state_after:
+            raise IntegrityError("profile task_progress_snapshot mutated durable harness state")
+        if raw is None:
+            return None
+
+        try:
+            encoded = json.dumps(
+                raw,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise IntegrityError(
+                f"profile task_progress_snapshot is not deterministic JSON: {exc}"
+            ) from exc
+        if len(encoded) > self.TASK_PROGRESS_SNAPSHOT_MAX_BYTES:
+            raise IntegrityError(
+                "profile task_progress_snapshot exceeds deterministic snapshot byte bound"
+            )
+        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _digest_prefix_from_artifact_ref(ref: str) -> str:
@@ -69,10 +103,12 @@ class RuntimeProgressMixin:
 
     def _progress_baseline(self) -> dict[str, Any]:
         facts_hash = self._progress_facts_hash()
+        task_progress_hash = self._task_progress_snapshot_hash()
         successful_fingerprints = self._known_successful_observation_fingerprints()
         generation_reset = self._sync_progress_generation()
         return {
             "facts_hash": facts_hash,
+            "task_progress_hash": task_progress_hash,
             "observation_count": len(self.state.observations),
             "successful_fingerprints": successful_fingerprints,
             "strategy_generation": int(self.state.strategy_generation),
@@ -101,6 +137,22 @@ class RuntimeProgressMixin:
                 goal_relation="not_inferred",
             ))
             reasons.append("verified_fact_content_changed")
+
+        task_progress_after = self._task_progress_snapshot_hash()
+        if task_progress_after != baseline.get("task_progress_hash"):
+            signals.append(ProgressEvent(
+                ProgressKind.TASK,
+                source="profile_task_progress_snapshot_changed",
+                credit=1.0,
+                verified=True,
+                goal_relation="profile_explicit",
+                details={
+                    "before_hash": baseline.get("task_progress_hash"),
+                    "after_hash": task_progress_after,
+                    "snapshot_bytes_bound": self.TASK_PROGRESS_SNAPSHOT_MAX_BYTES,
+                },
+            ))
+            reasons.append("profile_task_progress_snapshot_changed")
 
         prior_fingerprints = set(baseline["successful_fingerprints"])
         novel_fingerprints: list[str] = []
@@ -213,6 +265,8 @@ class RuntimeProgressMixin:
             "progress_signals": [signal.dump() for signal in signals],
             "max_credit": max_credit,
             "reset_credit_threshold": self.progress_policy.reset_credit_threshold,
+            "task_progress_before_hash": baseline.get("task_progress_hash"),
+            "task_progress_after_hash": task_progress_after,
             "novel_successful_observation_fingerprints": novel_fingerprints,
             "strategy_generation": generation,
             "generation_reset": bool(baseline.get("generation_reset", False)),
