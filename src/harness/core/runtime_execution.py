@@ -26,6 +26,7 @@ class RuntimeExecutionMixin:
             ),
             "strategy_generation": self.state.strategy_generation,
             "recovery_halted": self.state.recovery_halted,
+            "progress": self.state.progress.dump(),
             "tools": {
                 name: {
                     "description": spec.description,
@@ -260,6 +261,7 @@ class RuntimeExecutionMixin:
         if self._apply_pending_recovery():
             return True
 
+        progress_baseline = self._progress_baseline()
         try:
             actor_state = HarnessState.from_snapshot(self.state.snapshot())
             decision = self.controller.decide(self.goal.goal, actor_state, self._context())
@@ -276,6 +278,33 @@ class RuntimeExecutionMixin:
             self.fail(Failure(
                 FailureKind.IMPLEMENTATION_ERROR,
                 f"decision dispatch error: {type(exc).__name__}: {exc}",
+                action=decision.kind,
+            ))
+
+        if self.state.completed or self.halted:
+            return False
+
+        # A more specific Stage 05 failure always has precedence. We still
+        # account for the Actor sample, but generic no-progress recovery cannot
+        # supersede the already scheduled transition.
+        allow_progress_trigger = self.state.pending_recovery is None
+        try:
+            self._evaluate_actor_progress(
+                decision,
+                progress_baseline,
+                allow_trigger=allow_progress_trigger,
+            )
+        except (PersistenceError, IntegrityError, ResumeConflict) as exc:
+            self.fail(Failure(
+                FailureKind.PERSISTENCE_ERROR,
+                f"progress evidence integrity failure: {exc}",
+                action=decision.kind,
+                signature_key="stage6:progress_evidence_integrity",
+            ))
+        except Exception as exc:
+            self.fail(Failure(
+                FailureKind.IMPLEMENTATION_ERROR,
+                f"progress evaluation error: {type(exc).__name__}: {exc}",
                 action=decision.kind,
             ))
         return False

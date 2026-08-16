@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any
 
 from .failures import RecoveryTransition
+from .progress import ProgressState
 
 
 class ClaimStatus(str, Enum):
@@ -79,6 +80,7 @@ class HarnessState:
     strategy_generation: int = 0
     recovery_halted: bool = False
     recovery_halt_reason: str | None = None
+    progress: ProgressState = field(default_factory=ProgressState)
 
     def propose(self, claim: Claim) -> None:
         if claim.status == ClaimStatus.VERIFIED:
@@ -114,6 +116,7 @@ class HarnessState:
             "strategy_generation": self.strategy_generation,
             "recovery_halted": self.recovery_halted,
             "recovery_halt_reason": self.recovery_halt_reason,
+            "progress": self.progress.dump(),
         }
 
     @classmethod
@@ -148,4 +151,5 @@ class HarnessState:
             strategy_generation=int(raw.get("strategy_generation", 0)),
             recovery_halted=bool(raw.get("recovery_halted", False)),
             recovery_halt_reason=raw.get("recovery_halt_reason"),
+            progress=ProgressState.load(raw.get("progress", {})),
         )
