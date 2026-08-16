@@ -1,0 +1,58 @@
+{
+  "scope": "stage02-tool-backend-attestation-execution-binding",
+  "classification": "confirmed_code_security_defect",
+  "red": {
+    "run_id": 31948573578,
+    "conclusion": "failure_expected_red_gate",
+    "attestation_execution_mismatch_observed": true,
+    "unsafe_handler_calls": 1,
+    "attested_backend_execution_calls": 0,
+    "private_canary_changed": true,
+    "result_ok": true,
+    "security_violation": false
+  },
+  "green": {
+    "commit": "6792876b09df13f66061f598644cc530e921c35e",
+    "run_id": 31948805281,
+    "conclusion": "success",
+    "pytest": {"passed": 140, "skipped": 5, "failed": 0},
+    "attestation_execution_mismatch_observed": false,
+    "unsafe_handler_calls": 0,
+    "attested_backend_execution_calls": 0,
+    "private_canary_changed": false,
+    "result_ok": false,
+    "security_violation": true,
+    "prior_stage_probes": true
+  },
+  "cost_probe_first_run": {
+    "run_id": 31948865697,
+    "conclusion": "failure_after_all_functional_security_gates_passed",
+    "cause": "Python probe typo: lowercase true instead of True",
+    "production_code_changed_by_correction": false
+  },
+  "fix": {
+    "legacy_type": "ToolSpec/trusted_in_process",
+    "strict_side_effect_type": "SandboxedCommandToolSpec",
+    "strict_generic_write_external_blocked": true,
+    "runtime_owns_backend_invocation": true,
+    "same_backend_object_attested_and_executed": true,
+    "builtin_shell_migrated": true,
+    "declarative_semantics_provenance_bound": [
+      "execution_kind",
+      "timeout_seconds",
+      "command_arg",
+      "require_zero_exit"
+    ]
+  },
+  "cost": {
+    "valid_path_expected_attestations": 1,
+    "valid_path_expected_backend_executions": 1,
+    "valid_path_handler_indirections": 0,
+    "blocked_mismatch_attestations": 0,
+    "blocked_mismatch_executions": 0,
+    "blocked_mismatch_handler_calls": 0,
+    "additional_model_tokens": 0,
+    "additional_checkpoint_or_event_records": 0
+  },
+  "release_status": "pending_corrected_cost_gate_and_v0.8.3_snapshot"
+}
