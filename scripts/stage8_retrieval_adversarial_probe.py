@@ -56,6 +56,7 @@ def main() -> int:
             enabled=True,
             default_top_k=1,
             max_admitted_per_request=1,
+            max_context_items=1,
             max_content_bytes_per_item=8,
             max_total_content_bytes_per_request=8,
         )
@@ -132,6 +133,7 @@ def main() -> int:
             enabled=True,
             default_top_k=1,
             max_admitted_per_request=1,
+            max_context_items=1,
             max_durable_items=1,
             max_request_snapshots=2,
         )
