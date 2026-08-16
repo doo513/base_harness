@@ -1,0 +1,93 @@
+{
+  "stage": "08",
+  "name": "Retrieval / Memory Gateway",
+  "status": "PASS_EXITED",
+  "version": "0.9.0",
+  "release_commit": "a5645fc9d059afd12088ee1c4751c0250c8a5206",
+  "release_ci_run": 31954492789,
+  "release_environment": {
+    "os": "Ubuntu 24.04.4",
+    "runner_image": "ubuntu-24.04",
+    "runner_image_version": "20260810.271.1",
+    "python": "3.11.15",
+    "git": "2.54.0",
+    "pytest": "9.1.1"
+  },
+  "pytest": {
+    "passed": 182,
+    "skipped": 5,
+    "failed": 0,
+    "seconds": 14.54
+  },
+  "stage8_base": {
+    "probe": "retrieval-base-rc1",
+    "passed": 4,
+    "total": 4,
+    "retrieval_false_progress": 0,
+    "untrusted_authority_promotions": 0,
+    "bounded_projection": {
+      "selected": 2,
+      "omitted": 3,
+      "visible_preview_chars": 60,
+      "visible_metadata_chars": 30
+    }
+  },
+  "stage8_adversarial": {
+    "probe": "retrieval-adversarial-rc2",
+    "passed": 6,
+    "total": 6,
+    "partial_admission_failures": 0,
+    "implicit_supersessions": 0,
+    "mid_batch_live_items_after_failure": 0,
+    "mid_batch_live_snapshots_after_failure": 0,
+    "mid_batch_live_artifact_refs_after_failure": 0
+  },
+  "stage8_resume": {
+    "probe": "retrieval-resume-rc1",
+    "passed": 4,
+    "total": 4,
+    "resume_divergence": 0,
+    "drift_acceptances": 0,
+    "tamper_acceptances": 0
+  },
+  "artifact_integrity": {
+    "probe": "single-buffer-artifact-integrity-v081rc2",
+    "passed": 6,
+    "total": 6,
+    "unverified_return_buffers": 0
+  },
+  "previous_stage_regression": {
+    "stage03_resume": "PASS",
+    "stage04_semantic": "PASS_FP0_FN0",
+    "stage05_recovery": "PASS",
+    "stage06_progress": "PASS",
+    "stage07_context": "PASS",
+    "stage02_nested_submount_remediation": "PASS",
+    "stage02_tool_binding_remediation": "PASS"
+  },
+  "ownership": {
+    "actor_controlled_fields": ["query"],
+    "kernel_controlled_or_validated_fields": [
+      "query_normalization",
+      "scope",
+      "top_k",
+      "provider_identity",
+      "index_identity",
+      "ranking_policy",
+      "candidate_admission",
+      "request_identity",
+      "content_bounds",
+      "history_bounds",
+      "context_authority"
+    ],
+    "model_visible_trust": "untrusted_retrieval",
+    "instruction_authority": "none",
+    "direct_progress_credit": 0
+  },
+  "residuals": [
+    "failed preparation may leave unreferenced non-authoritative content-addressed artifact files",
+    "semantic query planning is outside Stage08 scope",
+    "arbitrary remote-provider hidden-state honesty is not proven by the shipped local-provider evidence",
+    "state-side batch atomicity is not a universal cross-filesystem transaction claim"
+  ]
+}

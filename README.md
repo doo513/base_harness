@@ -45,13 +45,13 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
 | 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
 | 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
-| 08 | Retrieval / Memory Gateway | RELEASE SNAPSHOT (`v0.9.0`), exit pending same-commit CI |
+| 08 | Retrieval / Memory Gateway | **PASS / EXITED (`v0.9.0`)** |
 
 Current package version: **v0.9.0**.
 
-## Stage 08 release snapshot
+## Stage 08 result
 
-Stage 08 introduces a bounded retrieval/evidence gateway without treating retrieval as truth or progress:
+Stage 08 adds a bounded retrieval/evidence gateway without treating retrieval as truth or progress:
 
 - Actor controls only explicit query text; Kernel owns normalized request framing, scope, top-k, provider/index identity, ranking contract, admission policy and durable request identity;
 - the shipped local lexical gateway is deterministic and declares search read-only; descriptor mutation during search is fail-closed;
@@ -60,11 +60,11 @@ Stage 08 introduces a bounded retrieval/evidence gateway without treating retrie
 - admitted retrieval is durable in `RetrievalState`, independent from ordinary observations and verified facts;
 - model-visible retrieval is always `untrusted_retrieval` with `instruction_authority=none`;
 - retrieval cannot directly mutate verified facts, completion, recovery, or Stage-06 progress;
-- result count, query/source/provider fields, content bytes, metadata, model-visible preview, durable item count and request history are bounded;
+- query/source/provider fields, content bytes, metadata, model-visible preview, durable item count and request history are bounded;
 - supersession is an explicit Kernel transition; search ordering is not treated as freshness authority;
 - resume fails closed on missing/tampered artifacts or provider/index/config drift.
 
-The pre-release implementation at commit `a9fab5d446ff574d2bd090f51226f7f366585d15` passed **182 tests with 5 hosted-environment skips** and all Stage 03–08 plus remediation probes in GitHub Actions run `31954088822`. Release candidate `8bd4454d8f6d6ed7ec4ab568a70c9aca67629e06` (`v0.9.0rc1`) also passed the complete gate in run `31954351977`. The `v0.9.0` release snapshot must reproduce the gate before Stage 08 is marked PASS / EXITED.
+Release commit `a5645fc9d059afd12088ee1c4751c0250c8a5206` built and installed `verified-state-harness 0.9.0` and passed **182 tests / 5 hosted-environment skips** plus all Stage 03–08 and remediation probes in GitHub Actions run `31954492789`.
 
 ## Guarantee boundaries
 
@@ -84,7 +84,7 @@ Recovery guarantees durable control transitions, not that recovery improves task
 Novel successful bytes are activity, not progress. Verified fact transitions provide deterministic epistemic progress, but goal-relevant task/world progress authority remains an open design problem.
 
 ### Stage 07
-Verified trusted-fact projection is now deterministically bounded without deleting durable truth. Oversized mandatory goal/control inputs still need an entry-time fail-closed or externalized representation policy.
+Verified trusted-fact projection is deterministically bounded without deleting durable truth. Oversized mandatory goal/control inputs still need an entry-time fail-closed or externalized representation policy.
 
 ### Stage 08
 Retrieval is evidence only. Stage 08 does not claim semantic query planning, arbitrary remote-provider honesty, automatic memory writes, or universal filesystem transactions. Failed batch preparation can leave unreferenced content-addressed artifact files that have no state/truth authority but may require later garbage collection.

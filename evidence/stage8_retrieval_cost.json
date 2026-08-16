@@ -1,0 +1,50 @@
+{
+  "stage": "08",
+  "probe": "retrieval-cost-rc1",
+  "release_commit": "a5645fc9d059afd12088ee1c4751c0250c8a5206",
+  "release_ci_run": 31954492789,
+  "passed": true,
+  "measurement": "serialized_chars_and_verified-byte-read proxy; not token count",
+  "source": {
+    "candidate_count": 5,
+    "raw_source_bytes": 500035
+  },
+  "durable": {
+    "admitted_item_count": 5,
+    "artifact_bytes": 500035,
+    "max_bytes_per_request": 1048576
+  },
+  "model_visible": {
+    "full_context_chars": 12149,
+    "retrieval_json_chars": 8052,
+    "preview_chars": 3000,
+    "metadata_chars": 2000
+  },
+  "per_projection_integrity_cost": {
+    "logical_artifact_reads": 5,
+    "artifact_bytes_verified": 500035,
+    "rounds": 20,
+    "median_wall_seconds_release_runner": 0.0017587339999991514
+  },
+  "verified_read_prerequisite": {
+    "probe": "verified-read-cost-v081",
+    "payload_bytes": 4194304,
+    "baseline": {
+      "logical_content_reads_per_call": 2,
+      "artifact_bytes_read_per_call": 8388608,
+      "sha256_operations_per_call": 1
+    },
+    "hardened": {
+      "logical_content_reads_per_call": 1,
+      "artifact_bytes_read_per_call": 4194304,
+      "sha256_operations_per_call": 1
+    },
+    "artifact_read_reduction_fraction": 0.5,
+    "hash_operations_change": 0
+  },
+  "notes": [
+    "current retrieval artifacts are re-verified before each model-visible projection",
+    "wall time is environment-specific and is not a correctness gate",
+    "failed preparation may leave unreferenced non-authoritative artifact files that require later GC for disk hygiene"
+  ]
+}
