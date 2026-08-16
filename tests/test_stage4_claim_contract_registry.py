@@ -100,4 +100,10 @@ def test_claim_registry_policy_is_manifest_fingerprinted(tmp_path):
     recorded = runtime.manifest_body["config"]["profile"]["claim_verification_registry"]
     assert recorded == profile.claim_verification_registry().dump()
     assert recorded["unknown_claim_policy"] == "fail_closed"
-    assert recorded["rules"][0]["claim_class"] == "software.artifact_assertion"
+    classes = {rule["claim_class"] for rule in recorded["rules"]}
+    assert classes == {
+        "software.artifact_assertion",
+        "software.build_result",
+        "software.test_result",
+        "software.behavioral_acceptance",
+    }
