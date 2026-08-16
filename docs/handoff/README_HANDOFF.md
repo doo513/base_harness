@@ -10,31 +10,33 @@ Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
 Stage 05  PASS / EXITED   v0.6.0
 Stage 06  PASS / EXITED   v0.7.0
-Stage 07  NEXT / NOT STARTED
+Stage 07  PASS / EXITED   v0.8.0
+Stage 08  NEXT — Retrieval / Memory Gateway; contract not frozen
 ```
 
-## Stage 06 release evidence
+## Stage 07 release evidence
 
-`v0.7.0` / release commit `02d0b262756cd8f7eb32b6757f3b3066d94b63f1` / Actions `31938225096`:
+`v0.8.0` / release commit `e53c7d8e16c4fdfc814150026c0a9fa64df026e6` / Actions `31943274153`:
 
 ```text
-pytest                     112 passed / 5 skipped
-Stage 03 resume            4 / 4 PASS; duplicate=0
-Stage 04 semantic          8 / 8 PASS; FP=0/FN=0
-Stage 05 all probes        PASS
-Stage 06 base              3 / 3 PASS
-Stage 06 adversarial       3 / 3 PASS
-Stage 06 resume            3 / 3 PASS
-Stage 06 boundary          4 / 4 PASS
-Stage 06 strategy          6 / 6 PASS
-zero-tolerance counters    all 0
+installed package            0.8.0
+pytest                       125 passed / 5 skipped
+Stage 03 resume              4 / 4 PASS; duplicate=0
+Stage 04 semantic            8 / 8 PASS; FP=0/FN=0
+Stage 05 all probes          PASS
+Stage 06 all probes          PASS
+Stage 07 base                4 / 4 PASS
+Stage 07 adversarial         6 / 6 PASS
+Stage 07 resume              3 / 3 PASS
+Stage 07 compatibility       3 / 3 PASS
+zero-tolerance counters      all 0
 ```
 
 Five skips are hosted-environment live Linux namespace tests and do not replace Stage 02 production isolation evidence.
 
-## Stage 06 guarantee boundary
+## Stage 07 guarantee boundary
 
-Stage 06 is deterministic/syntactic progress control, not semantic progress understanding. New canonical tool output or newly verified truth can still be irrelevant to the active goal. Continuously changing valid outputs can remain syntactically novel. Historical successful evidence is conservatively re-hashed before Actor continuation, with a known cumulative performance cost.
+Stage 07 is deterministic Context Governance, not semantic relevance ranking. Optional/untrusted material is bounded, deduplicated, and authority-separated, but mandatory goal/trusted/control material is not subject to a universal lossy cap. `valid_until` is not wall-clock evaluated. Retrieved or remembered content is not trusted simply because it enters context.
 
 ## Mandatory workflow
 
@@ -67,11 +69,11 @@ Continue only on `research/verified-state-stage03`. Do not create a Stage branch
 7. `06_EVIDENCE_STANDARD.md`
 8. `08_AGENT_OPERATING_RULES.md`
 9. `15_DO_NOT_DO.md`
-10. `../STAGE6_PREFLIGHT_REREVIEW.md`
-11. `../STAGE6_IMPLEMENTATION_REPORT.md`
-12. `../STAGE6_EVIDENCE_MATRIX.md`
-13. `../STAGE6_FINAL_REREVIEW.md`
-14. `../STAGE6_EXIT_DECISION.md`
-15. `../stages/stage-06-loop-progress/CONTRACT.md`
+10. `../STAGE7_PREFLIGHT_REREVIEW.md`
+11. `../STAGE7_IMPLEMENTATION_REPORT.md`
+12. `../STAGE7_EVIDENCE_MATRIX.md`
+13. `../STAGE7_FINAL_REREVIEW.md`
+14. `../STAGE7_EXIT_DECISION.md`
+15. `../stages/stage-07-context-governance/CONTRACT.md`
 
-The next agent's first task is to re-review the `v0.7.0` baseline and freeze the **Stage 07 Context Projection Contract**. Do not start by adding RAG, embeddings, LLM summarization, or long-term memory.
+The next task is Stage 08 baseline re-review and freezing the **Retrieval / Memory Admission Contract**. Do not start by selecting a vector database, RAG framework, embedding model, or autonomous memory writer.

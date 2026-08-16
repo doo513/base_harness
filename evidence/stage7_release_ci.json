@@ -1,0 +1,43 @@
+{
+  "stage": "07",
+  "status": "pass_exited",
+  "release": {
+    "version": "0.8.0",
+    "commit": "e53c7d8e16c4fdfc814150026c0a9fa64df026e6",
+    "github_actions_run": 31943274153,
+    "pytest": {"passed": 125, "skipped": 5, "failed": 0}
+  },
+  "prior_stage_regression": {
+    "stage03_resume": {"passed": 4, "total": 4, "duplicate_external_actions": 0},
+    "stage04_semantic": {"passed": 8, "total": 8, "false_positives": 0, "false_negatives": 0},
+    "stage05_probes": "pass",
+    "stage06_probes": "pass"
+  },
+  "stage07": {
+    "base_projection": {"passed": 4, "total": 4},
+    "adversarial": {"passed": 6, "total": 6},
+    "resume": {"passed": 3, "total": 3},
+    "compatibility": {"passed": 3, "total": 3},
+    "counters": {
+      "missing_constraints": 0,
+      "projection_state_mutations": 0,
+      "raw_evidence_deletions": 0,
+      "untrusted_authority_promotions": 0,
+      "superseded_current_truth_exposures": 0,
+      "policy_drift_acceptances": 0,
+      "projection_resume_divergence": 0,
+      "model_visible_legacy_raw_values": 0,
+      "moved_legacy_schema_breakages": 0,
+      "python_json_split_brain_keys": 0,
+      "unresolved_critical_high": 0
+    }
+  },
+  "guarantee_boundary": {
+    "universal_total_prompt_bound": false,
+    "semantic_relevance_ranking": false,
+    "wall_clock_valid_until_evaluation": false,
+    "rag_or_long_term_memory": false,
+    "retrieval_auto_trusted": false
+  },
+  "hosted_runner_note": "Five live Linux namespace tests were skipped and are not counted as Stage 02 production isolation evidence."
+}

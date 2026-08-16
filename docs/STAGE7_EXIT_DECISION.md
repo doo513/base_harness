@@ -1,10 +1,11 @@
 # Stage 07 — Exit Decision
 
-Decision: **PASS candidate — release snapshot verification required**  
-Target release: `v0.8.0`  
-Final candidate: `757ec837c7a0eb83bdab71c497851fef196f13e8`
+Decision: **PASS / EXITED**  
+Release: `v0.8.0`  
+Release commit: `e53c7d8e16c4fdfc814150026c0a9fa64df026e6`  
+Release GitHub Actions: `31943274153`
 
-## Candidate exit criteria
+## Exit criteria
 
 ```text
 Context Projection Contract frozen          PASS
@@ -26,32 +27,48 @@ prior Stage probes                           PASS
 unresolved Critical/High                     0
 ```
 
-## Candidate verification
+## Actual release verification
 
-GitHub Actions run `31943066462`:
+The actual `v0.8.0` release snapshot was independently executed after version promotion:
 
 ```text
-installed package                 0.8.0rc5
+installed package                 verified-state-harness 0.8.0
+compileall                        PASS
 pytest                            125 passed / 5 skipped
-Stage 03 resume                   4 / 4 PASS; duplicate=0
+Stage 03 resume                   4 / 4 PASS; duplicate external actions 0
 Stage 04 semantic                 8 / 8 PASS; FP=0/FN=0
-Stage 05 probes                   PASS
-Stage 06 probes                   PASS
+Stage 05 all probes               PASS
+Stage 06 all probes               PASS
 Stage 07 base                     4 / 4 PASS
 Stage 07 adversarial              6 / 6 PASS
 Stage 07 resume                   3 / 3 PASS
 Stage 07 compatibility            3 / 3 PASS
-zero-tolerance Stage 07 counters  all 0
+missing mandatory constraints     0
+projection state mutations        0
+raw evidence deletions            0
+untrusted authority promotions    0
+superseded current-truth exposure 0
+policy drift acceptances          0
+projection resume divergence      0
+model-visible legacy raw values   0
+legacy moved-schema breakages     0
+Python/JSON split-brain keys      0
 ```
 
-## Meaning of PASS
+Five skipped tests are hosted-environment live Linux namespace tests and are not counted as Stage 02 production-isolation proof.
 
-On successful `v0.8.0` release-snapshot verification, Stage 07 establishes that the built-in Actor/model path receives a deterministic Context-Governor projection rather than broad raw HarnessState. Projection cannot promote speculative material to trusted truth, drop mandatory goal/control state, silently change on resume under policy drift, or leak trusted-controller compatibility snapshots into model JSON.
+## What this PASS means
 
-## Scope boundaries
+The built-in Actor/model path receives a deterministic, provenance-bound Context-Governor projection rather than broad raw HarnessState. Optional/untrusted material can be bounded and reorganized without rewriting epistemic authority, promoting speculative content, dropping mandatory goal/control state, or exposing superseded truth as current. Context-policy drift fails closed on resume.
 
-This decision does not claim semantic relevance ranking, universal fixed prompt size, wall-clock freshness interpretation, RAG, embeddings, long-term memory, or trusted retrieval. Any future retrieval/memory material must remain evidence/untrusted input until existing verification promotes it.
+Trusted in-process Controllers retain compatibility access to moved legacy fields through detached non-serialized snapshots, while model JSON never receives those raw compatibility values. Actual Stage-07 top-level keys have a single governed Python/JSON value.
 
-## Next allowed research direction
+## What this PASS does not mean
 
-After `v0.8.0` is actually verified and this document is updated to **PASS / EXITED**, the next research candidate is **Stage 08 — Retrieval / Memory Gateway**. Stage 08 must begin with a contract and preflight review; implementation must not start by adding a vector database or automatic memory writes.
+Stage 07 does not establish semantic relevance ranking, universal fixed total prompt size, wall-clock freshness evaluation, RAG, embeddings, long-term memory, automatic summarization, skills, subagents, model routing, or trusted retrieval. Retrieval/memory candidates remain untrusted unless the existing verification path promotes them.
+
+## Next allowed Stage
+
+**Stage 08 — Retrieval / Memory Gateway**.
+
+Stage 08 must begin with a preflight re-review and a frozen Retrieval/Memory Admission Contract. It must define source identity, provenance, integrity, trust level, write authority, deterministic retrieval inputs, context-budget interaction, resume behavior, and the rule that retrieved or remembered material cannot directly mutate verified facts or completion state.

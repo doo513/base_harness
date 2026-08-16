@@ -4,23 +4,22 @@ This research branch is the standalone implementation of the new harness archite
 
 ## Core invariant
 
-> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success. Recovery and progress control are kernel-owned and may not bypass those gates.**
+> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success. Recovery, progress control, and context projection are kernel-governed and may not bypass those gates.**
 
 ## Architecture
 
 ```text
 Goal Contract -> Observation/Evidence -> Trusted Working State
--> Actor Decision -> Capability/Isolation Gate -> Tool Runtime
+-> Context Governor -> Actor Decision
+-> Capability/Isolation Gate -> Tool Runtime
 -> Evidence/Hypothesis -> VerificationContract -> Kernel State Commit
 
 Actor Decision -> deterministic Progress Control
   -> verified fact semantic change OR novel integrity-checked successful evidence
-  -> no-progress family/global windows
-  -> typed NO_PROGRESS -> Stage 05 recovery
+  -> no-progress family/global windows -> typed recovery
 
-Failure -> RecoveryTransition(PENDING) -> durable checkpoint
--> Kernel recovery before Actor -> APPLIED/SUPERSEDED -> checkpoint
--> bounded directive OR terminal fail-closed halt
+Failure -> durable RecoveryTransition -> Kernel recovery before Actor
+-> APPLIED/SUPERSEDED -> bounded directive OR terminal halt
 
 Completion request -> Completion Oracle -> Kernel accepts/rejects
 ```
@@ -36,28 +35,29 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 04 | Semantic verification | PASS / EXITED (`v0.5.0`) |
 | 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
 | 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) |
-| 07 | Context Governance | NEXT / NOT STARTED |
+| 07 | Context Governance | PASS / EXITED (`v0.8.0`) |
+| 08 | Retrieval / Memory Gateway | NEXT / CONTRACT NOT FROZEN |
 
-Current package version: **v0.7.0**.
+Current package version: **v0.8.0**.
 
-## Stage 06 result
+## Stage 07 result
 
-Stage 06 adds deterministic, durable progress-control semantics:
+Stage 07 makes Context Governor the single runtime projection boundary:
 
-- kernel-owned `ProgressPolicy` and checkpointed `ProgressState`;
-- Actor decision family/exact identities resistant to cosmetic payload churn;
-- Actor narrative/speculative churn excluded from progress authority;
-- verified fact semantic-content progress that excludes evidence-reference metadata churn;
-- successful observation novelty only after content-address integrity verification;
-- historical successful evidence revalidation before the next Actor boundary;
-- specific Stage 05 failure precedence over generic `NO_PROGRESS`;
-- same-family and global alternating-family no-progress windows;
-- strategy switch resets local windows but is not itself progress;
-- identical evidence remains known after strategy switching;
-- strategy exhaustion routes through Stage 05 terminal `ESCALATE`;
-- progress policy participates in execution provenance and resume determinism.
+- mandatory goal, acceptance, constraints, pinned constraints, current trusted facts and critical control state are retained;
+- verified/current truth is separated from hypotheses, observations, refutations and failure text;
+- superseded facts are not exposed as current truth;
+- optional/untrusted previews and tool descriptions are deterministically bounded;
+- duplicate observations are collapsed while raw artifact references remain available;
+- untrusted text has no instruction authority in the built-in model path;
+- ContextPolicy is part of resume provenance;
+- same state + same policy projects deterministically after resume;
+- trusted Controller legacy access for moved fields is detached and non-serialized;
+- actual Stage-07 keys have one governed Python/JSON value;
+- dormant raw context implementation was removed;
+- build/runtime version metadata is regression-locked.
 
-The actual `v0.7.0` release snapshot passed **112 tests with 5 hosted-environment namespace skips** plus all Stage 03–06 direct probes in GitHub Actions run `31938225096`.
+The actual `v0.8.0` release snapshot passed **125 tests with 5 hosted-environment namespace skips** plus all Stage 03–07 direct probes in GitHub Actions run `31943274153`.
 
 ## Guarantee boundaries
 
@@ -71,10 +71,13 @@ Non-idempotent effects are at-most-once automatically executed: COMMITTED receip
 Generic structured verification does not solve natural-language truth. Domain-semantic facts require domain-specific verifier coverage.
 
 ### Stage 05
-Recovery guarantees durable **control transitions**, not guaranteed semantic repair by an LLM and not transactional rollback of arbitrary external systems.
+Recovery guarantees durable control transitions, not guaranteed semantic repair by an LLM and not transactional rollback of arbitrary external systems.
 
 ### Stage 06
-Progress control is deterministic/syntactic. Novel evidence or a newly verified fact is not automatically proven relevant to the active goal. Continually changing valid outputs can remain novel until the hard budget ends the run. Historical successful-evidence scanning also has a known cumulative performance cost.
+Progress control is deterministic/syntactic. Novel evidence or verified truth is not automatically proven relevant to the active goal.
+
+### Stage 07
+Context selection is deterministic governance, not semantic retrieval quality. Mandatory trusted/control content is not subject to a universal hard truncation limit, `valid_until` is not wall-clock evaluated, and retrieval/memory content is not trusted merely because it enters context.
 
 ## Development rule
 
@@ -82,4 +85,4 @@ Use `research/verified-state-stage03` as the single continuing research branch. 
 
 ## Next work
 
-Stage 07 is **Context Governance**. The current Actor context exposes broad state/observation material directly. Before implementation, Stage 07 must freeze a **Context Projection Contract** defining trusted-vs-untrusted fields, freshness/staleness, bounded deterministic observation selection, raw-evidence retention, context-policy provenance, and the rule that context selection/compression may never rewrite truth authority.
+Stage 08 candidate is **Retrieval / Memory Gateway**. Before implementing RAG, a vector store, or automatic memory writes, freeze an admission contract defining provenance, integrity, deterministic query inputs, trust level, write authority, context-budget interaction, resume behavior, deletion/supersession semantics, and the rule that retrieved/remembered material cannot directly mutate verified facts or completion state.
