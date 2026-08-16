@@ -41,3 +41,5 @@ jobs:
         run: python scripts/stage6_progress_resume_probe.py
       - name: Stage 06 progress boundary probe
         run: python scripts/stage6_progress_boundary_probe.py
+      - name: Stage 06 progress strategy probe
+        run: python scripts/stage6_progress_strategy_probe.py

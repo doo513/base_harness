@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from .failures import Failure, FailureKind
-from .progress import decision_progress_signatures, normalize_progress_value
+from .progress import decision_progress_signatures
 from .storage import IntegrityError, canonical_hash
 
 
@@ -28,14 +28,15 @@ class RuntimeProgressMixin:
         return True
 
     def _progress_facts_hash(self) -> str:
-        """Hash semantic verified-fact content, not Actor-churnable metadata.
+        """Hash verified semantic content while excluding reference metadata.
 
-        Evidence refs are intentionally excluded. Re-attaching a different ref
-        to the same already-verified key/value must not manufacture progress.
+        Evidence-ref churn must not manufacture progress, but verified values
+        are preserved exactly because whitespace and formatting can be semantic
+        for source code and other domain values.
         """
         content = {
             key: {
-                "value": normalize_progress_value(claim.value),
+                "value": claim.value,
                 "status": claim.status.value,
                 "authority": claim.authority.value,
             }
@@ -56,7 +57,11 @@ class RuntimeProgressMixin:
         return digest
 
     def _verified_observation_fingerprint(self, ref: str) -> str:
-        """Integrity-check raw bytes, then fingerprint normalized JSON content."""
+        """Integrity-check raw bytes, then canonicalize decoded JSON content.
+
+        JSON mapping order is cosmetic and canonicalized. String contents are
+        preserved exactly because whitespace can be semantically meaningful.
+        """
         expected = self._digest_prefix_from_artifact_ref(ref)
         try:
             path = self.artifacts.resolve(ref)
@@ -76,16 +81,13 @@ class RuntimeProgressMixin:
             raise IntegrityError("progress evidence artifact payload is not an object")
         if payload.get("ok") is not True:
             raise IntegrityError("successful observation points to a non-success artifact payload")
-        return canonical_hash(normalize_progress_value(payload))
+        return canonical_hash(payload)
 
     def _known_successful_observation_fingerprints(self) -> set[str]:
         fingerprints: set[str] = set()
         for observation in self.state.observations:
             if not observation.ok or observation.artifact_ref is None:
                 continue
-            # Historical evidence is re-verified rather than trusting only the
-            # digest embedded in its reference. This turns later tamper into a
-            # typed persistence failure at the next Actor boundary.
             fingerprints.add(self._verified_observation_fingerprint(observation.artifact_ref))
         return fingerprints
 
@@ -156,10 +158,7 @@ class RuntimeProgressMixin:
 
             if allow_trigger:
                 generations_without_progress = generation - int(progress.last_progress_generation)
-                if (
-                    generations_without_progress
-                    >= self.progress_policy.max_strategy_generations_without_progress
-                ):
+                if generations_without_progress >= self.progress_policy.max_strategy_generations_without_progress:
                     trigger = "strategy_exhausted"
                     failure = Failure(
                         FailureKind.STRATEGY_EXHAUSTED,
@@ -174,10 +173,7 @@ class RuntimeProgressMixin:
                     trigger = "family_repeat"
                     failure = Failure(
                         FailureKind.NO_PROGRESS,
-                        (
-                            "repeated Actor decision family produced no recognized progress: "
-                            f"{family_signature}"
-                        ),
+                        f"repeated Actor decision family produced no recognized progress: {family_signature}",
                         action=family_signature,
                         signature_key=f"stage6:family:{family_signature}",
                     )
@@ -195,16 +191,10 @@ class RuntimeProgressMixin:
 
                 if failure is not None:
                     progress.threshold_triggers += 1
-                    self.metrics["no_progress_triggers"] = int(
-                        self.metrics.get("no_progress_triggers", 0)
-                    ) + 1
+                    self.metrics["no_progress_triggers"] = int(self.metrics.get("no_progress_triggers", 0)) + 1
                     if failure.kind == FailureKind.STRATEGY_EXHAUSTED:
-                        self.metrics["strategy_exhaustions"] = int(
-                            self.metrics.get("strategy_exhaustions", 0)
-                        ) + 1
+                        self.metrics["strategy_exhaustions"] = int(self.metrics.get("strategy_exhaustions", 0)) + 1
                     else:
-                        # One threshold crossing creates one typed failure. A new
-                        # window must accumulate before another trigger.
                         progress.no_progress_streak = 0
                         progress.last_family_signature = None
                         progress.family_repeat_count = 0
