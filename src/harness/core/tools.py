@@ -89,6 +89,17 @@ class SandboxedCommandToolSpec:
         if self.side_effect not in {SideEffect.WRITE, SideEffect.EXTERNAL}:
             raise ValueError("sandboxed command tools must declare WRITE or EXTERNAL side effects")
 
+        # Existing run provenance already fingerprints ToolSpec.provenance. Put
+        # the declarative execution semantics there so replacing the old handler
+        # closure does not weaken Stage-03 resume/config drift detection.
+        self.provenance = dict(self.provenance)
+        self.provenance.update({
+            "execution_kind": self.execution_kind,
+            "timeout_seconds": repr(self.timeout_seconds),
+            "command_arg": self.command_arg,
+            "require_zero_exit": "true" if self.require_zero_exit else "false",
+        })
+
     # Compatibility properties keep persistence/context descriptor code generic
     # without introducing executable callables into this spec.
     @property
