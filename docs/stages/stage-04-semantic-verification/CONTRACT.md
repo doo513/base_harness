@@ -1,6 +1,6 @@
 # Stage 04 Semantic Verification Contract
 
-Status: **FROZEN FOR v0.5.0-rc2**
+Status: **FROZEN FOR v0.5.0-rc3**
 
 ## Purpose
 
@@ -21,6 +21,7 @@ The kernel must not treat a boolean return value, a stored artifact reference, a
 7. State commit occurs only when the complete contract passes.
 8. Verification contract and verifier metadata are included in the reproducibility manifest fingerprint.
 9. Structural/logical support is recorded with `SUPPORTED` authority rather than `TRUSTED_TOOL` semantic authority.
+10. Resume must reject a persisted run whose `harness_version` differs from the currently executing harness.
 
 ## Generic semantic primitive
 
@@ -45,6 +46,7 @@ Required negatives include:
 - wrong expected value / missing path / unsupported operator
 - artifact content tamper after creation
 - generic assertion masquerading under an arbitrary domain-semantic key
+- harness-version drift during resume
 
 Required positives include nested dict equality, list-index equality, boolean equality, and an execution-level runtime commit in the reserved assertion namespace.
 
@@ -58,6 +60,7 @@ synthetic verifier FN: 0
 level inflation attack: blocked
 artifact content tamper: blocked
 semantic-key masquerade: blocked
+harness-version drift resume: blocked
 contract fingerprint persisted: PASS
 Stage 01–03 tests: no regression
 ```

@@ -135,14 +135,19 @@ class HarnessRuntime(RuntimePersistenceMixin, RuntimeExecutionMixin):
         kwargs["resume"] = True
         return cls(**kwargs)
 
-    def _config_descriptor(self) -> dict[str, Any]:
-        """Extend Stage-03 provenance with the Stage-04 verification contract.
+    def _restore_run(self) -> None:
+        """Fail closed when a persisted run belongs to a different harness version."""
+        persisted, _ = self.manifests.load_verified()
+        persisted_version = persisted.get("harness_version")
+        if persisted_version != __version__:
+            raise ResumeConflict(
+                f"harness version differs from persisted run manifest: "
+                f"persisted={persisted_version!r}, current={__version__!r}"
+            )
+        super()._restore_run()
 
-        The durable persistence implementation remains Stage-03 code.  This
-        override only enriches its configuration fingerprint, avoiding a
-        persistence rewrite while making resume fail closed on verifier-contract
-        drift.
-        """
+    def _config_descriptor(self) -> dict[str, Any]:
+        """Extend Stage-03 provenance with the Stage-04 verification contract."""
         descriptor = super()._config_descriptor()
         contract = self.profile.verification_contract()
         descriptor["profile"]["verification_contract"] = contract.dump()
