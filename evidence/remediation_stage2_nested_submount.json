@@ -1,5 +1,6 @@
 {
   "scope": "stage02-nested-read-only-submount-remediation",
+  "release_version": "0.8.2",
   "classification": {
     "entry": "security_hypothesis",
     "after_red_probe": "confirmed_code_security_defect"
@@ -45,10 +46,26 @@
     "token_cost_change": 0,
     "runtime_event_growth": 0
   },
+  "candidate_ci": {
+    "version": "0.8.2rc1",
+    "commit": "b0256bd6cf853f27f67f1690bb4bfadb1b52d3a5",
+    "run_id": 31948414122,
+    "conclusion": "success"
+  },
+  "release_ci": {
+    "version": "0.8.2",
+    "commit": "27ffdd1101a04f08beb9a81f716e5043b912c2b9",
+    "run_id": 31948507587,
+    "conclusion": "success",
+    "full_regression": true,
+    "prior_stage_probes": true,
+    "nested_submount_probe": true,
+    "mount_topology_cost_probe": true
+  },
   "fix": {
     "strategy": "fail_closed_on_descendant_mount_under_declared_read_only_source",
     "runtime_mountinfo_snapshot_per_preflight": 1,
     "recursive_ro_claim": false
   },
-  "release_status": "pending_v0.8.2_exact_snapshot_validation"
+  "release_status": "pass_frozen"
 }
