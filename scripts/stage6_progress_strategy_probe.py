@@ -45,7 +45,7 @@ def _runtime(root, name, profile, policy=None):
         workspace=profile.workspace,
         progress_policy=policy or ProgressPolicy(),
         budget=Budget(hard_max_steps=60),
-        task_revision=f"stage6-strategy-{name}-v1",
+        task_revision=f"stage6-strategy-{name}-v2",
     )
 
 
@@ -54,7 +54,6 @@ def _run() -> dict:
         root = Path(td)
         outcomes = {}
 
-        # 1. Verified content change is progress.
         ws1 = root / "fact-ws"; ws1.mkdir()
         r1 = _runtime(root, "fact", ProbeProfile(ws1))
         r1.log("run.start", {"run_id": r1.run_id}); r1._persist_state("manual.start")
@@ -69,13 +68,11 @@ def _run() -> dict:
             "reasons": fact_result["progress_reasons"],
         }
 
-        # 2/3. Same successful evidence remains known after a strategy switch;
-        # a later real progress event resets the exhaustion generation horizon.
         ws2 = root / "evidence-ws"; ws2.mkdir()
         tool = ToolSpec(
             name="observe", description="constant read", handler=lambda: "same-result",
             side_effect=SideEffect.NONE, idempotent=True,
-            provenance={"revision": "stage6-strategy-v1"},
+            provenance={"revision": "stage6-strategy-v2"},
         )
         r2 = _runtime(
             root, "evidence", ProbeProfile(ws2, {"observe": tool}),
@@ -89,14 +86,23 @@ def _run() -> dict:
         tool_decision = Decision("tool", {"tool": "observe", "args": {}})
         b1 = r2._progress_baseline(); r2._dispatch_decision(tool_decision)
         first = r2._evaluate_actor_progress(tool_decision, b1, allow_trigger=True)
+        first_activity_events = r2.state.progress.activity_events
         r2.state.strategy_generation = 1
         b2 = r2._progress_baseline(); r2._dispatch_decision(tool_decision)
         second = r2._evaluate_actor_progress(tool_decision, b2, allow_trigger=True)
         outcomes["same_evidence_after_strategy_switch_not_novel"] = {
-            "passed": first["made_progress"] and not second["made_progress"]
-                      and second["generation_reset"] and r2.state.progress.last_progress_generation == 0,
+            "passed": (
+                not first["made_progress"]
+                and first["max_credit"] == 0.0
+                and first_activity_events == 1
+                and not second["made_progress"]
+                and second["generation_reset"]
+                and second["novel_successful_observation_fingerprints"] == []
+                and r2.state.progress.last_progress_generation == 0
+            ),
             "first_progress": first["made_progress"],
             "second_progress": second["made_progress"],
+            "activity_events": r2.state.progress.activity_events,
             "last_progress_generation": r2.state.progress.last_progress_generation,
         }
         b3 = r2._progress_baseline()
@@ -111,7 +117,6 @@ def _run() -> dict:
             "last_progress_generation": r2.state.progress.last_progress_generation,
         }
 
-        # 4. Generation exhaustion routes through Stage 05 terminal ESCALATE.
         ws3 = root / "exhaust-ws"; ws3.mkdir()
         r3 = _runtime(
             root, "exhaust", ProbeProfile(ws3),
@@ -139,7 +144,6 @@ def _run() -> dict:
             "terminal_action": r3.state.recovery_history[-1].action.value,
         }
 
-        # 5. Recovery itself does not become an Actor no-progress sample.
         ws4 = root / "recovery-ws"; ws4.mkdir()
         r4 = _runtime(root, "recovery", ProbeProfile(ws4))
         r4.log("run.start", {"run_id": r4.run_id}); r4._persist_state("manual.start")
@@ -152,8 +156,6 @@ def _run() -> dict:
             "evaluations_after": r4.state.progress.evaluations,
         }
 
-        # 6. Volatile failed output remains in specific Stage05 failure handling;
-        # changing error text never creates progress.
         ws5 = root / "failure-ws"; ws5.mkdir()
         calls = {"n": 0}
         def changing_failure():
@@ -162,22 +164,23 @@ def _run() -> dict:
         fail_tool = ToolSpec(
             name="fail", description="volatile failure", handler=changing_failure,
             side_effect=SideEffect.NONE, idempotent=True,
-            provenance={"revision": "stage6-strategy-v1"},
+            provenance={"revision": "stage6-strategy-v2"},
         )
         script = [
             Decision("tool", {"tool": "fail", "args": {}}),
             Decision("tool", {"tool": "fail", "args": {}}),
             Decision("complete", {"reason": "done"}),
         ]
+        profile5 = ProbeProfile(ws5, {"fail": fail_tool})
         r5 = HarnessRuntime(
-            goal=ProbeProfile(ws5, {"fail": fail_tool}).default_goal(),
-            profile=ProbeProfile(ws5, {"fail": fail_tool}),
+            goal=profile5.default_goal(),
+            profile=profile5,
             controller=ScriptedController(script),
             run_dir=root / "failure",
             workspace=ws5,
             progress_policy=ProgressPolicy(family_repeat_limit=2, no_progress_streak_limit=2),
             budget=Budget(hard_max_steps=30),
-            task_revision="stage6-strategy-failure-v1",
+            task_revision="stage6-strategy-failure-v2",
         )
         s5 = r5.run()
         failure_kinds = [f["kind"] for f in s5.failures]
@@ -189,10 +192,11 @@ def _run() -> dict:
             "failure_kinds": failure_kinds,
         }
 
-        result = {"stage": "06", "probe": "progress-strategy-rc3", "outcomes": outcomes}
+        result = {"stage": "06-remediation", "probe": "progress-strategy-v2", "outcomes": outcomes}
         result["summary"] = {
             "all_passed": all(item["passed"] for item in outcomes.values()),
             "scenario_count": len(outcomes),
+            "activity_novelty_false_progress": 0 if outcomes["same_evidence_after_strategy_switch_not_novel"]["passed"] else 1,
             "recovery_actor_samples": 0 if outcomes["recovery_not_actor_progress_sample"]["passed"] else 1,
             "failed_output_progress_acceptances": 0 if outcomes["changing_failed_errors_not_progress"]["passed"] else 1,
             "strategy_exhaustion_nonterminal": 0 if outcomes["strategy_exhaustion_terminal_escalate"]["passed"] else 1,
