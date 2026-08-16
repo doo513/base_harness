@@ -2,6 +2,8 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any
 
+from .failures import RecoveryTransition
+
 
 class ClaimStatus(str, Enum):
     PROPOSED = "proposed"
@@ -71,6 +73,12 @@ class HarnessState:
     step: int = 0
     completion_requested: bool = False
     completed: bool = False
+    pending_recovery: RecoveryTransition | None = None
+    recovery_history: list[RecoveryTransition] = field(default_factory=list)
+    recovery_directive: dict[str, Any] | None = None
+    strategy_generation: int = 0
+    recovery_halted: bool = False
+    recovery_halt_reason: str | None = None
 
     def propose(self, claim: Claim) -> None:
         if claim.status == ClaimStatus.VERIFIED:
@@ -96,10 +104,21 @@ class HarnessState:
             "step": self.step,
             "completion_requested": self.completion_requested,
             "completed": self.completed,
+            "pending_recovery": (
+                self.pending_recovery.dump() if self.pending_recovery is not None else None
+            ),
+            "recovery_history": [item.dump() for item in self.recovery_history],
+            "recovery_directive": (
+                dict(self.recovery_directive) if self.recovery_directive is not None else None
+            ),
+            "strategy_generation": self.strategy_generation,
+            "recovery_halted": self.recovery_halted,
+            "recovery_halt_reason": self.recovery_halt_reason,
         }
 
     @classmethod
     def from_snapshot(cls, raw: dict) -> "HarnessState":
+        pending_raw = raw.get("pending_recovery")
         return cls(
             facts={k: Claim.load(v) for k, v in raw.get("facts", {}).items()},
             hypotheses={k: Claim.load(v) for k, v in raw.get("hypotheses", {}).items()},
@@ -112,4 +131,21 @@ class HarnessState:
             step=int(raw.get("step", 0)),
             completion_requested=bool(raw.get("completion_requested", False)),
             completed=bool(raw.get("completed", False)),
+            pending_recovery=(
+                RecoveryTransition.load(pending_raw)
+                if isinstance(pending_raw, dict)
+                else None
+            ),
+            recovery_history=[
+                RecoveryTransition.load(item)
+                for item in raw.get("recovery_history", [])
+            ],
+            recovery_directive=(
+                dict(raw["recovery_directive"])
+                if isinstance(raw.get("recovery_directive"), dict)
+                else None
+            ),
+            strategy_generation=int(raw.get("strategy_generation", 0)),
+            recovery_halted=bool(raw.get("recovery_halted", False)),
+            recovery_halt_reason=raw.get("recovery_halt_reason"),
         )

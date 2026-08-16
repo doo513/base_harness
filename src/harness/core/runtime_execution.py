@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from .state import HarnessState, Claim, ClaimStatus, Authority, Observation
 from .storage import PersistenceError, IntegrityError, ResumeConflict
 from .tools import ToolCall
@@ -22,6 +20,12 @@ class RuntimeExecutionMixin:
             "unknowns": list(self.state.unknowns),
             "observations": [o.dump() for o in self.state.observations],
             "recent_failures": self.state.failures[-5:],
+            "recovery_directive": (
+                dict(self.state.recovery_directive)
+                if self.state.recovery_directive is not None else None
+            ),
+            "strategy_generation": self.state.strategy_generation,
+            "recovery_halted": self.state.recovery_halted,
             "tools": {
                 name: {
                     "description": spec.description,
@@ -65,7 +69,7 @@ class RuntimeExecutionMixin:
     def _verify_claim(self, key: str) -> None:
         claim = self.state.hypotheses.get(key)
         if not claim:
-            self.fail(Failure(FailureKind.MISSING_INFO, f"missing hypothesis: {key}"))
+            self.fail(Failure(FailureKind.MISSING_INFO, f"missing hypothesis: {key}", action=key))
             return
         self.metrics["verification_attempts"] += 1
         self.capability_policy.require(Principal.VERIFIER, Capability.VERIFY)
@@ -114,7 +118,11 @@ class RuntimeExecutionMixin:
             )
         else:
             reason = "; ".join(assessment.reasons) or "verification contract rejected candidate"
-            self.fail(Failure(FailureKind.VERIFICATION_FAILED, f"verification failed: {claim.key}: {reason}"))
+            self.fail(Failure(
+                FailureKind.VERIFICATION_FAILED,
+                f"verification failed: {claim.key}: {reason}",
+                action=claim.key,
+            ))
 
     def _check_completion(self, reason: str) -> None:
         self.state.completion_requested = True
@@ -156,7 +164,11 @@ class RuntimeExecutionMixin:
             self.state.completed = True
             self.log("completion.accepted", {"reason": result.reason})
         else:
-            self.fail(Failure(FailureKind.VERIFICATION_FAILED, f"completion oracle rejected: {result.reason}", action="completion_oracle"))
+            self.fail(Failure(
+                FailureKind.VERIFICATION_FAILED,
+                f"completion oracle rejected: {result.reason}",
+                action="completion_oracle",
+            ))
 
     def _dispatch_decision(self, decision) -> None:
         if decision.kind == "propose":
@@ -166,7 +178,11 @@ class RuntimeExecutionMixin:
             if prior is not None:
                 prior_refs = set(prior.evidence_refs)
                 if not any(ref not in prior_refs for ref in new_refs):
-                    self.fail(Failure(FailureKind.HYPOTHESIS_REFUTED, f"refuted hypothesis cannot be re-proposed without new evidence: {key}"))
+                    self.fail(Failure(
+                        FailureKind.HYPOTHESIS_REFUTED,
+                        f"refuted hypothesis cannot be re-proposed without new evidence: {key}",
+                        action=key,
+                    ))
                     return
             claim = Claim(key, decision.payload.get("value"), evidence_refs=new_refs)
             self.state.propose(claim)
@@ -179,7 +195,7 @@ class RuntimeExecutionMixin:
             key = decision.payload["key"]
             claim = self.state.hypotheses.get(key)
             if not claim:
-                self.fail(Failure(FailureKind.MISSING_INFO, f"missing hypothesis: {key}"))
+                self.fail(Failure(FailureKind.MISSING_INFO, f"missing hypothesis: {key}", action=key))
                 return
             claim.status = ClaimStatus.REFUTED
             self.log("hypothesis.refuted", {"claim": claim.dump(), "reason": decision.payload.get("reason", "")})
@@ -192,7 +208,7 @@ class RuntimeExecutionMixin:
                 result, receipt_id, deduplicated = self._execute_tool_durable(call)
             except (PersistenceError, IntegrityError, ResumeConflict) as exc:
                 self.halted = True
-                self.fail(Failure(FailureKind.PERSISTENCE_ERROR, str(exc), call.tool))
+                self.fail(Failure(FailureKind.PERSISTENCE_ERROR, str(exc), action=call.tool))
                 return
             observation = self._store_tool_observation(call.tool, result)
             self.metrics["tool_calls"] += 1
@@ -223,23 +239,45 @@ class RuntimeExecutionMixin:
             })
             if getattr(result, "security_violation", False):
                 self.metrics["security_violations"] += 1
-            if not result.ok:
-                self.fail(Failure(FailureKind.TOOL_ERROR, result.error or "tool failed", call.tool))
+                self.fail(Failure(
+                    FailureKind.SECURITY_VIOLATION,
+                    result.error or "tool security policy rejected execution",
+                    action=call.tool,
+                ))
+            elif not result.ok:
+                self.fail(Failure(
+                    FailureKind.TOOL_ERROR,
+                    result.error or "tool failed",
+                    action=call.tool,
+                ))
 
         elif decision.kind == "complete":
             self._check_completion(decision.payload.get("reason", ""))
 
-    def step_once(self) -> None:
+    def step_once(self) -> bool:
+        # A pending kernel transition has priority over Actor execution. This is
+        # the key resume invariant for Stage 05.
+        if self._apply_pending_recovery():
+            return True
+
         try:
             actor_state = HarnessState.from_snapshot(self.state.snapshot())
             decision = self.controller.decide(self.goal.goal, actor_state, self._context())
             decision.validate()
         except Exception as exc:
             self.fail(Failure(FailureKind.IMPLEMENTATION_ERROR, f"controller error: {type(exc).__name__}: {exc}"))
-            return
+            return False
 
+        # A valid Actor decision is the acknowledgement boundary for a one-shot
+        # recovery directive. The decision itself still passes every normal gate.
+        self._consume_recovery_directive()
         self.log("decision", {"kind": decision.kind, "payload": decision.payload})
         try:
             self._dispatch_decision(decision)
         except Exception as exc:
-            self.fail(Failure(FailureKind.IMPLEMENTATION_ERROR, f"decision dispatch error: {type(exc).__name__}: {exc}", action=decision.kind))
+            self.fail(Failure(
+                FailureKind.IMPLEMENTATION_ERROR,
+                f"decision dispatch error: {type(exc).__name__}: {exc}",
+                action=decision.kind,
+            ))
+        return False

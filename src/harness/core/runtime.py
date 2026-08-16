@@ -14,20 +14,21 @@ from .tools import ActionRuntime
 from .security import Principal, Capability, CapabilityPolicy, SecurityConfig, SecurityLayout, SecurityViolation
 from .sandbox import NetworkPolicy
 from .verification import VerifierChain
-from .failures import Failure, FailureKind, FailureRouter
+from .failures import Failure, FailureKind, FailureRouter, RecoveryAction
 from .budget import Budget
+from .runtime_recovery import RuntimeRecoveryMixin
 from .runtime_controller_state import RuntimeControllerStateMixin
 from .runtime_persistence import RuntimePersistenceMixin
 from .runtime_execution import RuntimeExecutionMixin
 
 
-class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, RuntimeExecutionMixin):
-    """Single-actor verified-state kernel.
-
-    Actor output may create hypotheses and request completion, but only the
-    configured verifier contract and completion oracle may mutate trusted facts
-    or completed=True.
-    """
+class HarnessRuntime(
+    RuntimeRecoveryMixin,
+    RuntimeControllerStateMixin,
+    RuntimePersistenceMixin,
+    RuntimeExecutionMixin,
+):
+    """Single-actor verified-state kernel with durable recovery transitions."""
 
     def __init__(
         self,
@@ -40,6 +41,7 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
         workspace=None,
         security_config: SecurityConfig | None = None,
         capability_policy: CapabilityPolicy | None = None,
+        failure_router: FailureRouter | None = None,
         resume: bool = False,
         task_revision: str | None = None,
         model_revision: str | None = None,
@@ -50,6 +52,7 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
         self.controller = controller
         self.security_config = security_config or SecurityConfig()
         self.capability_policy = capability_policy or CapabilityPolicy.default()
+        self.failure_router = failure_router or FailureRouter()
         self.resume_mode = bool(resume)
         self.task_revision = task_revision
         self.model_revision = model_revision
@@ -86,7 +89,6 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
             allow_test_attestation=self.security_config.allow_test_attestation,
         )
         self.verifiers = VerifierChain(profile.verifiers())
-        self.failure_router = FailureRouter()
         self.budget = budget or Budget()
         self.started_at = self.budget.start()
 
@@ -115,6 +117,9 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
             "receipt_deduplications": 0,
             "ambiguous_side_effects": 0,
             "resume_count": 0,
+            "recovery_transitions": 0,
+            "recovery_halts": 0,
+            "strategy_switches": 0,
         }
 
         if self.resume_mode:
@@ -131,7 +136,6 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
         return cls(**kwargs)
 
     def _restore_run(self) -> None:
-        """Fail closed when a persisted run belongs to a different harness version."""
         persisted, _ = self.manifests.load_verified()
         persisted_version = persisted.get("harness_version")
         if persisted_version != __version__:
@@ -140,9 +144,9 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
                 f"persisted={persisted_version!r}, current={__version__!r}"
             )
         super()._restore_run()
+        self.halted = bool(self.state.recovery_halted)
 
     def _config_descriptor(self) -> dict[str, Any]:
-        """Extend Stage-03 provenance with the Stage-04 verification contract."""
         descriptor = super()._config_descriptor()
         contract = self.profile.verification_contract()
         descriptor["profile"]["verification_contract"] = contract.dump()
@@ -156,6 +160,7 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
             }
             for v in getattr(self.verifiers, "verifiers", [])
         ]
+        descriptor["failure_recovery"] = self.failure_router.descriptor()
         return descriptor
 
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -179,10 +184,21 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
             "signature": failure.signature,
             "repeat_count": repeat_count,
             "recommended_recovery": recovery.value,
+            "retry_safe": bool(failure.retry_safe),
+            "target": failure.action,
         }
         self.state.failures.append(record)
         self.metrics["failures"] += 1
         self.log("failure", record)
+        transition = self._schedule_recovery(failure, repeat_count=repeat_count, action=recovery)
+        record["recovery_transition_id"] = transition.transition_id
+
+    def _run_budget_terminalization(self) -> None:
+        self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))
+        self._apply_pending_recovery()
+        self.halted = True
+        self._persist_state("halted")
+        self._save_metrics()
 
     def run(self) -> HarnessState:
         self.goal.validate()
@@ -194,6 +210,11 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
                     "restored_step": self.state.step,
                     "state_hash": canonical_hash(self.state.snapshot()),
                     "manifest_hash": self.manifest_hash,
+                    "recovery_halted": self.state.recovery_halted,
+                    "pending_recovery": (
+                        self.state.pending_recovery.dump()
+                        if self.state.pending_recovery is not None else None
+                    ),
                 },
             )
             self._persist_state("resume.start")
@@ -220,16 +241,23 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
             self._persist_state("run.start")
 
         while not self.state.completed and not self.halted:
-            if self.budget.hard_exceeded(
+            pending = self.state.pending_recovery
+            if pending is not None and pending.action in {
+                RecoveryAction.CHECKPOINT_STOP,
+                RecoveryAction.ESCALATE,
+            }:
+                recovery_applied = self.step_once()
+            elif self.budget.hard_exceeded(
                 self.state.step, self.started_at, elapsed_before=self.elapsed_before_resume
             ):
-                self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))
-                self.halted = True
+                self._run_budget_terminalization()
                 break
-            self.step_once()
-            if not self.halted:
+            else:
+                recovery_applied = self.step_once()
+
+            if not recovery_applied and not self.halted:
                 self.state.step += 1
-            self._persist_state("step.transition" if not self.halted else "halted")
+            self._persist_state("halted" if self.halted else "step.transition")
             self._save_metrics()
 
         self.log(
@@ -239,6 +267,7 @@ class HarnessRuntime(RuntimeControllerStateMixin, RuntimePersistenceMixin, Runti
                 "halted": self.halted,
                 "steps": self.state.step,
                 "state_hash": canonical_hash(self.state.snapshot()),
+                "recovery_halted": self.state.recovery_halted,
             },
         )
         self._persist_state("run.end")
