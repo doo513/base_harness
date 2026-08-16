@@ -42,7 +42,7 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 | 02 | Capability isolation + sealed oracle | PASS / EXITED + remediation hardening |
 | 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) + provenance hardening |
 | 04 | Semantic verification | PASS / EXITED (`v0.5.0`) + claim-class hardening |
-| 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
+| 05 | Failure recovery | PASS / EXITED (`v0.6.0`) + controlled effectiveness A/B evidence |
 | 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
 | 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
 | 08 | Retrieval / Memory Gateway | **PASS / EXITED (`v0.9.0`)** |
@@ -53,20 +53,7 @@ Stage00/01 canonical directories are retrospective provenance packages. They do 
 
 ## Stage 08 result
 
-Stage 08 adds a bounded retrieval/evidence gateway without treating retrieval as truth or progress:
-
-- Actor controls only explicit query text; Kernel owns normalized request framing, scope, top-k, provider/index identity, ranking contract, admission policy and durable request identity;
-- the shipped local lexical gateway is deterministic and declares search read-only; descriptor mutation during search is fail-closed;
-- retrieval items are provider/source/content bound, stored as content-addressed artifacts, and verified before admission and before model-visible projection;
-- batch admission prepares and verifies the whole result set before a single live HarnessState-side commit, so a later candidate failure does not partially admit earlier candidates;
-- admitted retrieval is durable in `RetrievalState`, independent from ordinary observations and verified facts;
-- model-visible retrieval is always `untrusted_retrieval` with `instruction_authority=none`;
-- retrieval cannot directly mutate verified facts, completion, recovery, or Stage-06 progress;
-- query/source/provider fields, content bytes, metadata, model-visible preview, durable item count and request history are bounded;
-- supersession is an explicit Kernel transition; search ordering is not treated as freshness authority;
-- resume fails closed on missing/tampered artifacts or provider/index/config drift.
-
-Release commit `a5645fc9d059afd12088ee1c4751c0250c8a5206` built and installed `verified-state-harness 0.9.0` and passed **182 tests / 5 hosted-environment skips** plus all Stage 03–08 and remediation probes in GitHub Actions run `31954492789`.
+Stage 08 adds a bounded retrieval/evidence gateway without treating retrieval as truth or progress. Release commit `a5645fc9d059afd12088ee1c4751c0250c8a5206` built and installed `verified-state-harness 0.9.0` and passed **182 tests / 5 hosted-environment skips** plus all Stage 03–08 and remediation probes in GitHub Actions run `31954492789`.
 
 ## Guarantee boundaries
 
@@ -80,7 +67,7 @@ Non-idempotent effects are at-most-once automatically executed: COMMITTED receip
 Claim-class contracts prevent undeclared semantic promotion, but the current synthetic matrix does not prove broad real-world semantic-verifier coverage.
 
 ### Stage 05
-Recovery guarantees durable control transitions, not that recovery improves task success. A/B effectiveness benchmarking remains open.
+Recovery guarantees durable control transitions. A frozen deterministic matched A/B benchmark demonstrated positive causal utility: production Recovery completed 3/3 recoverable scenarios while a conservative no-automatic-recovery baseline completed 0/3, with zero terminal-safety regressions. This does **not** establish broad real-world or LLM-agent effectiveness; natural corpus validation remains open.
 
 ### Stage 06
 Novel successful bytes are activity, not progress. Verified fact transitions provide deterministic epistemic progress, but goal-relevant task/world progress authority remains an open design problem.

@@ -1,0 +1,39 @@
+{
+  "finding": "O05-001",
+  "benchmark": "stage5-recovery-effectiveness-ab-v1",
+  "status": "PARTIAL_CONTROLLED_BENCHMARK_PASS_REAL_WORLD_OPEN",
+  "commit": "1b8496c120f52496d53de90ef7aae013cc926962",
+  "ci_run": 31955531150,
+  "full_regression": {"passed": 182, "skipped": 5, "failed": 0, "seconds": 14.59},
+  "recoverable": {
+    "scenario_count": 3,
+    "recovery_completed": 3,
+    "no_recovery_completed": 0,
+    "recovery_completion_rate": 1.0,
+    "no_recovery_completion_rate": 0.0,
+    "completion_rate_delta": 1.0,
+    "recovered_pairs": ["tool_repair", "missing_info_observe", "verification_replan"]
+  },
+  "incremental_cost": {
+    "additional_steps_total": 7,
+    "additional_tool_calls_total": 4,
+    "additional_steps_per_recovered_success": 2.3333333333333335,
+    "additional_tool_calls_per_recovered_success": 1.3333333333333333
+  },
+  "safety": {
+    "terminal_safety_pass": true,
+    "safety_regressions": 0,
+    "unsafe_retries": 0,
+    "unsafe_handler_executions": 0,
+    "tool_calls_actor_guarded": true,
+    "direct_recovery_verified_fact_mutations": 0
+  },
+  "interpretation": {
+    "supported": "positive causal utility on the frozen deterministic failure-injection benchmark",
+    "not_supported": [
+      "universal LLM-agent recovery effectiveness",
+      "real-world repository/CTF corpus effectiveness",
+      "statistical significance across stochastic models/tasks"
+    ]
+  }
+}
