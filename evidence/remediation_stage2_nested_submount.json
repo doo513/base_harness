@@ -1,0 +1,54 @@
+{
+  "scope": "stage02-nested-read-only-submount-remediation",
+  "classification": {
+    "entry": "security_hypothesis",
+    "after_red_probe": "confirmed_code_security_defect"
+  },
+  "red": {
+    "run_id": 31948105773,
+    "conclusion": "failure_expected_red_gate",
+    "raw_mount_semantics": {
+      "top_level_rbind_remount_ro_descendant_writable": true,
+      "source_canary_changed_through_descendant": true
+    },
+    "harness_defense": {
+      "preflight_blocked_nested_read_only_source": false,
+      "actual_backend_returncode": 0,
+      "actual_escape_observed": true
+    }
+  },
+  "green": {
+    "run_id": 31948174266,
+    "conclusion": "success",
+    "pytest": {"passed": 134, "skipped": 5, "failed": 0},
+    "raw_mount_semantics": {
+      "top_level_rbind_remount_ro_descendant_writable": true,
+      "source_canary_changed_through_descendant": true
+    },
+    "harness_defense": {
+      "preflight_blocked_nested_read_only_source": true,
+      "actual_backend_attempt": null,
+      "actual_escape_observed": false
+    },
+    "prior_stage_probes": true,
+    "stage08_single_buffer_probe": true
+  },
+  "cost": {
+    "run_id": 31948301642,
+    "mountinfo_bytes_per_preflight": 2457,
+    "mount_points": 24,
+    "mountinfo_reads_per_preflight_before": 0,
+    "mountinfo_reads_per_preflight_after": 1,
+    "median_wall_seconds": 0.0006729034999999328,
+    "max_wall_seconds": 0.0010727360000046815,
+    "rounds": 50,
+    "token_cost_change": 0,
+    "runtime_event_growth": 0
+  },
+  "fix": {
+    "strategy": "fail_closed_on_descendant_mount_under_declared_read_only_source",
+    "runtime_mountinfo_snapshot_per_preflight": 1,
+    "recursive_ro_claim": false
+  },
+  "release_status": "pending_v0.8.2_exact_snapshot_validation"
+}
