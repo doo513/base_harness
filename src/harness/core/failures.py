@@ -48,11 +48,10 @@ class Failure:
 
     @property
     def signature(self) -> str:
-        # Stage 05 recovery acts on repeat identity, so the default must bias
-        # against false grouping. Numeric values may be semantically meaningful
-        # (HTTP 401 vs 500, exit 1 vs 2) and are therefore preserved. Callers
-        # that know which fields are volatile may provide an explicit stable
-        # signature_key instead of relying on free-form message normalization.
+        # Recovery acts on repeat identity, so the default biases against false
+        # grouping. Numeric values can be semantically meaningful (401 vs 500,
+        # exit 1 vs 2) and are preserved. Callers that know which fields are
+        # volatile may provide an explicit stable signature_key.
         identity = self.signature_key
         if identity is None:
             identity = re.sub(r"\s+", " ", self.message.strip().lower())
@@ -68,6 +67,7 @@ class RecoveryTransition:
     failure_signature: str
     repeat_count: int
     created_step: int
+    strategy_generation: int
     target: str | None = None
     retry_safe: bool = False
     status: RecoveryStatus = RecoveryStatus.PENDING
@@ -82,6 +82,7 @@ class RecoveryTransition:
             "failure_signature": self.failure_signature,
             "repeat_count": int(self.repeat_count),
             "created_step": int(self.created_step),
+            "strategy_generation": int(self.strategy_generation),
             "target": self.target,
             "retry_safe": bool(self.retry_safe),
             "status": self.status.value,
@@ -98,6 +99,7 @@ class RecoveryTransition:
             failure_signature=str(raw["failure_signature"]),
             repeat_count=int(raw["repeat_count"]),
             created_step=int(raw["created_step"]),
+            strategy_generation=int(raw.get("strategy_generation", 0)),
             target=raw.get("target"),
             retry_safe=bool(raw.get("retry_safe", False)),
             status=RecoveryStatus(raw.get("status", RecoveryStatus.PENDING.value)),
@@ -156,4 +158,5 @@ class FailureRouter:
             },
             "terminal_kinds": sorted(kind.value for kind in self.TERMINAL_KINDS),
             "failure_signature_policy": "kind+action+explicit_key_or_whitespace_normalized_message_preserve_numbers",
+            "repeat_scope": "current_strategy_generation",
         }

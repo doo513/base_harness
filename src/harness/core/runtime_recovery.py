@@ -29,9 +29,11 @@ class RuntimeRecoveryMixin:
         return canonical_hash({k: v.dump() for k, v in self.state.facts.items()})
 
     def _schedule_recovery(self, failure, *, repeat_count: int, action: RecoveryAction) -> RecoveryTransition:
+        generation = int(self.state.strategy_generation)
         transition_id = canonical_hash({
             "run_id": self.run_id,
             "created_step": self.state.step,
+            "strategy_generation": generation,
             "failure_signature": failure.signature,
             "repeat_count": int(repeat_count),
             "action": action.value,
@@ -45,6 +47,7 @@ class RuntimeRecoveryMixin:
             failure_signature=failure.signature,
             repeat_count=int(repeat_count),
             created_step=int(self.state.step),
+            strategy_generation=generation,
             target=failure.action,
             retry_safe=bool(failure.retry_safe),
         )
@@ -68,6 +71,7 @@ class RuntimeRecoveryMixin:
             "repeat_count": transition.repeat_count,
             "target": transition.target,
             "strategy_generation": self.state.strategy_generation,
+            "failure_strategy_generation": transition.strategy_generation,
             "instruction": {
                 RecoveryAction.REPAIR: "repair the failed approach before retrying the task action",
                 RecoveryAction.OBSERVE: "gather missing or changed information before acting again",
@@ -92,10 +96,6 @@ class RuntimeRecoveryMixin:
         if transition is None:
             return False
 
-        # Re-check the hard budget at the actual transition boundary rather than
-        # relying only on the outer-loop check. If budget expires between those
-        # two points, a non-terminal recovery must not mutate state outside the
-        # declared budget; it is superseded by durable CHECKPOINT_STOP instead.
         step_budget_available = self._recovery_has_step_budget()
         if not step_budget_available and transition.action not in self._TERMINAL_ACTIONS:
             self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))
@@ -115,8 +115,11 @@ class RuntimeRecoveryMixin:
             details["rollback_scope"] = "untrusted_hypothesis_only"
 
         elif transition.action == RecoveryAction.SWITCH_STRATEGY:
+            if transition.strategy_generation != self.state.strategy_generation:
+                raise IntegrityError("strategy switch transition generation is stale")
             self.state.strategy_generation += 1
-            details["strategy_generation"] = self.state.strategy_generation
+            details["from_strategy_generation"] = transition.strategy_generation
+            details["to_strategy_generation"] = self.state.strategy_generation
             self.metrics["strategy_switches"] = int(self.metrics.get("strategy_switches", 0)) + 1
 
         elif transition.action == RecoveryAction.RETRY and not transition.retry_safe:
@@ -139,10 +142,6 @@ class RuntimeRecoveryMixin:
 
         transition.details = details
         transition.status = RecoveryStatus.APPLIED
-
-        # A transition begun while budget is available consumes one step. A
-        # terminal transition begun after hard-budget exhaustion is administrative
-        # checkpointing and must not overshoot the declared hard step limit.
         if step_budget_available:
             self.state.step += 1
         transition.applied_step = self.state.step
@@ -153,9 +152,6 @@ class RuntimeRecoveryMixin:
         self.state.pending_recovery = None
         self.metrics["recovery_transitions"] = int(self.metrics.get("recovery_transitions", 0)) + 1
 
-        # Persist the applied state before returning to Actor control. A crash
-        # after this snapshot cannot cause the same control transition to be
-        # invisibly applied again on resume.
         self._persist_state("recovery.transition")
         self.log("recovery.transition", {
             "transition": transition.dump(),

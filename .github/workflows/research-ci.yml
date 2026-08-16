@@ -31,3 +31,5 @@ jobs:
         run: python scripts/stage5_terminal_probe.py
       - name: Stage 05 crash-window recovery probe
         run: python scripts/stage5_crash_window_probe.py
+      - name: Stage 05 strategy generation probe
+        run: python scripts/stage5_strategy_generation_probe.py

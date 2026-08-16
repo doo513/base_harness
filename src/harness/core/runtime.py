@@ -175,7 +175,13 @@ class HarnessRuntime(
         atomic_write_json(self.run_dir / "metrics.json", data)
 
     def fail(self, failure: Failure) -> None:
-        previous = sum(1 for item in self.state.failures if item.get("signature") == failure.signature)
+        generation = int(self.state.strategy_generation)
+        previous = sum(
+            1
+            for item in self.state.failures
+            if item.get("signature") == failure.signature
+            and int(item.get("strategy_generation", 0)) == generation
+        )
         repeat_count = previous + 1
         recovery = self.failure_router.route(failure, repeat_count)
         transition = self._schedule_recovery(
@@ -188,6 +194,7 @@ class HarnessRuntime(
             "message": failure.message,
             "signature": failure.signature,
             "repeat_count": repeat_count,
+            "strategy_generation": generation,
             "recommended_recovery": recovery.value,
             "retry_safe": bool(failure.retry_safe),
             "target": failure.action,
@@ -197,14 +204,12 @@ class HarnessRuntime(
         self.metrics["failures"] += 1
         failure_index = len(self.state.failures) - 1
 
-        # The state snapshot is the commit point for failure+recovery scheduling.
-        # Persist it before descriptive audit events so a crash after fail()
-        # returns cannot lose pending_recovery or a stateful controller cursor.
         self._persist_state("failure.recovery.scheduled")
         self.log("failure", record)
         self.log("recovery.scheduled", {
             "failure_index": failure_index,
             "failure_signature": failure.signature,
+            "strategy_generation": generation,
             "transition": transition.dump(),
         })
 
