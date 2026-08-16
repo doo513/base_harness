@@ -22,6 +22,8 @@ jobs:
         run: python -m compileall -q src tests scripts
       - name: Full pytest regression
         run: pytest -q
+      - name: Core freeze audit regression probe
+        run: python scripts/core_freeze_audit_probe.py
       - name: Stage 03 resume probe
         run: python scripts/stage3_resume_probe.py
       - name: Stage 04 semantic probe

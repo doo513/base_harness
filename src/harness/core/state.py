@@ -94,6 +94,11 @@ class HarnessState:
             raise ValueError("only VERIFIED claims may enter facts")
         self.facts[claim.key] = claim
         self.hypotheses.pop(claim.key, None)
+        # A successfully re-verified fact supersedes the current refuted-state
+        # marker for the same semantic key. Historical refutation remains in the
+        # event log; keeping it in current state would expose contradictory
+        # trusted/refuted entries to later projections and recovery logic.
+        self.refuted_hypotheses.pop(claim.key, None)
 
     def snapshot(self) -> dict:
         return {

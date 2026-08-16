@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+
 from .state import HarnessState, Claim, ClaimStatus, Authority, Observation
-from .storage import PersistenceError, IntegrityError, ResumeConflict
+from .storage import PersistenceError, IntegrityError, ResumeConflict, canonical_hash, canonical_json
 from .tools import ToolCall
 from .security import Principal, Capability
 from .verification import VerificationLevel, VerifierChain
@@ -10,24 +12,112 @@ from .retrieval import RetrievalContractError, RetrievalUnavailable
 
 
 class RuntimeExecutionMixin:
+    OBSERVATION_PREVIEW_MAX_CHARS = 8_000
+    OBSERVATION_ERROR_MAX_CHARS = 2_000
+
+    @classmethod
+    def _bounded_observation_preview(cls, value):
+        """Keep small outputs exact; externalize large structured outputs to the artifact.
+
+        Durable Observation is control/history metadata, not the raw evidence store.
+        The full output remains in the content-addressed artifact while checkpoint
+        state carries a bounded preview plus a digest for oversized structured data.
+        """
+        limit = cls.OBSERVATION_PREVIEW_MAX_CHARS
+        if isinstance(value, str):
+            if len(value) <= limit:
+                return value
+            suffix = "\n...[truncated durable preview; full output in artifact]"
+            visible = max(0, limit - len(suffix))
+            return value[:visible] + suffix
+
+        rendered = canonical_json(value)
+        if len(rendered) <= limit:
+            return value
+
+        preview = {
+            "format": "canonical_json",
+            "text": rendered[: max(0, limit // 3)],
+            "truncated": True,
+            "original_chars": len(rendered),
+            "content_sha256": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
+            "full_output": "artifact_ref",
+        }
+        while len(canonical_json(preview)) > limit and preview["text"]:
+            preview["text"] = preview["text"][: max(0, len(preview["text"]) // 2)]
+        if len(canonical_json(preview)) > limit:
+            raise IntegrityError("bounded observation preview metadata exceeds durable size bound")
+        return preview
+
+    @classmethod
+    def _bounded_observation_error(cls, error: str | None) -> str | None:
+        if error is None:
+            return None
+        text = str(error)
+        if len(text) <= cls.OBSERVATION_ERROR_MAX_CHARS:
+            return text
+        suffix = "\n...[truncated durable error; full error in artifact]"
+        visible = max(0, cls.OBSERVATION_ERROR_MAX_CHARS - len(suffix))
+        return text[:visible] + suffix
+
     def _store_tool_observation(self, tool: str, result) -> Observation:
         payload = {"ok": result.ok, "output": result.output, "error": result.error}
         ref = self.artifacts.put_json(f"step_{self.state.step:04d}_{tool}.json", payload)
         self.state.artifacts.append(ref)
         self.state.evidence_refs.append(ref)
-        preview = result.output
-        if isinstance(preview, str) and len(preview) > 8000:
-            preview = preview[:8000] + "\n...[truncated preview; full output in artifact]"
         observation = Observation(
             step=self.state.step,
             source=tool,
             ok=result.ok,
-            preview=preview,
+            preview=self._bounded_observation_preview(result.output),
             artifact_ref=ref,
-            error=result.error,
+            error=self._bounded_observation_error(result.error),
         )
         self.state.observations.append(observation)
         return observation
+
+    def _evidence_novelty_identity(self, ref: str) -> str:
+        """Return conservative semantic identity for evidence used to reopen a refutation.
+
+        Ref-string novelty is insufficient because the same content-address digest
+        can be repackaged under a different basename. Count only registered,
+        integrity-verified evidence and bind its content digest to stable source
+        provenance. Observation step is deliberately excluded so replaying the
+        same bytes from the same source cannot manufacture novelty.
+        """
+        if not isinstance(ref, str) or ref not in self.state.artifacts or ref not in self.state.evidence_refs:
+            raise IntegrityError("hypothesis reopen evidence is not a registered durable artifact")
+
+        raw = self.artifacts.verified_read_bytes(ref)
+        digest = hashlib.sha256(raw).hexdigest()
+        provenance: list[dict] = []
+
+        for observation in self.state.observations:
+            if observation.artifact_ref == ref:
+                provenance.append({
+                    "kind": "observation",
+                    "source": observation.source,
+                })
+
+        for item in self.state.retrieval.items.values():
+            if item.content_ref == ref:
+                provenance.append({
+                    "kind": "retrieval",
+                    "provider_id": item.provider_id,
+                    "provider_revision": item.provider_revision,
+                    "source_id": item.source_id,
+                    "source_revision": item.source_revision,
+                    "source_locator": item.source_locator,
+                })
+
+        if not provenance:
+            provenance.append({"kind": "registered_artifact"})
+
+        provenance.sort(key=canonical_hash)
+        return canonical_hash({
+            "content_sha256": digest,
+            "provenance": provenance,
+        })
 
     @staticmethod
     def _authority_from_verification(results) -> Authority:
@@ -196,14 +286,34 @@ class RuntimeExecutionMixin:
             prior = self.state.refuted_hypotheses.get(key)
             new_refs = list(decision.payload.get("evidence_refs", []))
             if prior is not None:
-                prior_refs = set(prior.evidence_refs)
-                if not any(ref not in prior_refs for ref in new_refs):
+                try:
+                    prior_identities = {
+                        self._evidence_novelty_identity(ref) for ref in prior.evidence_refs
+                    }
+                    new_identities = {
+                        self._evidence_novelty_identity(ref) for ref in new_refs
+                    }
+                except IntegrityError as exc:
+                    self.fail(Failure(
+                        FailureKind.PERSISTENCE_ERROR,
+                        f"refuted hypothesis evidence integrity failure: {exc}",
+                        action=key,
+                        signature_key="core_freeze:refuted_evidence_integrity",
+                    ))
+                    return
+                if not (new_identities - prior_identities):
                     self.fail(Failure(
                         FailureKind.HYPOTHESIS_REFUTED,
-                        f"refuted hypothesis cannot be re-proposed without new evidence: {key}",
+                        f"refuted hypothesis cannot be re-proposed without content/provenance-novel evidence: {key}",
                         action=key,
                     ))
                     return
+                self.log("hypothesis.reopen_evidence", {
+                    "claim": key,
+                    "prior_identity_count": len(prior_identities),
+                    "new_identity_count": len(new_identities - prior_identities),
+                    "novelty_rule": "verified_content_digest_plus_stable_source_provenance",
+                })
             claim = Claim(key, decision.payload.get("value"), evidence_refs=new_refs)
             self.state.propose(claim)
             self.log("hypothesis.proposed", claim.dump())
