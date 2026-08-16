@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
 
 from .failures import Failure, FailureKind
 from .progress import decision_progress_signatures
-from .storage import IntegrityError, canonical_hash
+from .storage import ArtifactStore, IntegrityError, canonical_hash
 
 
 class RuntimeProgressMixin:
@@ -46,33 +45,22 @@ class RuntimeProgressMixin:
 
     @staticmethod
     def _digest_prefix_from_artifact_ref(ref: str) -> str:
-        if not isinstance(ref, str) or not ref.startswith("artifact://"):
-            raise IntegrityError("progress evidence reference is not an artifact ref")
-        token = ref[len("artifact://"):]
-        if len(token) < 65 or token[64] != "_":
-            raise IntegrityError("progress evidence artifact ref is not content-addressed")
-        digest = token[:64]
-        if any(ch not in "0123456789abcdef" for ch in digest):
-            raise IntegrityError("progress evidence artifact digest is malformed")
-        return digest
+        try:
+            return ArtifactStore.digest_from_ref(ref)
+        except (ValueError, IntegrityError) as exc:
+            raise IntegrityError(f"progress evidence artifact ref is invalid: {exc}") from exc
 
     def _verified_observation_fingerprint(self, ref: str) -> str:
-        """Integrity-check raw bytes, then canonicalize decoded JSON content.
+        """Consume the exact verified bytes, then canonicalize decoded JSON.
 
-        JSON mapping order is cosmetic and canonicalized. String contents are
-        preserved exactly because whitespace can be semantically meaningful.
+        The verified-read primitive hashes and returns one logical buffer; this
+        method never reopens a previously verified path. JSON mapping order is
+        cosmetic and canonicalized. String contents remain exact.
         """
-        expected = self._digest_prefix_from_artifact_ref(ref)
         try:
-            path = self.artifacts.resolve(ref)
-        except ValueError as exc:
-            raise IntegrityError(f"progress evidence artifact ref is invalid: {exc}") from exc
-        if not path.is_file():
-            raise IntegrityError("progress evidence artifact is missing")
-        raw = path.read_bytes()
-        actual = hashlib.sha256(raw).hexdigest()
-        if actual != expected:
-            raise IntegrityError("progress evidence artifact content hash mismatch")
+            raw = self.artifacts.verified_read_bytes(ref)
+        except (ValueError, IntegrityError) as exc:
+            raise IntegrityError(f"progress evidence artifact cannot be verified: {exc}") from exc
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
