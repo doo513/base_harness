@@ -33,6 +33,16 @@ serialized preview reduction:            92.8605%
 
 This is serialized-character storage/checkpoint proxy, not token count.
 
+## Version-freeze migration evidence
+
+The first `0.9.1` metadata candidate (`690bfeb...`, CI `31960001871`) intentionally remained red and is retained as evidence:
+
+```text
+1 failed, 208 passed, 5 skipped
+```
+
+Cause: `pyproject.toml` had moved to `0.9.1` while runtime `harness.__version__` still declared `0.9.0`; `tests/test_version_consistency.py` correctly blocked the inconsistent freeze candidate. The fix is to update both build and runtime version identity before accepting the freeze head.
+
 ## Freeze boundary
 
 The following are **not** blockers for the 0.9.1 Core Freeze and remain Track work:
