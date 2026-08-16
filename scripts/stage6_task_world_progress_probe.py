@@ -22,13 +22,16 @@ class BaseProfile(DomainProfile):
 
 class MilestoneProfile(BaseProfile):
     def task_progress_snapshot(self, *, goal, state):
-        return {"accepted": bool(state.completed)}
+        return {
+            "milestones": ["accepted"] if state.completed else [],
+            "score": 1 if state.completed else 0,
+        }
 
 
 class MutatingProfile(BaseProfile):
     def task_progress_snapshot(self, *, goal, state):
         state.completed = True
-        return {"accepted": True}
+        return {"milestones": ["accepted"], "score": 1}
 
 
 class Harness(RuntimeProgressMixin):
@@ -60,12 +63,27 @@ def main() -> int:
         result = explicit._evaluate_actor_progress(
             Decision("complete", {"reason": "milestone"}), baseline, allow_trigger=True
         )
-        outcomes["profile_explicit_delta_is_task_progress"] = {
+        outcomes["profile_explicit_monotonic_advance_is_task_progress"] = {
             "passed": result["made_progress"]
             and explicit.state.progress.task_events == 1
-            and "profile_task_progress_snapshot_changed" in result["progress_reasons"],
+            and "profile_task_progress_advanced" in result["progress_reasons"],
             "task_events": explicit.state.progress.task_events,
             "progress_events": explicit.state.progress.progress_events,
+        }
+
+        regression = Harness(root / "regression", MilestoneProfile())
+        regression.state.completed = True
+        baseline = regression._progress_baseline()
+        regression.state.completed = False
+        result = regression._evaluate_actor_progress(
+            Decision("complete", {"reason": "regression"}), baseline, allow_trigger=False
+        )
+        outcomes["milestone_and_score_regression_not_progress"] = {
+            "passed": not result["made_progress"]
+            and regression.state.progress.task_events == 0
+            and result["task_progress_regression"] is not None,
+            "task_events": regression.state.progress.task_events,
+            "regression": result["task_progress_regression"],
         }
 
         default = Harness(root / "default", BaseProfile())
@@ -94,11 +112,12 @@ def main() -> int:
         "all_passed": all(item["passed"] for item in outcomes.values()),
         "scenario_count": len(outcomes),
         "implicit_task_authority": 0 if outcomes["default_profile_has_no_task_authority"]["passed"] else 1,
+        "regressions_credited": 0 if outcomes["milestone_and_score_regression_not_progress"]["passed"] else 1,
         "snapshot_state_mutations_accepted": 0 if outcomes["snapshot_hook_must_be_pure"]["passed"] else 1,
     }
     print(json.dumps({
         "stage": "06-remediation",
-        "probe": "task-world-progress-v1",
+        "probe": "task-world-progress-v2",
         "outcomes": outcomes,
         "summary": summary,
     }, ensure_ascii=False, indent=2, sort_keys=True))
