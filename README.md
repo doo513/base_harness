@@ -4,7 +4,7 @@ This research branch is the standalone implementation of the new harness archite
 
 ## Core invariant
 
-> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success. Recovery, progress control, and context projection are kernel-governed and may not bypass those gates.**
+> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success. Recovery, progress control, context projection, and retrieval admission are kernel-governed and may not bypass those gates.**
 
 ## Architecture
 
@@ -15,8 +15,17 @@ Goal Contract -> Observation/Evidence -> Trusted Working State
 -> Evidence/Hypothesis -> VerificationContract -> Kernel State Commit
 
 Actor Decision -> deterministic Progress Control
-  -> verified fact semantic change OR novel integrity-checked successful evidence
+  -> activity novelty: credit 0
+  -> verified fact transition: epistemic progress
   -> no-progress family/global windows -> typed recovery
+
+Actor retrieval request
+  -> Kernel-owned scope/top-k/provider/ranking/admission/request identity
+  -> deterministic read-only Gateway
+  -> content-addressed verified admission
+  -> durable RetrievalState
+  -> Context Governor as untrusted_retrieval / instruction_authority=none
+  -> retrieval itself gives progress credit 0
 
 Failure -> durable RecoveryTransition -> Kernel recovery before Actor
 -> APPLIED/SUPERSEDED -> bounded directive OR terminal halt
@@ -28,61 +37,58 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 
 | Stage | Scope | Status |
 |---|---|---|
-| 00 | Research / contracts | COMPLETE |
-| 01 | Truth + execution integrity | COMPLETE |
-| 02 | Capability isolation + sealed oracle | PASS / EXITED |
-| 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) |
-| 04 | Semantic verification | PASS / EXITED (`v0.5.0`) |
+| 00 | Research / contracts | COMPLETE (canonical retrospective reconstruction still open) |
+| 01 | Truth + execution integrity | COMPLETE (canonical retrospective reconstruction still open) |
+| 02 | Capability isolation + sealed oracle | PASS / EXITED + remediation hardening |
+| 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) + provenance hardening |
+| 04 | Semantic verification | PASS / EXITED (`v0.5.0`) + claim-class hardening |
 | 05 | Failure recovery | PASS / EXITED (`v0.6.0`) |
-| 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) |
-| 07 | Context Governance | PASS / EXITED (`v0.8.0`) |
-| 08 | Retrieval / Memory Gateway | NEXT / CONTRACT NOT FROZEN |
+| 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
+| 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
+| 08 | Retrieval / Memory Gateway | RELEASE CANDIDATE (`v0.9.0rc1`), exit pending same-commit CI |
 
-Current package version: **v0.8.0**.
+Current package version: **v0.9.0rc1**.
 
-## Stage 07 result
+## Stage 08 candidate result
 
-Stage 07 makes Context Governor the single runtime projection boundary:
+Stage 08 introduces a bounded retrieval/evidence gateway without treating retrieval as truth or progress:
 
-- mandatory goal, acceptance, constraints, pinned constraints, current trusted facts and critical control state are retained;
-- verified/current truth is separated from hypotheses, observations, refutations and failure text;
-- superseded facts are not exposed as current truth;
-- optional/untrusted previews and tool descriptions are deterministically bounded;
-- duplicate observations are collapsed while raw artifact references remain available;
-- untrusted text has no instruction authority in the built-in model path;
-- ContextPolicy is part of resume provenance;
-- same state + same policy projects deterministically after resume;
-- trusted Controller legacy access for moved fields is detached and non-serialized;
-- actual Stage-07 keys have one governed Python/JSON value;
-- dormant raw context implementation was removed;
-- build/runtime version metadata is regression-locked.
+- Actor controls only explicit query text; Kernel owns normalized request framing, scope, top-k, provider/index identity, ranking contract, admission policy and durable request identity;
+- the shipped local lexical gateway is deterministic and declares search read-only; descriptor mutation during search is fail-closed;
+- retrieval items are provider/source/content bound, stored as content-addressed artifacts, and verified before admission and before model-visible projection;
+- batch admission prepares and verifies the whole result set before a single live HarnessState-side commit, so a later candidate failure does not partially admit earlier candidates;
+- admitted retrieval is durable in `RetrievalState`, independent from ordinary observations and verified facts;
+- model-visible retrieval is always `untrusted_retrieval` with `instruction_authority=none`;
+- retrieval cannot directly mutate verified facts, completion, recovery, or Stage-06 progress;
+- result count, query/source/provider fields, content bytes, metadata, model-visible preview, durable item count and request history are bounded;
+- supersession is an explicit Kernel transition; search ordering is not treated as freshness authority;
+- resume fails closed on missing/tampered artifacts or provider/index/config drift.
 
-The actual `v0.8.0` release snapshot passed **125 tests with 5 hosted-environment namespace skips** plus all Stage 03–07 direct probes in GitHub Actions run `31943274153`.
+The pre-release candidate at commit `a9fab5d446ff574d2bd090f51226f7f366585d15` passed **182 tests with 5 hosted-environment skips** and all Stage 03–08 plus remediation probes in GitHub Actions run `31954088822`. The `v0.9.0rc1` commit must reproduce those gates before Stage 08 is marked PASS / EXITED.
 
 ## Guarantee boundaries
 
 ### Stage 02
-Production isolation requires a successful live `runtime_probe`. Hosted-runner skips do not count as production isolation proof.
+Production isolation requires a successful live `runtime_probe`. Hosted-runner skips do not count as production isolation proof. Independent clean-host reproduction remains a coverage gap.
 
 ### Stage 03
-Non-idempotent effects are at-most-once automatically executed: COMMITTED receipts deduplicate; PREPARED-only receipts halt/fail closed. No universal exactly-once claim.
+Non-idempotent effects are at-most-once automatically executed: COMMITTED receipts deduplicate; PREPARED-only receipts halt/fail closed. No universal exactly-once claim. Environment provenance is stronger but does not claim every deployment image/VM is immutably reproduced.
 
 ### Stage 04
-Generic structured verification does not solve natural-language truth. Domain-semantic facts require domain-specific verifier coverage.
+Claim-class contracts prevent undeclared semantic promotion, but the current synthetic matrix does not prove broad real-world semantic-verifier coverage.
 
 ### Stage 05
-Recovery guarantees durable control transitions, not guaranteed semantic repair by an LLM and not transactional rollback of arbitrary external systems.
+Recovery guarantees durable control transitions, not that recovery improves task success. A/B effectiveness benchmarking remains open.
 
 ### Stage 06
-Progress control is deterministic/syntactic. Novel evidence or verified truth is not automatically proven relevant to the active goal.
+Novel successful bytes are activity, not progress. Verified fact transitions provide deterministic epistemic progress, but goal-relevant task/world progress authority remains an open design problem.
 
 ### Stage 07
-Context selection is deterministic governance, not semantic retrieval quality. Mandatory trusted/control content is not subject to a universal hard truncation limit, `valid_until` is not wall-clock evaluated, and retrieval/memory content is not trusted merely because it enters context.
+Verified trusted-fact projection is now deterministically bounded without deleting durable truth. Oversized mandatory goal/control inputs still need an entry-time fail-closed or externalized representation policy.
+
+### Stage 08
+Retrieval is evidence only. Stage 08 does not claim semantic query planning, arbitrary remote-provider honesty, automatic memory writes, or universal filesystem transactions. Failed batch preparation can leave unreferenced content-addressed artifact files that have no state/truth authority but may require later garbage collection.
 
 ## Development rule
 
 Use `research/verified-state-stage03` as the single continuing research branch. Do not create a branch per Stage. Every completed Stage must include code, tests/probes, machine-readable evidence, implementation/review/exit Markdown reports, and full regression. `main` remains preserved.
-
-## Next work
-
-Stage 08 candidate is **Retrieval / Memory Gateway**. Before implementing RAG, a vector store, or automatic memory writes, freeze an admission contract defining provenance, integrity, deterministic query inputs, trust level, write authority, context-budget interaction, resume behavior, deletion/supersession semantics, and the rule that retrieved/remembered material cannot directly mutate verified facts or completion state.

@@ -1,34 +1,101 @@
 # Stage 08 — Retrieval / Memory Gateway
 
-Status: **CONTRACT FROZEN / PREREQUISITE HARDENING REQUIRED**  
-Target release: `v0.9.0` only after PASS.
+Status: **RELEASE CANDIDATE — `v0.9.0rc1`; exit pending same-commit CI**
 
-## Entry result
+Frozen contract: [`CONTRACT.md`](./CONTRACT.md)
 
-Stage 07 `v0.8.0` is PASS / EXITED. Stage-08 preflight found that the repository already contains a prototype `MemoryStore`, but it is not safe to treat as the Stage-08 architecture: search mutates recall state, authority is free text, overwrite/supersession is uncontrolled, and equal-score ordering has no explicit total tie-break.
+## Objective
 
-A second prerequisite defect is shared artifact integrity handling. Stage 04 and Stage 06 independently implement content-address validation instead of delegating to one ArtifactStore verified-read primitive.
+Stage 08 adds a durable, deterministic and bounded retrieval/evidence gateway without allowing retrieved material to become trusted truth, completion authority, recovery authority or progress by itself.
 
-## Current sequence
+## Implemented architecture
 
 ```text
-Stage-08 preflight review            COMPLETE
-Retrieval/Memory Admission Contract  FROZEN
-shared ArtifactStore verified read   NEXT (`v0.8.1` hardening)
-full Stage 03-07 regression          required
-Stage-08 feature implementation      BLOCKED until hardening PASS
+Actor explicit retrieval request
+  -> Kernel request normalization + policy framing
+  -> frozen provider/index descriptor
+  -> deterministic read-only Gateway search
+  -> candidate identity/content/source validation
+  -> content-addressed artifact write + verified read
+  -> prepare complete batch
+  -> single live HarnessState-side RetrievalState/ref commit
+  -> checkpoint/resume
+  -> Context Governor
+       trust = untrusted_retrieval
+       instruction_authority = none
 ```
 
-## Core rule
+### Ownership boundary
 
-Retrieved or remembered material remains `untrusted_retrieval` with `instruction_authority=none`. Retrieval admission never writes verified facts or completion state. Promotion can only occur by proposal + Stage-04 verification + Kernel commit.
+Actor-controlled:
 
-## Initial provider direction
+- explicit retrieval query text only.
 
-After the prerequisite is closed, the first provider should be deterministic/local/inspectable rather than embedding/vector based. This allows source identity, content integrity, ordering, tie-breaking, deduplication, persistence, and resume semantics to be proven before retrieval-quality optimization.
+Kernel-controlled or Kernel-validated:
 
-See:
+- query normalization and durable request ID,
+- scope,
+- top-k,
+- provider/index identity and revision,
+- deterministic ranking policy,
+- candidate/source/content admission,
+- content/result/history budgets,
+- supersession transition,
+- durable request/result state,
+- context projection authority and bounds.
 
-- `../../STAGE8_PREFLIGHT_REREVIEW.md`
-- `CONTRACT.md`
-- `../../handoff/03_NEXT_STAGE_TASK.md`
+This Stage does **not** claim a semantic Kernel query planner. That is intentionally separate from the current frozen scope.
+
+## Core guarantees in the candidate
+
+1. **Evidence, not truth** — retrieval items cannot directly enter `facts` or complete the task.
+2. **No instruction authority** — model-visible retrieval is always `untrusted_retrieval` / `instruction_authority=none`.
+3. **No false progress** — retrieval is stored outside ordinary `Observation`; retrieval-only actions get Stage06 progress credit 0.
+4. **Deterministic provider contract** — provider descriptor includes stable provider/index identity, index hash and ranking-policy version; mutation during search is rejected.
+5. **Content integrity** — candidate digest, content-addressed artifact ref and verified bytes must agree.
+6. **Batch state atomicity** — all candidate artifacts are prepared/verified before live `RetrievalState`, artifact refs, evidence refs and metrics are committed as one state-side batch.
+7. **Bounded growth** — query/source/provider fields, content bytes, metadata, visible preview, durable items and request snapshots are bounded.
+8. **Explicit supersession** — ranking order never silently decides freshness; Kernel supersession is a separate durable transition.
+9. **Resume fail-closed** — state/artifact/provider/index/config drift is verified before restored retrieval becomes model-visible.
+10. **Stage07 compatibility** — retrieval projection uses an extension hook; Stage07-only runtimes keep their previous context contract.
+
+## Candidate evidence
+
+Pre-release implementation commit:
+
+`a9fab5d446ff574d2bd090f51226f7f366585d15`
+
+GitHub Actions run:
+
+`31954088822`
+
+Results:
+
+- full pytest: **182 passed / 5 skipped**;
+- Stage08 base: **4/4 PASS**;
+- Stage08 adversarial: **6/6 PASS**;
+- Stage08 resume: **4/4 PASS**;
+- Stage08 cost: **PASS**;
+- single-buffer artifact integrity: **6/6 PASS**;
+- Stage03–07 regression probes: **PASS**;
+- Stage02 remediation probes: **PASS**.
+
+The `v0.9.0rc1` snapshot must reproduce the complete gate before the Stage is marked PASS / EXITED.
+
+## Residual limitations
+
+- Failed preparation may leave **unreferenced content-addressed files**. They are not referenced by HarnessState and have no truth/context authority, but later GC may be desirable for disk hygiene.
+- The shipped local lexical gateway is the concrete deterministic provider proved by current tests. Stage08 does not prove that an arbitrary remote provider cannot lie about hidden internal mutation.
+- Actor query text remains explicit input. Kernel owns the admitted retrieval descriptor, but semantic query planning is not implemented.
+- Stage08 reuses the Stage03 state/event/checkpoint durability model; it does not add a universal cross-filesystem transaction abstraction.
+
+## Exit artifacts
+
+After the release snapshot passes, this directory will contain:
+
+- `IMPLEMENTATION_REPORT.md`
+- `EVIDENCE_MATRIX.md`
+- `COST_REPORT.md`
+- `FINAL_REREVIEW.md`
+
+and machine-readable Stage08 evidence will be stored under `evidence/`.
