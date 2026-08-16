@@ -196,6 +196,11 @@ class HarnessRuntime(
         self.state.failures.append(record)
         self.metrics["failures"] += 1
         failure_index = len(self.state.failures) - 1
+
+        # The state snapshot is the commit point for failure+recovery scheduling.
+        # Persist it before descriptive audit events so a crash after fail()
+        # returns cannot lose pending_recovery or a stateful controller cursor.
+        self._persist_state("failure.recovery.scheduled")
         self.log("failure", record)
         self.log("recovery.scheduled", {
             "failure_index": failure_index,

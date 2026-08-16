@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from .failures import RecoveryAction, RecoveryStatus, RecoveryTransition
+from .failures import (
+    Failure,
+    FailureKind,
+    RecoveryAction,
+    RecoveryStatus,
+    RecoveryTransition,
+)
 from .security import Capability, Principal
 from .storage import IntegrityError, canonical_hash
 
@@ -86,6 +92,17 @@ class RuntimeRecoveryMixin:
         if transition is None:
             return False
 
+        # Re-check the hard budget at the actual transition boundary rather than
+        # relying only on the outer-loop check. If budget expires between those
+        # two points, a non-terminal recovery must not mutate state outside the
+        # declared budget; it is superseded by durable CHECKPOINT_STOP instead.
+        step_budget_available = self._recovery_has_step_budget()
+        if not step_budget_available and transition.action not in self._TERMINAL_ACTIONS:
+            self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))
+            transition = self.state.pending_recovery
+            if transition is None or transition.action != RecoveryAction.CHECKPOINT_STOP:
+                raise IntegrityError("budget terminalization did not schedule CHECKPOINT_STOP")
+
         self.capability_policy.require(Principal.KERNEL, Capability.STATE_COMMIT)
         before_facts = self._facts_hash()
         details = dict(transition.details)
@@ -123,16 +140,14 @@ class RuntimeRecoveryMixin:
         transition.details = details
         transition.status = RecoveryStatus.APPLIED
 
-        # Recovery consumes a normal harness step while hard budget remains.
-        # If the transition is the terminal fail-closed action at an already
-        # exhausted hard budget, it is administrative checkpointing and must not
-        # make the persisted step counter exceed the declared hard limit.
-        step_consumed = self._recovery_has_step_budget()
-        if step_consumed:
+        # A transition begun while budget is available consumes one step. A
+        # terminal transition begun after hard-budget exhaustion is administrative
+        # checkpointing and must not overshoot the declared hard step limit.
+        if step_budget_available:
             self.state.step += 1
         transition.applied_step = self.state.step
-        transition.details["step_consumed"] = step_consumed
-        transition.details["budget_exhausted_at_apply"] = not step_consumed
+        transition.details["step_consumed"] = step_budget_available
+        transition.details["budget_exhausted_at_apply"] = not step_budget_available
 
         self.state.recovery_history.append(transition)
         self.state.pending_recovery = None
@@ -140,8 +155,7 @@ class RuntimeRecoveryMixin:
 
         # Persist the applied state before returning to Actor control. A crash
         # after this snapshot cannot cause the same control transition to be
-        # invisibly applied again on resume. The later audit event is descriptive;
-        # the hash-chained state snapshot remains the authoritative transition.
+        # invisibly applied again on resume.
         self._persist_state("recovery.transition")
         self.log("recovery.transition", {
             "transition": transition.dump(),

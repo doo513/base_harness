@@ -29,3 +29,5 @@ jobs:
         run: python scripts/stage5_recovery_adversarial_probe.py
       - name: Stage 05 terminal recovery probe
         run: python scripts/stage5_terminal_probe.py
+      - name: Stage 05 crash-window recovery probe
+        run: python scripts/stage5_crash_window_probe.py
