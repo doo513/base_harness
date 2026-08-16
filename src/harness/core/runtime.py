@@ -21,7 +21,7 @@ from .context import ContextPolicy, ContextProjector
 from .provenance import capture_build_provenance
 from .retrieval import RetrievalPolicy
 from .runtime_recovery import RuntimeRecoveryMixin
-from .runtime_retrieval import RuntimeRetrievalMixin
+from .runtime_retrieval_kernel import RuntimeRetrievalMixin
 from .runtime_progress import RuntimeProgressMixin
 from .runtime_context import RuntimeContextMixin
 from .runtime_controller_state import RuntimeControllerStateMixin
