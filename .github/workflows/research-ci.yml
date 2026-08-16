@@ -55,3 +55,5 @@ jobs:
         run: python scripts/stage8_artifact_integrity_probe.py
       - name: Verified-read cost probe
         run: python scripts/remediation_artifact_cost_probe.py
+      - name: Stage 02 nested read-only submount probe
+        run: python scripts/stage2_nested_submount_probe.py
