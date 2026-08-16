@@ -13,7 +13,7 @@ from .retrieval import (
 )
 from .runtime_retrieval import RuntimeRetrievalMixin as _BaseRuntimeRetrievalMixin
 from .security import Capability, Principal
-from .storage import ArtifactStore, IntegrityError
+from .storage import ArtifactStore, IntegrityError, PersistenceError
 
 
 class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
@@ -170,10 +170,13 @@ class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
                 raise IntegrityError(f"existing retrieval content is not valid UTF-8: {exc}") from exc
             return existing, False, None
 
-        artifact_ref = self.artifacts.put_text(
-            f"retrieval_{item_id[:24]}.txt",
-            candidate.content,
-        )
+        try:
+            artifact_ref = self.artifacts.put_text(
+                f"retrieval_{item_id[:24]}.txt",
+                candidate.content,
+            )
+        except OSError as exc:
+            raise PersistenceError(f"retrieval artifact write failed: {exc}") from exc
         raw = self.artifacts.verified_read_bytes(artifact_ref)
         actual_digest = hashlib.sha256(raw).hexdigest()
         if len(raw) > self.retrieval_policy.max_content_bytes_per_item:
