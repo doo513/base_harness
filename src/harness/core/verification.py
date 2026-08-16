@@ -6,6 +6,8 @@ from typing import Protocol, Any, Callable, Iterable
 import hashlib
 import json
 
+from .storage import ArtifactStore, IntegrityError
+
 
 class VerificationLevel(IntEnum):
     SCHEMA = 0
@@ -214,25 +216,27 @@ class VerifierChain:
         return VerificationContract.legacy(VerificationLevel(minimum_level)).assess(results).accepted
 
 
-def _verified_artifact_path(artifact_root, ref: str):
-    """Resolve a content-addressed ArtifactStore ref and verify its SHA-256."""
-    from pathlib import Path
-    from .storage import ArtifactStore
+def _verified_artifact_bytes(artifact_root, ref: str) -> bytes:
+    """Return the exact content buffer whose content-address digest was verified."""
+    return ArtifactStore.verified_read_bytes_from_root(artifact_root, ref)
 
-    root = Path(artifact_root).resolve()
-    path = ArtifactStore.resolve_ref_path(root, ref)
-    token = ArtifactStore._token_from_ref(ref)
-    if len(token) < 65 or token[64] != "_":
-        raise ValueError("artifact ref is not content-addressed")
-    expected = token[:64]
-    if any(ch not in "0123456789abcdef" for ch in expected):
-        raise ValueError("artifact ref digest is malformed")
-    if not path.is_file():
-        raise ValueError("artifact file is missing")
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
-    if actual != expected:
-        raise ValueError("artifact content hash mismatch")
-    return path
+
+def _verified_artifact_json(artifact_root, ref: str) -> Any:
+    raw = _verified_artifact_bytes(artifact_root, ref)
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise IntegrityError(f"artifact JSON cannot be decoded: {exc}") from exc
+
+
+def _verified_artifact_path(artifact_root, ref: str):
+    """Compatibility helper: verifies now, but callers must not infer future bytes.
+
+    Internal verifiers consume `_verified_artifact_bytes/json()` instead. A Path
+    cannot carry a verified-content guarantee across a later reopen.
+    """
+    _verified_artifact_bytes(artifact_root, ref)
+    return ArtifactStore.resolve_ref_path(artifact_root, ref)
 
 
 class ExistsVerifier:
@@ -266,7 +270,7 @@ class EvidenceRefVerifier:
                 if ref in missing:
                     continue
                 try:
-                    _verified_artifact_path(artifact_root, ref)
+                    _verified_artifact_bytes(artifact_root, ref)
                 except Exception:
                     corrupt.append(ref)
         ok = bool(refs) and not missing and not corrupt
@@ -315,12 +319,11 @@ class ClaimBoundEvidenceVerifier:
         bad = []
         for ref in refs:
             try:
-                p = _verified_artifact_path(artifact_root, ref)
-                raw = json.loads(p.read_text(encoding="utf-8"))
+                raw = _verified_artifact_json(artifact_root, ref)
             except Exception:
                 bad.append(ref)
                 continue
-            if raw.get("bound_claim") != claim_key:
+            if not isinstance(raw, dict) or raw.get("bound_claim") != claim_key:
                 bad.append(ref)
 
         ok = not bad
@@ -394,8 +397,7 @@ class StructuredArtifactAssertionVerifier:
             return VerificationResult(False, self.level, "exactly one resolvable evidence artifact is required", evidence_refs=refs)
 
         try:
-            artifact = _verified_artifact_path(artifact_root, refs[0])
-            raw = json.loads(artifact.read_text(encoding="utf-8"))
+            raw = _verified_artifact_json(artifact_root, refs[0])
             actual = self._resolve_path(raw, path)
         except Exception as exc:
             return VerificationResult(
