@@ -1,7 +1,7 @@
 # Stage 08 — Retrieval / Memory Gateway Preflight Re-review
 
 Status: **ENTRY REVIEW COMPLETE — PREREQUISITE HARDENING IN VALIDATION**  
-Baseline: `v0.8.0` / branch `research/verified-state-stage03`
+Baseline: `v0.8.0` / branch `research/verified-state-stage03`  
 Candidate: `v0.8.1rc2`
 
 ## Purpose
@@ -67,19 +67,28 @@ read A -> hash A -> return path -> read B -> caller consumes B
 
 This violates the remediation invariant that the inspected object and consumed object must be the same.
 
-The draft commit was never promoted as an accepted release. `v0.8.1rc2` changes the boundary to:
+The draft commit was never accepted as a release. `v0.8.1rc2` changes the boundary to:
 
 ```text
-open artifact FD
+open artifact FD relative to artifact-root FD
+-> reject final-component symlink where supported
 -> fstat regular-file check
 -> read one logical byte buffer
 -> SHA-256 that exact buffer
 -> return that same buffer
 ```
 
-`resolve_ref_path()` is explicitly only path confinement/existence. Internal Stage-04 verifiers and Stage-06 progress consume verified bytes directly; no internal semantic path relies on a verified-Path guarantee.
+`resolve_ref_path()` is explicitly only path confinement/existence. It is not a verified-content API.
 
-Adversarial validation includes a pathname replacement after the first `os.read()`. Because the verified reader continues consuming the already-open inode and returns the same buffer, the replacement cannot substitute caller-visible bytes. A later new logical read opens the changed pathname and must fail the digest check.
+Consumer migration:
+
+- Stage-04 `EvidenceRefVerifier` hashes the returned verified buffer directly;
+- Stage-04 `ClaimBoundEvidenceVerifier` parses JSON from the returned verified buffer;
+- Stage-04 `StructuredArtifactAssertionVerifier` evaluates the assertion over JSON parsed from the returned verified buffer;
+- Stage-06 progress fingerprints JSON parsed from `ArtifactStore.verified_read_bytes()`;
+- the legacy `_verified_artifact_path()` helper remains compatibility-only and is explicitly not used by internal semantic consumers.
+
+Adversarial validation includes a pathname replacement after the first `os.read()`. Because the verified reader continues consuming the already-open inode and returns the same buffer, replacement cannot substitute caller-visible bytes. A later new logical read opens the changed pathname and must fail the digest check.
 
 ### PF09 — Retrieval must not reuse successful tool observations as progress evidence
 Class: **C / integration hazard**. Severity: **High design constraint**.
@@ -103,7 +112,7 @@ Stage 08 must add a hash-chained admitted retrieval snapshot/ledger before model
 
 ## Entry decision
 
-Stage-08 feature implementation remains **BLOCKED** until the `v0.8.1rc2` single-buffer hardening passes:
+Stage-08 feature implementation remains **BLOCKED** until `v0.8.1rc2` passes:
 
 ```text
 targeted unit + adversarial tests
@@ -117,4 +126,4 @@ After that, the next remediation gate is Stage-02 nested-submount runtime reprod
 
 ## Cost expectation for P0-1
 
-The old duplicated readers could read artifact bytes twice across verification/path consumers. The new critical path performs one logical content read and one hash over the exact returned bytes. This is expected to reduce redundant I/O rather than increase it; measured before/after data will be recorded in the remediation cost report.
+The corrected critical read performs one logical content read and one SHA-256 over the exact returned bytes. It removes the draft double-read TOCTOU and avoids the extra content read that created it. Measured before/after I/O and wall-time data will be recorded in the remediation cost report; no inode/mtime cache may replace a critical integrity revalidation.
