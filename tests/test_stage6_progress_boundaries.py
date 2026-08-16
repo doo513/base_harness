@@ -140,9 +140,10 @@ def test_verified_fact_change_is_recognized_by_progress_evaluator(tmp_path):
     assert result["made_progress"] is True
     assert "verified_fact_content_changed" in result["progress_reasons"]
     assert runtime.state.progress.progress_events == 1
+    assert runtime.state.progress.epistemic_events == 1
 
 
-def test_same_evidence_after_strategy_switch_is_not_novel_and_progress_resets_exhaustion_horizon(tmp_path):
+def test_same_evidence_after_strategy_switch_remains_activity_and_verified_delta_resets_horizon(tmp_path):
     ws = tmp_path / "strategy-evidence-ws"; ws.mkdir()
     tool = ToolSpec(
         name="observe", description="read", handler=lambda: "same result",
@@ -159,7 +160,9 @@ def test_same_evidence_after_strategy_switch_is_not_novel_and_progress_resets_ex
 
     baseline1 = runtime._progress_baseline(); runtime._dispatch_decision(decision)
     first = runtime._evaluate_actor_progress(decision, baseline1, allow_trigger=True)
-    assert first["made_progress"] is True
+    assert first["made_progress"] is False
+    assert first["max_credit"] == 0.0
+    assert runtime.state.progress.activity_events == 1
     assert runtime.state.progress.last_progress_generation == 0
 
     runtime.state.strategy_generation = 1
@@ -167,6 +170,7 @@ def test_same_evidence_after_strategy_switch_is_not_novel_and_progress_resets_ex
     second = runtime._evaluate_actor_progress(decision, baseline2, allow_trigger=True)
     assert second["made_progress"] is False
     assert second["generation_reset"] is True
+    assert second["novel_successful_observation_fingerprints"] == []
     assert runtime.state.progress.last_progress_generation == 0
 
     baseline3 = runtime._progress_baseline()
@@ -175,6 +179,7 @@ def test_same_evidence_after_strategy_switch_is_not_novel_and_progress_resets_ex
     ))
     third = runtime._evaluate_actor_progress(Decision("propose", {"key": "x", "value": 1}), baseline3, allow_trigger=True)
     assert third["made_progress"] is True
+    assert third["max_credit"] == 1.0
     assert runtime.state.progress.last_progress_generation == 1
 
 
