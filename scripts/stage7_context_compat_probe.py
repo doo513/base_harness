@@ -51,13 +51,12 @@ def run_probe() -> dict:
     serialized = json.loads(json.dumps(context, ensure_ascii=False, default=str))
     serialized_text = json.dumps(serialized, ensure_ascii=False)
 
-    schema_compatible = (
+    moved_schema_compatible = (
         context["hypotheses"]["hyp"]["value"] == {"raw": "FULL-HYPOTHESIS"}
         and context["observations"][0]["preview"] == {"raw": "FULL-OBSERVATION"}
         and context["recent_failures"] == [
             {"kind": "tool_error", "message": f"failure-{i}"} for i in range(2, 7)
         ]
-        and context["tools"]["observe"]["description"] == "FULL-TOOL-DESCRIPTION"
     )
     model_clean = (
         "hypotheses" not in serialized
@@ -67,28 +66,30 @@ def run_probe() -> dict:
         and "FULL-OBSERVATION" not in serialized_text
         and serialized["projection"]["legacy_aliases_model_visible"] is False
     )
-    bounded_projection = (
-        serialized["untrusted"]["hypotheses"]["hyp"]["value_preview"]["visible_chars"] == 4
+    governed_same_key = (
+        context["tools"] == serialized["tools"]
+        and context["tools"]["observe"]["description"] == "FUL"
+        and context["tools"]["observe"]["description_truncated"] is True
+        and serialized["untrusted"]["hypotheses"]["hyp"]["value_preview"]["visible_chars"] == 4
         and serialized["untrusted"]["observations"][0]["preview"]["visible_chars"] <= 4
         and serialized["control"]["recent_failures"] == []
-        and serialized["tools"]["observe"]["description"] == "FUL"
     )
 
     result = {
         "stage": "07",
-        "probe": "context-compat-rc3",
+        "probe": "context-compat-rc4",
         "outcomes": {
-            "trusted_controller_legacy_value_schema_preserved": {"passed": schema_compatible},
+            "moved_legacy_value_schema_preserved": {"passed": moved_schema_compatible},
             "legacy_raw_values_not_model_visible": {"passed": model_clean},
-            "governed_projection_remains_bounded": {"passed": bounded_projection},
+            "real_stage7_keys_have_single_governed_value": {"passed": governed_same_key},
         },
     }
     result["summary"] = {
         "all_passed": all(item["passed"] for item in result["outcomes"].values()),
         "scenario_count": len(result["outcomes"]),
-        "legacy_schema_breakages": 0 if schema_compatible else 1,
+        "moved_legacy_schema_breakages": 0 if moved_schema_compatible else 1,
         "model_visible_legacy_raw_values": 0 if model_clean else 1,
-        "governed_projection_budget_bypasses": 0 if bounded_projection else 1,
+        "python_json_split_brain_keys": 0 if governed_same_key else 1,
     }
     return result
 

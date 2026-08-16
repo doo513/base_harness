@@ -8,10 +8,12 @@ from .context import ContextProjection
 class RuntimeContextProjection(ContextProjection):
     """Governed model projection plus non-serialized legacy controller reads.
 
-    The actual dict payload remains the Stage-07 namespaced projection.  The
+    The actual dict payload remains the Stage-07 namespaced projection. The
     legacy snapshot is kept only as a Python attribute and is therefore not
-    emitted by json serialization.  This preserves the old trusted Controller
-    read API without exposing raw/unbounded legacy fields to the model path.
+    emitted by JSON serialization. Legacy aliases are used only for keys that
+    moved out of the old top-level schema; real Stage-07 top-level keys such as
+    `tools` always resolve to the governed projection to avoid a Python/JSON
+    split-brain API.
     """
 
     def __init__(self, projected: ContextProjection, legacy: dict[str, Any]):
@@ -43,10 +45,13 @@ class RuntimeContextMixin:
     """Model-visible Context Governor projection boundary."""
 
     def _legacy_controller_context(self) -> dict[str, Any]:
-        """Reconstruct the pre-Stage-07 trusted Controller read schema.
+        """Reconstruct moved pre-Stage-07 trusted Controller read fields.
 
         Values are detached snapshots rather than references into durable
         HarnessState, so compatibility reads cannot mutate kernel state.
+        `tools` is intentionally absent because it remains a real Stage-07
+        top-level key and must have one consistent governed value for Python
+        callers and JSON/model serialization.
         """
         return {
             "step": int(self.state.step),
@@ -67,14 +72,6 @@ class RuntimeContextMixin:
             "strategy_generation": int(self.state.strategy_generation),
             "recovery_halted": bool(self.state.recovery_halted),
             "progress": self.state.progress.dump(),
-            "tools": {
-                name: {
-                    "description": spec.description,
-                    "side_effect": spec.side_effect.value,
-                    "idempotent": bool(spec.idempotent),
-                }
-                for name, spec in self.actions.tools.items()
-            },
         }
 
     def _context(self) -> dict:

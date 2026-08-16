@@ -62,12 +62,12 @@ def _runtime_context() -> RuntimeContextProjection:
     return runtime._context()
 
 
-def test_runtime_legacy_read_schema_preserves_old_values_without_model_serialization():
+def test_runtime_moved_legacy_read_schema_preserves_old_values_without_model_serialization():
     context = _runtime_context()
     assert isinstance(context, RuntimeContextProjection)
 
-    # Old trusted Controller reads must preserve the old raw schema, not merely
-    # resolve the old key name to the new projected schema.
+    # Fields that moved into namespaces keep their old raw trusted-Controller
+    # read schema through non-serialized aliases.
     assert context["facts"]["fact"]["value"] == {"raw": "FACT"}
     assert context["hypotheses"]["hyp"]["value"] == {"raw": "HYPOTHESIS-VALUE"}
     assert context["refuted_hypotheses"]["old"]["value"] == "REFUTED"
@@ -77,26 +77,30 @@ def test_runtime_legacy_read_schema_preserves_old_values_without_model_serializa
         {"kind": "tool_error", "message": f"failure-{i}"} for i in range(2, 7)
     ]
     assert context["progress"]["evaluations"] == 3
+
+    # `tools` did not move out of the top-level schema. It must therefore have
+    # one governed value for Python lookup and JSON/model serialization rather
+    # than returning a different hidden legacy value in-process.
     assert context["tools"]["observe"] == {
-        "description": "FULL LEGACY DESCRIPTION " + ("x" * 100),
+        "description": "FUL",
+        "description_truncated": True,
         "side_effect": "none",
         "idempotent": True,
     }
 
-    # Governed/model-visible representation remains bounded and namespaced.
     assert context["untrusted"]["hypotheses"]["hyp"]["value_preview"]["visible_chars"] == 4
     assert context["untrusted"]["observations"][0]["preview"]["visible_chars"] <= 4
     assert context["control"]["recent_failures"] == []
-    assert context["tools"]["observe"]["description"] == "FUL"
 
     serialized = json.loads(json.dumps(context, ensure_ascii=False, default=str))
-    assert "control" in serialized
+    serialized_text = json.dumps(serialized, ensure_ascii=False)
+    assert serialized["tools"] == context["tools"]
     assert "recent_failures" not in serialized
     assert "facts" not in serialized
     assert "hypotheses" not in serialized
     assert "observations" not in serialized
-    assert "HYPOTHESIS-VALUE" not in json.dumps(serialized, ensure_ascii=False)
-    assert "OBSERVATION-VALUE" not in json.dumps(serialized, ensure_ascii=False)
+    assert "HYPOTHESIS-VALUE" not in serialized_text
+    assert "OBSERVATION-VALUE" not in serialized_text
     assert serialized["projection"]["legacy_aliases_model_visible"] is False
 
 
@@ -105,8 +109,6 @@ def test_legacy_snapshot_is_detached_from_durable_state():
     context["hypotheses"]["hyp"]["value"]["raw"] = "MUTATED-COPY"
     context["recent_failures"][0]["message"] = "MUTATED-COPY"
 
-    # Reconstructing the projection proves the compatibility object did not
-    # mutate the source HarnessState through shared dict/list references.
     fresh = _runtime_context()
     assert fresh["hypotheses"]["hyp"]["value"] == {"raw": "HYPOTHESIS-VALUE"}
     assert fresh["recent_failures"][0]["message"] == "failure-2"
