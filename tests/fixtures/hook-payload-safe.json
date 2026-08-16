@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "python3 scripts/validate_harness.py --strict"
-  }
-}

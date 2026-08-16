@@ -1,0 +1,74 @@
+{
+  "body": {
+    "config": {
+      "budget": {
+        "hard_max_steps": 30,
+        "hard_wall_seconds": 3600,
+        "soft_max_steps": null
+      },
+      "controller": {
+        "class": "harness.core.controller.DirectController",
+        "source_hash": "21f8f00695662ffe7ede794ef4aecaabd93c3b87653239acafde17bfe782cfe6"
+      },
+      "goal": {
+        "acceptance": [
+          "verified demo.started fact exists"
+        ],
+        "constraints": [
+          "completion is decided by harness-side oracle"
+        ],
+        "goal": "Demonstrate that an actor cannot self-authorize completion.",
+        "pinned_constraints": [
+          "actor completion request is not sufficient"
+        ]
+      },
+      "oracle": {
+        "backend": null,
+        "class": "harness.core.oracles.PredicateCompletionOracle",
+        "name": "demo_oracle",
+        "oracle_id": null,
+        "require_filesystem_isolation": false,
+        "seal_manifest_hash": null,
+        "sealed": false
+      },
+      "profile": {
+        "class": "harness.profiles.demo.DemoProfile",
+        "minimum_verification_level": 0,
+        "name": "demo",
+        "source_hash": "ed241eeed4b6b56f7c541971399991d90cc73c372016dca554bb66ff46effce0",
+        "verifiers": [
+          {
+            "class": "harness.core.verification.ExistsVerifier",
+            "source_hash": "ce44e9bb8c1dc805d36ee0fc6440e4301a2780db8ce9b61dfe4b8357bc714b22"
+          }
+        ]
+      },
+      "security": {
+        "allow_test_attestation": false,
+        "network_policy": "allow",
+        "require_sealed_oracle": false,
+        "strict_layout": false,
+        "strict_tool_isolation": false
+      },
+      "tools": [],
+      "workspace": "/tmp/vsh-stage3-manifest-workspace"
+    },
+    "config_hash": "244dbf5e12c0ba0d696a4d7d1c47e5eee48a69d12bec49eae52ce8b1c8a65b68",
+    "controller": "DirectController",
+    "created_at": "2026-08-16T06:26:38.387843+00:00",
+    "harness_version": "0.4.0",
+    "model_revision": "not_applicable:DirectController",
+    "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+    "provenance_complete": true,
+    "provenance_warnings": [],
+    "python": "3.13.5",
+    "run_id": "bb695f919814",
+    "runtime_revision": "verified-state-harness/0.4.0",
+    "schema_version": 1,
+    "task_revision": "evidence-demo-v1"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "sha256": "9f418023d3637139e2985954231f123ecd6d5b1e5b5cd263d5cea03113afc190"
+  }
+}

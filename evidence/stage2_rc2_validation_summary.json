@@ -1,0 +1,22 @@
+{
+  "attack_summary": {
+    "defense_in_depth_pass": true,
+    "required_attacks_blocked": true,
+    "required_pass_count": 12,
+    "required_probe_count": 12,
+    "runtime_attestation_pass": true,
+    "stage2_runtime_boundary_pass": true,
+    "workspace_positive_control": true
+  },
+  "candidate": "v0.3.0-rc2",
+  "compileall": "PASS",
+  "defense_in_depth_ids": ["D13", "D14", "D15", "D16"],
+  "final_status": "PASS / EXITED",
+  "inherited_status": "PARTIAL / NOT EXITED",
+  "next_allowed_stage": "Stage 03 — Persistence / Resume / Reproducibility",
+  "promoted_version": "v0.3.0",
+  "pytest": "47 passed",
+  "required_attack_ids": ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12"],
+  "scope": "LinuxNamespaceSandboxBackend on hosts where live runtime_probe succeeds",
+  "stage": "02"
+}
