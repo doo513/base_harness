@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
 import hashlib
+import json
 import re
 
 from .storage import ArtifactStore, IntegrityError, canonical_hash, canonical_json
@@ -33,6 +34,17 @@ def retrieval_item_id(
     })
 
 
+def strict_json_text(value: Any) -> str:
+    """Return deterministic JSON without falling back to object repr strings."""
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
 class RetrievalUnavailable(RuntimeError):
     pass
 
@@ -48,14 +60,25 @@ class RetrievalPolicy:
     default_top_k: int = 5
     max_query_chars: int = 1000
     max_admitted_per_request: int = 5
+    max_content_bytes_per_item: int = 262_144
+    max_total_content_bytes_per_request: int = 1_048_576
+    max_source_id_chars: int = 256
+    max_source_revision_chars: int = 256
+    max_source_locator_chars: int = 1000
+    max_provider_field_chars: int = 256
     max_context_items: int = 5
     max_preview_chars_per_item: int = 800
     max_total_context_preview_chars: int = 3000
     max_metadata_items: int = 16
     max_metadata_key_chars: int = 128
     max_metadata_value_chars: int = 500
+    max_metadata_chars_per_item: int = 2000
+    max_context_metadata_chars_per_item: int = 1000
+    max_total_context_metadata_chars: int = 2000
+    max_durable_items: int = 1024
+    max_request_snapshots: int = 1024
 
-    schema_version = "retrieval-policy-v1"
+    schema_version = "retrieval-policy-v2"
     ranking_policy_version = "score-desc_source-id_content-sha_item-id-v1"
 
     def __post_init__(self) -> None:
@@ -67,12 +90,23 @@ class RetrievalPolicy:
             "default_top_k",
             "max_query_chars",
             "max_admitted_per_request",
+            "max_content_bytes_per_item",
+            "max_total_content_bytes_per_request",
+            "max_source_id_chars",
+            "max_source_revision_chars",
+            "max_source_locator_chars",
+            "max_provider_field_chars",
             "max_context_items",
             "max_preview_chars_per_item",
             "max_total_context_preview_chars",
             "max_metadata_items",
             "max_metadata_key_chars",
             "max_metadata_value_chars",
+            "max_metadata_chars_per_item",
+            "max_context_metadata_chars_per_item",
+            "max_total_context_metadata_chars",
+            "max_durable_items",
+            "max_request_snapshots",
         )
         for name in integer_fields:
             value = getattr(self, name)
@@ -84,6 +118,14 @@ class RetrievalPolicy:
             raise ValueError("default_top_k cannot exceed max_admitted_per_request")
         if self.max_context_items > self.max_admitted_per_request:
             raise ValueError("max_context_items cannot exceed max_admitted_per_request")
+        if self.enabled and self.max_content_bytes_per_item < 1:
+            raise ValueError("enabled retrieval requires max_content_bytes_per_item >= 1")
+        if self.max_content_bytes_per_item > self.max_total_content_bytes_per_request:
+            raise ValueError("per-item content byte cap cannot exceed per-request byte cap")
+        if self.enabled and self.max_durable_items < self.max_admitted_per_request:
+            raise ValueError("max_durable_items must fit at least one retrieval request")
+        if self.enabled and self.max_request_snapshots < 1:
+            raise ValueError("enabled retrieval requires max_request_snapshots >= 1")
 
     def descriptor(self) -> dict[str, Any]:
         return {
@@ -93,12 +135,23 @@ class RetrievalPolicy:
             "default_top_k": self.default_top_k,
             "max_query_chars": self.max_query_chars,
             "max_admitted_per_request": self.max_admitted_per_request,
+            "max_content_bytes_per_item": self.max_content_bytes_per_item,
+            "max_total_content_bytes_per_request": self.max_total_content_bytes_per_request,
+            "max_source_id_chars": self.max_source_id_chars,
+            "max_source_revision_chars": self.max_source_revision_chars,
+            "max_source_locator_chars": self.max_source_locator_chars,
+            "max_provider_field_chars": self.max_provider_field_chars,
             "max_context_items": self.max_context_items,
             "max_preview_chars_per_item": self.max_preview_chars_per_item,
             "max_total_context_preview_chars": self.max_total_context_preview_chars,
             "max_metadata_items": self.max_metadata_items,
             "max_metadata_key_chars": self.max_metadata_key_chars,
             "max_metadata_value_chars": self.max_metadata_value_chars,
+            "max_metadata_chars_per_item": self.max_metadata_chars_per_item,
+            "max_context_metadata_chars_per_item": self.max_context_metadata_chars_per_item,
+            "max_total_context_metadata_chars": self.max_total_context_metadata_chars,
+            "max_durable_items": self.max_durable_items,
+            "max_request_snapshots": self.max_request_snapshots,
             "ranking_policy_version": self.ranking_policy_version,
             "query_owner": "kernel_descriptor_from_explicit_actor_request",
             "actor_controlled_fields": ["query"],
@@ -106,23 +159,66 @@ class RetrievalPolicy:
             "trust": "untrusted_retrieval",
             "instruction_authority": "none",
             "retrieval_counts_as_progress": False,
+            "history_overflow_policy": "fail_closed_no_eviction",
         }
 
     def sanitize_metadata(self, metadata: Any) -> dict[str, str]:
         if not isinstance(metadata, dict):
-            return {}
+            raise RetrievalContractError("retrieval metadata must be an object")
+        try:
+            strict_json_text(metadata)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RetrievalContractError(f"retrieval metadata is not deterministic JSON: {exc}") from exc
+
         output: dict[str, str] = {}
+        remaining = self.max_metadata_chars_per_item
         for raw_key in sorted(metadata, key=lambda item: str(item))[: self.max_metadata_items]:
-            key = str(raw_key)
+            if not isinstance(raw_key, str):
+                raise RetrievalContractError("retrieval metadata keys must be strings")
+            key = raw_key
             if len(key) > self.max_metadata_key_chars:
                 key = f"meta:{canonical_hash({'key': key})[:24]}"
             value = metadata[raw_key]
             if isinstance(value, str):
                 rendered = value
             else:
-                rendered = canonical_json(value)
-            output[key] = rendered[: self.max_metadata_value_chars]
+                try:
+                    rendered = strict_json_text(value)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise RetrievalContractError(
+                        f"retrieval metadata value is not deterministic JSON: {exc}"
+                    ) from exc
+            rendered = rendered[: self.max_metadata_value_chars]
+            fixed_cost = len(key)
+            if fixed_cost > remaining:
+                break
+            remaining -= fixed_cost
+            rendered = rendered[:remaining]
+            output[key] = rendered
+            remaining -= len(rendered)
+            if remaining <= 0:
+                break
         return output
+
+    def project_metadata(self, metadata: dict[str, str], *, remaining_total: int) -> tuple[dict[str, str], int]:
+        budget = min(self.max_context_metadata_chars_per_item, max(0, remaining_total))
+        output: dict[str, str] = {}
+        used = 0
+        for key in sorted(metadata):
+            value = metadata[key]
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise IntegrityError("persisted retrieval metadata must contain only strings")
+            if len(key) > budget:
+                break
+            budget -= len(key)
+            used += len(key)
+            visible = value[:budget]
+            output[key] = visible
+            budget -= len(visible)
+            used += len(visible)
+            if budget <= 0:
+                break
+        return output, used
 
 
 @dataclass(frozen=True)
@@ -143,6 +239,10 @@ class RetrievalSourceItem:
             raise ValueError("content must be a string")
         if not isinstance(self.metadata, dict):
             raise ValueError("metadata must be an object")
+        try:
+            strict_json_text(self.metadata)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"metadata must be deterministic JSON: {exc}") from exc
 
     @property
     def content_sha256(self) -> str:
@@ -155,7 +255,7 @@ class RetrievalSourceItem:
             "source_locator": self.source_locator,
             "scope": self.scope,
             "content_sha256": self.content_sha256,
-            "metadata_hash": canonical_hash(self.metadata),
+            "metadata_hash": hashlib.sha256(strict_json_text(self.metadata).encode("utf-8")).hexdigest(),
         }
 
 
@@ -184,19 +284,24 @@ class RetrievalRequest:
     def load(cls, raw: Any) -> "RetrievalRequest":
         if not isinstance(raw, dict):
             raise IntegrityError("retrieval request snapshot is malformed")
-        obj = cls(
-            request_id=str(raw.get("request_id", "")),
-            query=str(raw.get("query", "")),
-            normalized_query=str(raw.get("normalized_query", "")),
-            scope=str(raw.get("scope", "")),
-            top_k=int(raw.get("top_k", 0)),
-            requested_step=int(raw.get("requested_step", 0)),
-            strategy_generation=int(raw.get("strategy_generation", 0)),
-        )
+        try:
+            obj = cls(
+                request_id=str(raw.get("request_id", "")),
+                query=str(raw.get("query", "")),
+                normalized_query=str(raw.get("normalized_query", "")),
+                scope=str(raw.get("scope", "")),
+                top_k=int(raw.get("top_k", 0)),
+                requested_step=int(raw.get("requested_step", 0)),
+                strategy_generation=int(raw.get("strategy_generation", 0)),
+            )
+        except (TypeError, ValueError) as exc:
+            raise IntegrityError(f"retrieval request numeric fields are malformed: {exc}") from exc
         if not obj.request_id or not obj.normalized_query or not obj.scope or obj.top_k < 1:
             raise IntegrityError("retrieval request snapshot has invalid required fields")
         if normalize_retrieval_query(obj.query) != obj.normalized_query:
             raise IntegrityError("retrieval request normalized query mismatch")
+        if obj.requested_step < 0 or obj.strategy_generation < 0:
+            raise IntegrityError("retrieval request step/generation cannot be negative")
         return obj
 
 
@@ -215,6 +320,8 @@ class RetrievalCandidate:
     def __post_init__(self) -> None:
         if not isinstance(self.score, int) or isinstance(self.score, bool):
             raise ValueError("retrieval candidate score must be an integer")
+        if not isinstance(self.content, str):
+            raise ValueError("retrieval candidate content must be a string")
         if hashlib.sha256(self.content.encode("utf-8")).hexdigest() != self.content_sha256:
             raise ValueError("retrieval candidate content digest mismatch")
         if not isinstance(self.metadata, dict):
@@ -271,26 +378,31 @@ class RetrievalItem:
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
             raise IntegrityError("retrieval item metadata is malformed")
-        item = cls(
-            item_id=str(raw.get("item_id", "")),
-            content_ref=str(raw.get("content_ref", "")),
-            content_sha256=str(raw.get("content_sha256", "")),
-            source_id=str(raw.get("source_id", "")),
-            source_revision=str(raw.get("source_revision", "")),
-            source_locator=str(raw.get("source_locator", "")),
-            admitted_step=int(raw.get("admitted_step", 0)),
-            provider_id=str(raw.get("provider_id", "")),
-            provider_revision=str(raw.get("provider_revision", "")),
-            preview=str(raw.get("preview", "")),
-            preview_truncated=bool(raw.get("preview_truncated", False)),
-            content_chars=int(raw.get("content_chars", 0)),
-            trust="untrusted_retrieval",
-            instruction_authority="none",
-            superseded_by=(
-                str(raw["superseded_by"]) if raw.get("superseded_by") is not None else None
-            ),
-            metadata={str(k): str(v) for k, v in metadata.items()},
-        )
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in metadata.items()):
+            raise IntegrityError("retrieval item metadata must contain string keys and values")
+        try:
+            item = cls(
+                item_id=str(raw.get("item_id", "")),
+                content_ref=str(raw.get("content_ref", "")),
+                content_sha256=str(raw.get("content_sha256", "")),
+                source_id=str(raw.get("source_id", "")),
+                source_revision=str(raw.get("source_revision", "")),
+                source_locator=str(raw.get("source_locator", "")),
+                admitted_step=int(raw.get("admitted_step", 0)),
+                provider_id=str(raw.get("provider_id", "")),
+                provider_revision=str(raw.get("provider_revision", "")),
+                preview=str(raw.get("preview", "")),
+                preview_truncated=bool(raw.get("preview_truncated", False)),
+                content_chars=int(raw.get("content_chars", 0)),
+                trust="untrusted_retrieval",
+                instruction_authority="none",
+                superseded_by=(
+                    str(raw["superseded_by"]) if raw.get("superseded_by") is not None else None
+                ),
+                metadata=dict(metadata),
+            )
+        except (TypeError, ValueError) as exc:
+            raise IntegrityError(f"retrieval item numeric fields are malformed: {exc}") from exc
         required = (
             item.item_id,
             item.content_ref,
@@ -303,6 +415,8 @@ class RetrievalItem:
         )
         if not all(required):
             raise IntegrityError("retrieval item snapshot is missing required fields")
+        if item.admitted_step < 0 or item.content_chars < 0:
+            raise IntegrityError("retrieval item step/content length cannot be negative")
         try:
             ref_digest = ArtifactStore.digest_from_ref(item.content_ref)
         except (ValueError, IntegrityError) as exc:
@@ -357,13 +471,10 @@ class RetrievalState:
         if existing is not None:
             immutable_existing = existing.dump()
             immutable_candidate = item.dump()
-            # Supersession is a later kernel-owned transition, so it is not
-            # part of immutable identity equality for repeated admission.
             immutable_candidate["superseded_by"] = immutable_existing["superseded_by"]
             if immutable_existing != immutable_candidate:
                 raise IntegrityError("retrieval item_id collision with different content or provenance")
             return False
-
         self.items[item.item_id] = item
         return True
 
@@ -381,15 +492,11 @@ class RetrievalState:
         if new.superseded_by is not None:
             raise IntegrityError("retrieval supersession target must itself be current")
         old.superseded_by = new_item_id
-        # Historical request snapshots remain immutable. If the superseded item
-        # was the current model-visible snapshot, clear that pointer rather than
-        # mutating history. A subsequent retrieval request may expose the new
-        # current item.
         if old_item_id in self.current_item_ids:
             self.current_request_id = None
             self.current_item_ids = []
 
-    def record_result(self, request: RetrievalRequest, item_ids: list[str]) -> None:
+    def record_result(self, request: RetrievalRequest, item_ids: list[str]) -> bool:
         if len(item_ids) != len(set(item_ids)):
             raise IntegrityError("retrieval result contains duplicate item ids")
         for item_id in item_ids:
@@ -406,11 +513,12 @@ class RetrievalState:
                     raise IntegrityError("retrieval request id collision with different result snapshot")
                 self.current_request_id = request.request_id
                 self.current_item_ids = list(item_ids)
-                return
+                return False
 
         self.results.append(candidate)
         self.current_request_id = request.request_id
         self.current_item_ids = list(item_ids)
+        return True
 
     def dump(self) -> dict[str, Any]:
         return {
@@ -487,10 +595,7 @@ class RetrievalState:
                     raise IntegrityError("retrieval supersession points to missing item")
                 if item.item_id == target.item_id:
                     raise IntegrityError("retrieval item cannot supersede itself")
-                if (
-                    item.source_id != target.source_id
-                    or item.source_locator != target.source_locator
-                ):
+                if item.source_id != target.source_id or item.source_locator != target.source_locator:
                     raise IntegrityError("retrieval supersession crosses source identity or locator")
 
         for start in items.values():
