@@ -28,7 +28,7 @@ def test_oversized_goal_fails_closed_without_truncation():
 
 
 def test_oversized_criterion_fails_closed():
-    with pytest.raises(ValueError, match="acceptance\[0\] exceeds max chars"):
+    with pytest.raises(ValueError, match=r"acceptance\[0\] exceeds max chars"):
         GoalContract(
             goal="bounded",
             acceptance=["a" * (GoalContract.MAX_CRITERION_CHARS + 1)],
