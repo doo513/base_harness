@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from harness.core.context import ContextPolicy, ContextProjector, ContextProjection
 from harness.core.contracts import GoalContract
 from harness.core.runtime_context import RuntimeContextMixin, RuntimeContextProjection
+from harness.core.runtime_execution import RuntimeExecutionMixin
 from harness.core.state import Authority, Claim, ClaimStatus, HarnessState, Observation
 from harness.core.tools import SideEffect, ToolSpec
 
@@ -66,8 +67,6 @@ def test_runtime_moved_legacy_read_schema_preserves_old_values_without_model_ser
     context = _runtime_context()
     assert isinstance(context, RuntimeContextProjection)
 
-    # Fields that moved into namespaces keep their old raw trusted-Controller
-    # read schema through non-serialized aliases.
     assert context["facts"]["fact"]["value"] == {"raw": "FACT"}
     assert context["hypotheses"]["hyp"]["value"] == {"raw": "HYPOTHESIS-VALUE"}
     assert context["refuted_hypotheses"]["old"]["value"] == "REFUTED"
@@ -78,9 +77,6 @@ def test_runtime_moved_legacy_read_schema_preserves_old_values_without_model_ser
     ]
     assert context["progress"]["evaluations"] == 3
 
-    # `tools` did not move out of the top-level schema. It must therefore have
-    # one governed value for Python lookup and JSON/model serialization rather
-    # than returning a different hidden legacy value in-process.
     assert context["tools"]["observe"] == {
         "description": "FUL",
         "description_truncated": True,
@@ -112,6 +108,11 @@ def test_legacy_snapshot_is_detached_from_durable_state():
     fresh = _runtime_context()
     assert fresh["hypotheses"]["hyp"]["value"] == {"raw": "HYPOTHESIS-VALUE"}
     assert fresh["recent_failures"][0]["message"] == "failure-2"
+
+
+def test_context_governor_is_the_only_runtime_context_implementation():
+    assert "_context" in RuntimeContextMixin.__dict__
+    assert "_context" not in RuntimeExecutionMixin.__dict__
 
 
 def test_base_context_projection_still_has_nonserialized_transition_aliases():

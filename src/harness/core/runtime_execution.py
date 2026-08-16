@@ -9,34 +9,6 @@ from .failures import Failure, FailureKind
 
 
 class RuntimeExecutionMixin:
-    def _context(self) -> dict:
-        return {
-            "step": self.state.step,
-            "pinned_constraints": list(self.goal.pinned_constraints),
-            "acceptance": list(self.goal.acceptance),
-            "facts": {k: v.dump() for k, v in self.state.facts.items()},
-            "hypotheses": {k: v.dump() for k, v in self.state.hypotheses.items()},
-            "refuted_hypotheses": {k: v.dump() for k, v in self.state.refuted_hypotheses.items()},
-            "unknowns": list(self.state.unknowns),
-            "observations": [o.dump() for o in self.state.observations],
-            "recent_failures": self.state.failures[-5:],
-            "recovery_directive": (
-                dict(self.state.recovery_directive)
-                if self.state.recovery_directive is not None else None
-            ),
-            "strategy_generation": self.state.strategy_generation,
-            "recovery_halted": self.state.recovery_halted,
-            "progress": self.state.progress.dump(),
-            "tools": {
-                name: {
-                    "description": spec.description,
-                    "side_effect": spec.side_effect.value,
-                    "idempotent": spec.idempotent,
-                }
-                for name, spec in self.actions.tools.items()
-            },
-        }
-
     def _store_tool_observation(self, tool: str, result) -> Observation:
         payload = {"ok": result.ok, "output": result.output, "error": result.error}
         ref = self.artifacts.put_json(f"step_{self.state.step:04d}_{tool}.json", payload)
