@@ -150,7 +150,7 @@ def test_task_progress_snapshot_is_bounded(tmp_path):
             }
 
     harness = ProgressHarness(tmp_path, HugeSnapshotProfile())
-    with pytest.raises(IntegrityError, match="milestone\[0\] exceeds configured bound"):
+    with pytest.raises(IntegrityError, match=r"milestone\[0\] exceeds configured bound"):
         harness._progress_baseline()
 
 
