@@ -22,4 +22,14 @@ class DomainProfile(ABC):
         claim class.
         """
         return None
+    def task_progress_snapshot(self, *, goal, state):
+        """Optional deterministic goal-bound progress snapshot.
+
+        Returning ``None`` grants no task/world progress authority. A profile
+        that opts in must return deterministic JSON data derived only from
+        trusted state/world semantics it explicitly owns. The kernel compares
+        the before/after snapshots; Actor prose or retrieval content never calls
+        this transition progress by itself.
+        """
+        return None
     def completion_oracle(self): return NeverAcceptOracle()
