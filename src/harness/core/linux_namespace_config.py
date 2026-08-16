@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 import os
+import re
 import shutil
 import stat
 import sys
@@ -60,6 +61,45 @@ class LinuxNamespaceConfigMixin:
         found = {name: shutil.which(name) for name in cls._REQUIRED_COMMANDS}
         return all(found.values()), found
 
+    @staticmethod
+    def _decode_mountinfo_path(raw: str) -> str:
+        # proc(5) mountinfo escapes whitespace/backslash as octal sequences.
+        return re.sub(
+            r"\\([0-7]{3})",
+            lambda match: chr(int(match.group(1), 8)),
+            raw,
+        )
+
+    @classmethod
+    def _current_mount_points(cls) -> tuple[Path, ...]:
+        """Return current mount points from one /proc/self/mountinfo snapshot."""
+        try:
+            lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise RuntimeError(f"cannot inspect mount topology: {exc}") from exc
+
+        mount_points: list[Path] = []
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 6:
+                raise RuntimeError("malformed /proc/self/mountinfo entry")
+            decoded = cls._decode_mountinfo_path(fields[4])
+            mount_points.append(Path(decoded).resolve())
+        return tuple(mount_points)
+
+    @classmethod
+    def _nested_mounts(cls, source: Path, mount_points: Iterable[Path]) -> list[Path]:
+        if not source.is_dir():
+            return []
+        return sorted(
+            {
+                mount_point
+                for mount_point in mount_points
+                if mount_point != source and cls._is_within(mount_point, source)
+            },
+            key=str,
+        )
+
     def _sandbox_path(self) -> str:
         candidates = []
         prefix_bin = Path(sys.prefix).resolve() / "bin"
@@ -86,12 +126,25 @@ class LinuxNamespaceConfigMixin:
         return base
 
     def _validate_ro_paths(self, workspace: Path) -> None:
+        # Top-level `remount,bind,ro` does not make descendant mounts read-only.
+        # Snapshot mount topology once per sandbox creation and fail closed if a
+        # read-only source contains any nested mount. This binds the declared RO
+        # policy to the actual mount topology instead of assuming recursion.
+        mount_points = self._current_mount_points()
         for source in (*self.runtime_read_only_paths, *self.read_only_paths):
             if not source.exists():
                 raise FileNotFoundError(f"sandbox read-only path does not exist: {source}")
             if source == workspace or self._is_within(workspace, source) or self._is_within(source, workspace):
                 raise ValueError(
                     f"workspace must not overlap sandbox read-only mount: {source}"
+                )
+            nested = self._nested_mounts(source, mount_points)
+            if nested:
+                preview = ", ".join(str(path) for path in nested[:4])
+                more = "" if len(nested) <= 4 else f" (+{len(nested) - 4} more)"
+                raise ValueError(
+                    "sandbox read-only source contains nested mount(s) whose recursive "
+                    f"read-only state is not guaranteed: {source}: {preview}{more}"
                 )
 
     def _validate_workspace_tree(self, workspace: Path) -> None:
@@ -139,4 +192,3 @@ class LinuxNamespaceConfigMixin:
                     "workspace file has hard links outside the workspace: "
                     f"{inode_examples[key]} (visible_links={count}, st_nlink={nlink})"
                 )
-
