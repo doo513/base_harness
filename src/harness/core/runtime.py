@@ -178,6 +178,11 @@ class HarnessRuntime(
         previous = sum(1 for item in self.state.failures if item.get("signature") == failure.signature)
         repeat_count = previous + 1
         recovery = self.failure_router.route(failure, repeat_count)
+        transition = self._schedule_recovery(
+            failure,
+            repeat_count=repeat_count,
+            action=recovery,
+        )
         record = {
             "kind": failure.kind.value,
             "message": failure.message,
@@ -186,12 +191,17 @@ class HarnessRuntime(
             "recommended_recovery": recovery.value,
             "retry_safe": bool(failure.retry_safe),
             "target": failure.action,
+            "recovery_transition_id": transition.transition_id,
         }
         self.state.failures.append(record)
         self.metrics["failures"] += 1
+        failure_index = len(self.state.failures) - 1
         self.log("failure", record)
-        transition = self._schedule_recovery(failure, repeat_count=repeat_count, action=recovery)
-        record["recovery_transition_id"] = transition.transition_id
+        self.log("recovery.scheduled", {
+            "failure_index": failure_index,
+            "failure_signature": failure.signature,
+            "transition": transition.dump(),
+        })
 
     def _run_budget_terminalization(self) -> None:
         self.fail(Failure(FailureKind.BUDGET_EXCEEDED, "hard budget exceeded"))

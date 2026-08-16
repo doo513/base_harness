@@ -8,10 +8,10 @@ from .storage import IntegrityError, canonical_hash
 class RuntimeRecoveryMixin:
     """Kernel-owned durable recovery transitions.
 
-    Stage 05 deliberately keeps recovery control-only: it may issue a directive,
-    remove targeted untrusted speculative state, or terminally halt. It never
-    executes a tool, writes a verified fact, or attempts to undo an external
-    side effect.
+    Recovery is control-only: it may issue a directive, remove targeted
+    untrusted speculative state, switch a strategy generation, or terminally
+    halt. It never executes a tool, writes a verified fact, or attempts to undo
+    an external side effect.
     """
 
     _TERMINAL_ACTIONS = frozenset({
@@ -51,7 +51,6 @@ class RuntimeRecoveryMixin:
             self.state.recovery_history.append(existing)
 
         self.state.pending_recovery = transition
-        self.log("recovery.scheduled", transition.dump())
         return transition
 
     def _directive_for(self, transition: RecoveryTransition) -> dict:
@@ -74,6 +73,13 @@ class RuntimeRecoveryMixin:
                 RecoveryAction.CHECKPOINT_STOP: "execution is stopped fail-closed; do not continue automatically",
             }[transition.action],
         }
+
+    def _recovery_has_step_budget(self) -> bool:
+        return not self.budget.hard_exceeded(
+            self.state.step,
+            self.started_at,
+            elapsed_before=self.elapsed_before_resume,
+        )
 
     def _apply_pending_recovery(self) -> bool:
         transition = self.state.pending_recovery
@@ -116,17 +122,26 @@ class RuntimeRecoveryMixin:
 
         transition.details = details
         transition.status = RecoveryStatus.APPLIED
-        # Recovery is a real harness transition and consumes one durable step.
-        self.state.step += 1
+
+        # Recovery consumes a normal harness step while hard budget remains.
+        # If the transition is the terminal fail-closed action at an already
+        # exhausted hard budget, it is administrative checkpointing and must not
+        # make the persisted step counter exceed the declared hard limit.
+        step_consumed = self._recovery_has_step_budget()
+        if step_consumed:
+            self.state.step += 1
         transition.applied_step = self.state.step
+        transition.details["step_consumed"] = step_consumed
+        transition.details["budget_exhausted_at_apply"] = not step_consumed
+
         self.state.recovery_history.append(transition)
         self.state.pending_recovery = None
         self.metrics["recovery_transitions"] = int(self.metrics.get("recovery_transitions", 0)) + 1
 
-        # Persist the applied transition before returning to Actor control. This
-        # closes the crash window where a strategy switch or rollback could be
-        # repeated after resume merely because the ordinary end-of-step snapshot
-        # had not yet been written.
+        # Persist the applied state before returning to Actor control. A crash
+        # after this snapshot cannot cause the same control transition to be
+        # invisibly applied again on resume. The later audit event is descriptive;
+        # the hash-chained state snapshot remains the authoritative transition.
         self._persist_state("recovery.transition")
         self.log("recovery.transition", {
             "transition": transition.dump(),

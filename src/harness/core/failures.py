@@ -44,13 +44,19 @@ class Failure:
     message: str
     action: str | None = None
     retry_safe: bool = False
+    signature_key: str | None = None
 
     @property
     def signature(self) -> str:
-        # Normalize volatile numbers enough to detect repeated semantic failures
-        # without allowing the Actor to supply the recovery identity.
-        normalized = re.sub(r"\b\d+\b", "<n>", self.message.lower())
-        raw = f"{self.kind.value}|{self.action or ''}|{normalized}"
+        # Stage 05 recovery acts on repeat identity, so the default must bias
+        # against false grouping. Numeric values may be semantically meaningful
+        # (HTTP 401 vs 500, exit 1 vs 2) and are therefore preserved. Callers
+        # that know which fields are volatile may provide an explicit stable
+        # signature_key instead of relying on free-form message normalization.
+        identity = self.signature_key
+        if identity is None:
+            identity = re.sub(r"\s+", " ", self.message.strip().lower())
+        raw = f"{self.kind.value}|{self.action or ''}|{identity}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -137,9 +143,6 @@ class FailureRouter:
         if repeat_count >= self.repeat_limit:
             return RecoveryAction.SWITCH_STRATEGY
         action = self.ROUTES[failure.kind]
-        # RETRY is a permission class, not a default behavior. An environment
-        # failure must explicitly declare retry safety or the kernel degrades it
-        # to observation rather than authorizing a repeated action.
         if action == RecoveryAction.RETRY and not failure.retry_safe:
             return RecoveryAction.OBSERVE
         return action
@@ -152,4 +155,5 @@ class FailureRouter:
                 for kind, action in sorted(self.ROUTES.items(), key=lambda item: item[0].value)
             },
             "terminal_kinds": sorted(kind.value for kind in self.TERMINAL_KINDS),
+            "failure_signature_policy": "kind+action+explicit_key_or_whitespace_normalized_message_preserve_numbers",
         }
