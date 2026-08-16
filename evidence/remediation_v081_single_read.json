@@ -1,0 +1,60 @@
+{
+  "scope": "pre-stage08-p0-1-single-buffer-verified-read",
+  "candidate_version": "0.8.1rc2",
+  "candidate_ci": {
+    "commit": "9a586a14d482c937ece18e89c4085dfaf8bd0110",
+    "run_id": 31947812417,
+    "conclusion": "success",
+    "pytest": {
+      "passed": 131,
+      "skipped": 5,
+      "failed": 0
+    },
+    "stage03_resume": {
+      "passed": 4,
+      "total": 4,
+      "duplicate_external_actions": 0
+    },
+    "stage04_semantic": {
+      "cases": 8,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "all_passed": true
+    },
+    "prior_stage_probes": {
+      "stage05": true,
+      "stage06": true,
+      "stage07": true
+    },
+    "stage08_artifact_integrity": {
+      "scenario_count": 6,
+      "clean_verified_read": true,
+      "tampered_bytes_blocked": true,
+      "missing_artifact_blocked": true,
+      "malformed_ref_blocked": true,
+      "path_escape_blocked": true,
+      "swap_after_first_read_blocked": true,
+      "unverified_return_buffers": 0
+    }
+  },
+  "known_remediation_incident": {
+    "first_ci_after_manual_restore": {
+      "run_id": 31947744922,
+      "passed": 129,
+      "skipped": 5,
+      "failed": 2,
+      "cause": "manual storage restore changed Stage03 body envelope schema",
+      "resolution": "refetched exact baseline storage.py from 0d396d37 and reapplied ArtifactStore-only hardening"
+    },
+    "transient_placeholder_commit": true
+  },
+  "cost_model": {
+    "flawed_candidate_content_reads_per_call": 2,
+    "hardened_content_reads_per_call": 1,
+    "flawed_candidate_artifact_bytes_factor": 2,
+    "hardened_artifact_bytes_factor": 1,
+    "sha256_operations_per_call_before": 1,
+    "sha256_operations_per_call_after": 1
+  },
+  "release_status": "pending_exact_v0.8.1_snapshot_validation"
+}
