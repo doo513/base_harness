@@ -126,6 +126,7 @@ def test_oversized_item_fails_before_artifact_or_state_write(tmp_path):
         enabled=True,
         default_top_k=1,
         max_admitted_per_request=1,
+        max_context_items=1,
         max_content_bytes_per_item=8,
         max_total_content_bytes_per_request=8,
     )
@@ -147,6 +148,7 @@ def test_total_request_byte_bound_is_atomic(tmp_path):
         enabled=True,
         default_top_k=2,
         max_admitted_per_request=2,
+        max_context_items=2,
         max_content_bytes_per_item=10,
         max_total_content_bytes_per_request=15,
     )
@@ -170,6 +172,7 @@ def test_source_identity_fields_are_bounded_before_admission(tmp_path):
         enabled=True,
         default_top_k=1,
         max_admitted_per_request=1,
+        max_context_items=1,
         max_source_id_chars=4,
     )
     rt = runtime(
@@ -188,6 +191,7 @@ def test_durable_item_capacity_fails_closed_without_eviction(tmp_path):
         enabled=True,
         default_top_k=1,
         max_admitted_per_request=1,
+        max_context_items=1,
         max_durable_items=1,
         max_request_snapshots=5,
     )
@@ -214,6 +218,7 @@ def test_request_history_capacity_fails_closed_without_deleting_snapshot(tmp_pat
         enabled=True,
         default_top_k=1,
         max_admitted_per_request=1,
+        max_context_items=1,
         max_durable_items=5,
         max_request_snapshots=1,
     )
