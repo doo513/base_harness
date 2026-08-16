@@ -1,8 +1,15 @@
 from harness.core.contracts import GoalContract
-from harness.core.verification import ExistsVerifier, EvidenceRefVerifier, VerificationLevel
+from harness.core.verification import (
+    ExistsVerifier,
+    EvidenceRefVerifier,
+    VerificationContract,
+    VerificationRequirement,
+    VerificationLevel,
+)
 from harness.core.oracles import NeverAcceptOracle, PredicateCompletionOracle
 from harness.core.tools import make_shell_tool
 from .base import DomainProfile
+
 
 class CTFProfile(DomainProfile):
     name = "ctf"
@@ -32,6 +39,17 @@ class CTFProfile(DomainProfile):
 
     def minimum_verification_level(self):
         return VerificationLevel.STRUCTURAL
+
+    def verification_contract(self):
+        # Intermediate CTF claims may enter state as evidence-supported facts;
+        # final task success still requires the independent external oracle.
+        return VerificationContract(
+            minimum_level=VerificationLevel.STRUCTURAL,
+            requirements=(
+                VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),
+                VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
+            ),
+        )
 
     def completion_oracle(self):
         if self.external_oracle is None:

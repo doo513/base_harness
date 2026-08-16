@@ -1,7 +1,13 @@
 from harness.core.contracts import GoalContract
-from harness.core.verification import ExistsVerifier, VerificationLevel
+from harness.core.verification import (
+    ExistsVerifier,
+    VerificationContract,
+    VerificationRequirement,
+    VerificationLevel,
+)
 from harness.core.oracles import PredicateCompletionOracle, CompletionResult
 from .base import DomainProfile
+
 
 class DemoProfile(DomainProfile):
     name = "demo"
@@ -19,6 +25,12 @@ class DemoProfile(DomainProfile):
 
     def minimum_verification_level(self):
         return VerificationLevel.SCHEMA
+
+    def verification_contract(self):
+        return VerificationContract(
+            minimum_level=VerificationLevel.SCHEMA,
+            requirements=(VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),),
+        )
 
     def completion_oracle(self):
         def check(*, goal, state, workspace):

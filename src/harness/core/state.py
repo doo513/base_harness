@@ -2,19 +2,24 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any
 
+
 class ClaimStatus(str, Enum):
     PROPOSED = "proposed"
     SUPPORTED = "supported"
     VERIFIED = "verified"
     REFUTED = "refuted"
 
+
 class Authority(str, Enum):
     USER = "user"
     MODEL = "model"
+    OBSERVED = "observed"
+    SUPPORTED = "supported"
     ENVIRONMENT = "environment"
-    TRUSTED_TOOL = "trusted_tool"
+    TRUSTED_TOOL = "trusted_tool"  # backward-compatible persisted value
     UNTRUSTED_TOOL = "untrusted_tool"
     EXTERNAL_ORACLE = "external_oracle"
+
 
 @dataclass
 class Claim:
@@ -39,6 +44,7 @@ class Claim:
         raw["authority"] = Authority(raw.get("authority", Authority.MODEL))
         return cls(**raw)
 
+
 @dataclass
 class Observation:
     step: int
@@ -50,6 +56,7 @@ class Observation:
 
     def dump(self) -> dict:
         return asdict(self)
+
 
 @dataclass
 class HarnessState:

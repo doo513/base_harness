@@ -20,7 +20,6 @@ class RuntimeExecutionMixin:
             "hypotheses": {k: v.dump() for k, v in self.state.hypotheses.items()},
             "refuted_hypotheses": {k: v.dump() for k, v in self.state.refuted_hypotheses.items()},
             "unknowns": list(self.state.unknowns),
-            # v0.1 baseline keeps raw recent observations; Observation Gate comes later.
             "observations": [o.dump() for o in self.state.observations],
             "recent_failures": self.state.failures[-5:],
             "tools": {
@@ -35,10 +34,7 @@ class RuntimeExecutionMixin:
 
     def _store_tool_observation(self, tool: str, result) -> Observation:
         payload = {"ok": result.ok, "output": result.output, "error": result.error}
-        ref = self.artifacts.put_json(
-            f"step_{self.state.step:04d}_{tool}.json",
-            payload,
-        )
+        ref = self.artifacts.put_json(f"step_{self.state.step:04d}_{tool}.json", payload)
         self.state.artifacts.append(ref)
         self.state.evidence_refs.append(ref)
         preview = result.output
@@ -59,12 +55,12 @@ class RuntimeExecutionMixin:
     def _authority_from_verification(results) -> Authority:
         if not results:
             return Authority.MODEL
-        highest = results[-1].level
+        highest = max((r.level for r in results if r.verified), default=VerificationLevel.SCHEMA)
         if highest >= VerificationLevel.EXTERNAL_ORACLE:
             return Authority.EXTERNAL_ORACLE
         if highest >= VerificationLevel.EXECUTION:
             return Authority.ENVIRONMENT
-        return Authority.TRUSTED_TOOL
+        return Authority.SUPPORTED
 
     def _verify_claim(self, key: str) -> None:
         claim = self.state.hypotheses.get(key)
@@ -80,12 +76,11 @@ class RuntimeExecutionMixin:
                 "goal": self.goal.goal,
                 "claim_key": claim.key,
                 "claim_evidence_refs": claim.evidence_refs,
-                # Verifier context intentionally omits actor workspace path.
-                # Built-in in-process validators receive only the artifact root
-                # required for resolving opaque evidence references.
                 "artifact_root": str(self.artifacts.root),
             },
         )
+        contract = self.profile.verification_contract()
+        assessment = contract.assess(results)
         serial = [
             {
                 "ok": r.verified,
@@ -95,11 +90,16 @@ class RuntimeExecutionMixin:
                 "reason": r.reason,
                 "evidence_refs": r.evidence_refs,
                 "details": r.details,
+                "coverage": r.coverage,
+                "confidence": r.confidence,
             }
             for r in results
         ]
-        self.log("verification", {"claim": claim.key, "results": serial})
-        if self.verifiers.accepted(results, self.profile.minimum_verification_level()):
+        self.log(
+            "verification",
+            {"claim": claim.key, "results": serial, "assessment": assessment.dump()},
+        )
+        if assessment.accepted:
             claim.status = ClaimStatus.VERIFIED
             claim.authority = self._authority_from_verification(results)
             for result in results:
@@ -108,9 +108,13 @@ class RuntimeExecutionMixin:
                         claim.evidence_refs.append(ref)
             self.capability_policy.require(Principal.KERNEL, Capability.STATE_COMMIT)
             self.state.commit_verified(claim)
-            self.log("state.commit", claim.dump())
+            self.log(
+                "state.commit",
+                {"claim": claim.dump(), "verification_assessment": assessment.dump()},
+            )
         else:
-            self.fail(Failure(FailureKind.VERIFICATION_FAILED, f"verification failed: {claim.key}"))
+            reason = "; ".join(assessment.reasons) or "verification contract rejected candidate"
+            self.fail(Failure(FailureKind.VERIFICATION_FAILED, f"verification failed: {claim.key}: {reason}"))
 
     def _check_completion(self, reason: str) -> None:
         self.state.completion_requested = True
@@ -152,35 +156,19 @@ class RuntimeExecutionMixin:
             self.state.completed = True
             self.log("completion.accepted", {"reason": result.reason})
         else:
-            self.fail(
-                Failure(
-                    FailureKind.VERIFICATION_FAILED,
-                    f"completion oracle rejected: {result.reason}",
-                    action="completion_oracle",
-                )
-            )
-
+            self.fail(Failure(FailureKind.VERIFICATION_FAILED, f"completion oracle rejected: {result.reason}", action="completion_oracle"))
 
     def _dispatch_decision(self, decision) -> None:
         if decision.kind == "propose":
             key = decision.payload["key"]
-            # A refuted claim can only be re-opened when the actor supplies at least
-            # one new evidence ref not present on the refuted version.
             prior = self.state.refuted_hypotheses.get(key)
             new_refs = list(decision.payload.get("evidence_refs", []))
             if prior is not None:
                 prior_refs = set(prior.evidence_refs)
                 if not any(ref not in prior_refs for ref in new_refs):
-                    self.fail(Failure(
-                        FailureKind.HYPOTHESIS_REFUTED,
-                        f"refuted hypothesis cannot be re-proposed without new evidence: {key}",
-                    ))
+                    self.fail(Failure(FailureKind.HYPOTHESIS_REFUTED, f"refuted hypothesis cannot be re-proposed without new evidence: {key}"))
                     return
-            claim = Claim(
-                key,
-                decision.payload.get("value"),
-                evidence_refs=new_refs,
-            )
+            claim = Claim(key, decision.payload.get("value"), evidence_refs=new_refs)
             self.state.propose(claim)
             self.log("hypothesis.proposed", claim.dump())
 
@@ -208,36 +196,31 @@ class RuntimeExecutionMixin:
                 return
             observation = self._store_tool_observation(call.tool, result)
             self.metrics["tool_calls"] += 1
-            self.tool_calls.append(
-                {
-                    "run_id": self.run_id,
-                    "step": self.state.step,
-                    "tool": call.tool,
-                    "args": call.args,
-                    "ok": result.ok,
-                    "error": result.error,
-                    "approval_required": getattr(result, "approval_required", False),
-                    "security_violation": getattr(result, "security_violation", False),
-                    "isolation": getattr(result, "isolation", None),
-                    "artifact_ref": observation.artifact_ref,
-                    "receipt_id": receipt_id,
-                    "deduplicated": deduplicated,
-                }
-            )
-            self.log(
-                "tool.result",
-                {
-                    "tool": call.tool,
-                    "ok": result.ok,
-                    "artifact_ref": observation.artifact_ref,
-                    "error": result.error,
-                    "approval_required": getattr(result, "approval_required", False),
-                    "security_violation": getattr(result, "security_violation", False),
-                    "isolation": getattr(result, "isolation", None),
-                    "receipt_id": receipt_id,
-                    "deduplicated": deduplicated,
-                },
-            )
+            self.tool_calls.append({
+                "run_id": self.run_id,
+                "step": self.state.step,
+                "tool": call.tool,
+                "args": call.args,
+                "ok": result.ok,
+                "error": result.error,
+                "approval_required": getattr(result, "approval_required", False),
+                "security_violation": getattr(result, "security_violation", False),
+                "isolation": getattr(result, "isolation", None),
+                "artifact_ref": observation.artifact_ref,
+                "receipt_id": receipt_id,
+                "deduplicated": deduplicated,
+            })
+            self.log("tool.result", {
+                "tool": call.tool,
+                "ok": result.ok,
+                "artifact_ref": observation.artifact_ref,
+                "error": result.error,
+                "approval_required": getattr(result, "approval_required", False),
+                "security_violation": getattr(result, "security_violation", False),
+                "isolation": getattr(result, "isolation", None),
+                "receipt_id": receipt_id,
+                "deduplicated": deduplicated,
+            })
             if getattr(result, "security_violation", False):
                 self.metrics["security_violations"] += 1
             if not result.ok:
@@ -256,13 +239,7 @@ class RuntimeExecutionMixin:
             return
 
         self.log("decision", {"kind": decision.kind, "payload": decision.payload})
-
         try:
             self._dispatch_decision(decision)
         except Exception as exc:
-            # Actor-controlled malformed data or domain bugs must not terminate the kernel.
-            self.fail(Failure(
-                FailureKind.IMPLEMENTATION_ERROR,
-                f"decision dispatch error: {type(exc).__name__}: {exc}",
-                action=decision.kind,
-            ))
+            self.fail(Failure(FailureKind.IMPLEMENTATION_ERROR, f"decision dispatch error: {type(exc).__name__}: {exc}", action=decision.kind))

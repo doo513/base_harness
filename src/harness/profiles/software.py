@@ -1,8 +1,16 @@
 from harness.core.contracts import GoalContract
-from harness.core.verification import ExistsVerifier, EvidenceRefVerifier, ClaimBoundEvidenceVerifier, VerificationLevel
+from harness.core.verification import (
+    ExistsVerifier,
+    EvidenceRefVerifier,
+    StructuredArtifactAssertionVerifier,
+    VerificationContract,
+    VerificationRequirement,
+    VerificationLevel,
+)
 from harness.core.oracles import CommandCompletionOracle, SealedCommandCompletionOracle, NeverAcceptOracle
 from harness.core.tools import make_shell_tool
 from .base import DomainProfile
+
 
 class SoftwareProfile(DomainProfile):
     name = "software"
@@ -36,10 +44,20 @@ class SoftwareProfile(DomainProfile):
         return {"shell": make_shell_tool(self.workspace, backend=self.execution_backend)}
 
     def verifiers(self):
-        return [ExistsVerifier(), EvidenceRefVerifier(), ClaimBoundEvidenceVerifier()]
+        return [ExistsVerifier(), EvidenceRefVerifier(), StructuredArtifactAssertionVerifier()]
 
     def minimum_verification_level(self):
         return VerificationLevel.EXECUTION
+
+    def verification_contract(self):
+        return VerificationContract(
+            minimum_level=VerificationLevel.EXECUTION,
+            requirements=(
+                VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),
+                VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
+                VerificationRequirement("artifact_semantics", VerificationLevel.EXECUTION, require_evidence=True, minimum_confidence=1.0),
+            ),
+        )
 
     def completion_oracle(self):
         if not self.acceptance_commands:
