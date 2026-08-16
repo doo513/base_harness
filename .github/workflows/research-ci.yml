@@ -58,6 +58,14 @@ jobs:
         run: python scripts/stage7_trusted_context_probe.py
       - name: Stage 07 trusted-context cost probe
         run: python scripts/stage7_trusted_context_cost_probe.py
+      - name: Stage 08 retrieval base probe
+        run: python scripts/stage8_retrieval_probe.py
+      - name: Stage 08 retrieval adversarial probe
+        run: python scripts/stage8_retrieval_adversarial_probe.py
+      - name: Stage 08 retrieval resume probe
+        run: python scripts/stage8_retrieval_resume_probe.py
+      - name: Stage 08 retrieval cost probe
+        run: python scripts/stage8_retrieval_cost_probe.py
       - name: Stage 08 single-buffer artifact integrity probe
         run: python scripts/stage8_artifact_integrity_probe.py
       - name: Verified-read cost probe
