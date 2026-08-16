@@ -242,7 +242,8 @@ class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
             item_ids.append(item.item_id)
             if inserted:
                 new_count += 1
-                assert artifact_ref is not None
+                if artifact_ref is None:
+                    raise IntegrityError("new retrieval item is missing its prepared artifact reference")
                 if artifact_ref not in next_artifacts:
                     next_artifacts.append(artifact_ref)
                 if artifact_ref not in next_evidence_refs:
