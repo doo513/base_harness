@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import Enum
+from pathlib import Path
 from time import monotonic
 from typing import Any
 import hashlib
@@ -25,15 +27,6 @@ class RuntimePersistenceMixin:
             "pinned_constraints": list(self.goal.pinned_constraints),
         }
 
-    def _security_descriptor(self) -> dict[str, Any]:
-        return {
-            "strict_layout": self.security_config.strict_layout,
-            "strict_tool_isolation": self.security_config.strict_tool_isolation,
-            "network_policy": self.security_config.network_policy,
-            "require_sealed_oracle": self.security_config.require_sealed_oracle,
-            "allow_test_attestation": self.security_config.allow_test_attestation,
-        }
-
     @staticmethod
     def _source_hash(obj: Any) -> str | None:
         try:
@@ -43,21 +36,149 @@ class RuntimePersistenceMixin:
             return None
         return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
-    def _controller_descriptor(self) -> dict[str, Any]:
-        descriptor = {
-            "class": f"{type(self.controller).__module__}.{type(self.controller).__qualname__}",
-            "source_hash": self._source_hash(self.controller),
+    @classmethod
+    def _source_descriptor(cls, obj: Any) -> dict[str, Any]:
+        typ = obj if inspect.isclass(obj) else type(obj)
+        mro = []
+        for base in getattr(typ, "__mro__", (typ,)):
+            module = getattr(base, "__module__", "")
+            if module == "builtins":
+                continue
+            mro.append({
+                "class": f"{module}.{getattr(base, '__qualname__', getattr(base, '__name__', 'unknown'))}",
+                "source_hash": cls._source_hash(base),
+            })
+        return {
+            "class": f"{typ.__module__}.{typ.__qualname__}",
+            "source_hash": cls._source_hash(obj),
+            "mro": mro,
         }
+
+    @classmethod
+    def _stable_value(cls, value: Any) -> Any:
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if isinstance(value, Path):
+            return {"path": str(value.expanduser().resolve())}
+        if isinstance(value, Enum):
+            return {
+                "enum": f"{type(value).__module__}.{type(value).__qualname__}",
+                "value": value.value,
+            }
+        if isinstance(value, bytes):
+            return {"bytes_sha256": hashlib.sha256(value).hexdigest(), "size": len(value)}
+        if isinstance(value, dict):
+            return {
+                str(k): cls._stable_value(v)
+                for k, v in sorted(value.items(), key=lambda item: str(item[0]))
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._stable_value(v) for v in value]
+        if isinstance(value, (set, frozenset)):
+            items = [cls._stable_value(v) for v in value]
+            return sorted(
+                items,
+                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), default=str),
+            )
+        if inspect.isfunction(value) or inspect.ismethod(value):
+            return cls._callable_descriptor(value)
+        return {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
+
+    @classmethod
+    def _callable_descriptor(cls, fn: Any) -> dict[str, Any] | None:
+        if fn is None:
+            return None
+        descriptor: dict[str, Any] = {
+            "callable": f"{getattr(fn, '__module__', type(fn).__module__)}.{getattr(fn, '__qualname__', type(fn).__qualname__)}",
+            "source_hash": cls._source_hash(fn),
+        }
+        defaults = getattr(fn, "__defaults__", None)
+        if defaults:
+            descriptor["defaults"] = cls._stable_value(defaults)
+        kwdefaults = getattr(fn, "__kwdefaults__", None)
+        if kwdefaults:
+            descriptor["kwdefaults"] = cls._stable_value(kwdefaults)
+        closure = getattr(fn, "__closure__", None)
+        freevars = getattr(getattr(fn, "__code__", None), "co_freevars", ())
+        if closure:
+            descriptor["closure"] = {
+                name: cls._stable_value(cell.cell_contents)
+                for name, cell in zip(freevars, closure)
+            }
+        return descriptor
+
+    @classmethod
+    def _backend_descriptor(cls, backend: Any) -> dict[str, Any] | None:
+        if backend is None:
+            return None
+        descriptor = cls._source_descriptor(backend)
+        descriptor["name"] = getattr(backend, "name", type(backend).__name__)
+        config: dict[str, Any] = {}
+        for attr in (
+            "network_policy",
+            "inherit_env",
+            "workspace_writable",
+            "read_only_paths",
+            "runtime_read_only_paths",
+        ):
+            if hasattr(backend, attr):
+                config[attr] = cls._stable_value(getattr(backend, attr))
+        outcomes = getattr(backend, "outcomes", None)
+        if isinstance(outcomes, dict):
+            config["test_outcomes"] = cls._stable_value({
+                str(k): {
+                    "returncode": getattr(v, "returncode", None),
+                    "stdout": getattr(v, "stdout", None),
+                    "stderr": getattr(v, "stderr", None),
+                    "timed_out": getattr(v, "timed_out", None),
+                }
+                for k, v in outcomes.items()
+            })
+        descriptor["config"] = config
+        return descriptor
+
+    def _capability_policy_descriptor(self) -> dict[str, list[str]]:
+        return {
+            principal.value: sorted(capability.value for capability in capabilities)
+            for principal, capabilities in sorted(
+                self.capability_policy.grants.items(),
+                key=lambda item: item[0].value,
+            )
+        }
+
+    def _security_descriptor(self) -> dict[str, Any]:
+        return {
+            "strict_layout": self.security_config.strict_layout,
+            "strict_tool_isolation": self.security_config.strict_tool_isolation,
+            "network_policy": self.security_config.network_policy,
+            "require_sealed_oracle": self.security_config.require_sealed_oracle,
+            "allow_test_attestation": self.security_config.allow_test_attestation,
+            "capability_policy": self._capability_policy_descriptor(),
+        }
+
+    def _controller_descriptor(self) -> dict[str, Any]:
+        descriptor = self._source_descriptor(self.controller)
+        decisions = getattr(self.controller, "decisions", None)
+        if isinstance(decisions, list):
+            script = [
+                {
+                    "kind": getattr(decision, "kind", None),
+                    "payload": self._stable_value(getattr(decision, "payload", None)),
+                }
+                for decision in decisions
+            ]
+            descriptor["decision_script_hash"] = canonical_hash(script)
+            descriptor["decision_count"] = len(script)
+
         adapter = getattr(self.controller, "model", None)
         if adapter is not None:
-            descriptor["adapter_class"] = f"{type(adapter).__module__}.{type(adapter).__qualname__}"
-            descriptor["adapter_source_hash"] = self._source_hash(adapter)
+            descriptor["adapter"] = self._source_descriptor(adapter)
             command = getattr(adapter, "command", None)
             if isinstance(command, str):
-                descriptor["adapter_command_hash"] = hashlib.sha256(command.encode("utf-8")).hexdigest()
+                descriptor["adapter"]["command_hash"] = hashlib.sha256(command.encode("utf-8")).hexdigest()
             timeout_seconds = getattr(adapter, "timeout_seconds", None)
             if timeout_seconds is not None:
-                descriptor["adapter_timeout_seconds"] = timeout_seconds
+                descriptor["adapter"]["timeout_seconds"] = timeout_seconds
         return descriptor
 
     def _tool_descriptors(self) -> list[dict[str, Any]]:
@@ -67,12 +188,49 @@ class RuntimePersistenceMixin:
                 "side_effect": spec.side_effect.value,
                 "idempotent": bool(spec.idempotent),
                 "permission": spec.permission,
+                "failure_modes": list(spec.failure_modes),
                 "provenance": dict(spec.provenance),
-                "backend": getattr(spec.execution_backend, "name", None),
-                "handler_source_hash": self._source_hash(spec.handler),
+                "handler": self._callable_descriptor(spec.handler),
+                "precondition": self._callable_descriptor(spec.precondition),
+                "postcondition": self._callable_descriptor(spec.postcondition),
+                "backend": self._backend_descriptor(spec.execution_backend),
+                "execution_workspace": (
+                    str(Path(spec.execution_workspace).expanduser().resolve())
+                    if spec.execution_workspace is not None else None
+                ),
             }
             for name, spec in sorted(self.actions.tools.items())
         ]
+
+    def _oracle_descriptor(self) -> dict[str, Any]:
+        oracle = self.oracle
+        descriptor = self._source_descriptor(oracle)
+        descriptor.update({
+            "name": getattr(oracle, "name", type(oracle).__name__),
+            "oracle_id": getattr(oracle, "oracle_id", None),
+            "sealed": bool(getattr(oracle, "is_sealed", False)),
+            "seal_manifest_hash": getattr(getattr(oracle, "bundle", None), "manifest_hash", None),
+            "backend": self._backend_descriptor(getattr(oracle, "backend", None)),
+            "require_filesystem_isolation": bool(getattr(oracle, "require_filesystem_isolation", False)),
+            "allow_test_attestation": bool(getattr(oracle, "allow_test_attestation", False)),
+        })
+        commands = getattr(oracle, "commands", None)
+        if isinstance(commands, list):
+            descriptor["command_hashes"] = [
+                hashlib.sha256(str(command).encode("utf-8")).hexdigest()
+                for command in commands
+            ]
+            descriptor["command_count"] = len(commands)
+        timeout_seconds = getattr(oracle, "timeout_seconds", None)
+        if timeout_seconds is not None:
+            descriptor["timeout_seconds"] = timeout_seconds
+        predicate = getattr(oracle, "predicate", None)
+        if predicate is not None:
+            descriptor["predicate"] = self._callable_descriptor(predicate)
+        reason = getattr(oracle, "reason", None)
+        if isinstance(reason, str):
+            descriptor["reason_hash"] = hashlib.sha256(reason.encode("utf-8")).hexdigest()
+        return descriptor
 
     def _config_descriptor(self) -> dict[str, Any]:
         verifiers = list(getattr(self.verifiers, "verifiers", []))
@@ -100,15 +258,7 @@ class RuntimePersistenceMixin:
                 "soft_max_steps": self.budget.soft_max_steps,
             },
             "tools": self._tool_descriptors(),
-            "oracle": {
-                "name": getattr(self.oracle, "name", type(self.oracle).__name__),
-                "class": f"{type(self.oracle).__module__}.{type(self.oracle).__qualname__}",
-                "oracle_id": getattr(self.oracle, "oracle_id", None),
-                "sealed": bool(getattr(self.oracle, "is_sealed", False)),
-                "seal_manifest_hash": getattr(getattr(self.oracle, "bundle", None), "manifest_hash", None),
-                "backend": getattr(getattr(self.oracle, "backend", None), "name", None),
-                "require_filesystem_isolation": bool(getattr(self.oracle, "require_filesystem_isolation", False)),
-            },
+            "oracle": self._oracle_descriptor(),
         }
 
     def _provenance_warnings(self, *, task_revision: str, model_revision: str) -> list[str]:
@@ -327,9 +477,6 @@ class RuntimePersistenceMixin:
         )
         self.log("tool.receipt.prepared", {"action_id": action_id, "tool": call.tool})
         result = self.actions.execute(call)
-        # Normalize through JSON before persisting and before exposing the result
-        # to the state/context. This makes the first execution and receipt replay
-        # observe the same value even when a tool returns non-JSON Python objects.
         normalized = json.loads(json.dumps(self._tool_result_to_dict(result), ensure_ascii=False, default=str))
         self.receipts.commit(action_id=action_id, result=normalized)
         stable_result = self._tool_result_from_dict(normalized)
