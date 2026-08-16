@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 import hashlib
@@ -62,11 +63,8 @@ def decision_progress_signatures(decision) -> tuple[str, str]:
             exact_body["evidence_refs"] = sorted(
                 _normalize_text(str(ref)) for ref in payload.get("evidence_refs", [])
             )
-        # refute.reason is intentionally excluded. It is Actor narrative and
-        # changing it must not create a new repetition identity.
     elif kind == "complete":
         family = "complete"
-        # complete.reason is Actor narrative and intentionally excluded.
         exact_body = {"kind": kind}
     else:
         family = kind
@@ -75,11 +73,53 @@ def decision_progress_signatures(decision) -> tuple[str, str]:
     return family, canonical_hash(exact_body)[:24]
 
 
+class ProgressKind(str, Enum):
+    ACTIVITY = "activity"
+    EPISTEMIC = "epistemic"
+    TASK = "task"
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    """One deterministic progress signal evaluated by the control kernel.
+
+    Activity novelty is deliberately representable without granting it reset
+    authority. Epistemic/task signals may carry credit only when derived from a
+    trusted deterministic transition.
+    """
+
+    kind: ProgressKind
+    source: str
+    credit: float
+    verified: bool
+    evidence_refs: tuple[str, ...] = ()
+    goal_relation: str = "unknown"
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= float(self.credit) <= 1.0:
+            raise ValueError("progress event credit must be between 0 and 1")
+        if self.kind == ProgressKind.ACTIVITY and self.credit != 0.0:
+            raise ValueError("activity novelty cannot carry progress-reset credit")
+
+    def dump(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind.value,
+            "source": self.source,
+            "credit": float(self.credit),
+            "verified": bool(self.verified),
+            "evidence_refs": list(self.evidence_refs),
+            "goal_relation": self.goal_relation,
+            "details": dict(self.details),
+        }
+
+
 @dataclass(frozen=True)
 class ProgressPolicy:
     family_repeat_limit: int = 3
     no_progress_streak_limit: int = 5
     max_strategy_generations_without_progress: int = 3
+    reset_credit_threshold: float = 1.0
 
     def __post_init__(self) -> None:
         if self.family_repeat_limit < 2:
@@ -88,6 +128,8 @@ class ProgressPolicy:
             raise ValueError("no_progress_streak_limit must be at least 2")
         if self.max_strategy_generations_without_progress < 1:
             raise ValueError("max_strategy_generations_without_progress must be at least 1")
+        if not 0.0 < float(self.reset_credit_threshold) <= 1.0:
+            raise ValueError("reset_credit_threshold must be in (0, 1]")
 
     def descriptor(self) -> dict[str, Any]:
         return {
@@ -96,15 +138,19 @@ class ProgressPolicy:
             "max_strategy_generations_without_progress": int(
                 self.max_strategy_generations_without_progress
             ),
-            "progress_authority": [
-                "verified_fact_hash_change",
-                "novel_integrity_checked_successful_observation_digest",
-            ],
+            "reset_credit_threshold": float(self.reset_credit_threshold),
+            "progress_authority": {
+                "activity_novelty": "credit_0_no_reset",
+                "verified_fact_hash_change": "epistemic_credit_1",
+                "task_world_progress": "profile_explicit_future_signal_only",
+            },
             "speculative_state_counts_as_progress": False,
             "failed_observation_counts_as_progress": False,
+            "novel_successful_observation_counts_as_progress": False,
             "decision_identity": "normalized_exact_plus_coarse_family",
             "specific_failure_precedence": True,
             "recovery_steps_are_actor_samples": False,
+            "llm_semantic_judge_is_progress_authority": False,
         }
 
 
@@ -116,6 +162,9 @@ class ProgressState:
     family_repeat_count: int = 0
     evaluations: int = 0
     progress_events: int = 0
+    activity_events: int = 0
+    epistemic_events: int = 0
+    task_events: int = 0
     last_progress_step: int | None = None
     last_progress_generation: int = 0
     last_progress_reasons: list[str] = field(default_factory=list)
@@ -129,6 +178,9 @@ class ProgressState:
             "family_repeat_count": int(self.family_repeat_count),
             "evaluations": int(self.evaluations),
             "progress_events": int(self.progress_events),
+            "activity_events": int(self.activity_events),
+            "epistemic_events": int(self.epistemic_events),
+            "task_events": int(self.task_events),
             "last_progress_step": self.last_progress_step,
             "last_progress_generation": int(self.last_progress_generation),
             "last_progress_reasons": list(self.last_progress_reasons),
@@ -151,6 +203,9 @@ class ProgressState:
             family_repeat_count=int(raw.get("family_repeat_count", 0)),
             evaluations=int(raw.get("evaluations", 0)),
             progress_events=int(raw.get("progress_events", 0)),
+            activity_events=int(raw.get("activity_events", 0)),
+            epistemic_events=int(raw.get("epistemic_events", 0)),
+            task_events=int(raw.get("task_events", 0)),
             last_progress_step=(int(last_step) if last_step is not None else None),
             last_progress_generation=int(raw.get("last_progress_generation", 0)),
             last_progress_reasons=[str(item) for item in raw.get("last_progress_reasons", [])],

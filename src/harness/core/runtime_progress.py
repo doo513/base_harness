@@ -4,15 +4,15 @@ import json
 from typing import Any
 
 from .failures import Failure, FailureKind
-from .progress import decision_progress_signatures
+from .progress import ProgressEvent, ProgressKind, decision_progress_signatures
 from .storage import ArtifactStore, IntegrityError, canonical_hash
 
 
 class RuntimeProgressMixin:
     """Deterministic Actor progress accounting.
 
-    Progress is a control signal only. It never writes verified facts, accepts
-    completion, or executes recovery directly.
+    Activity novelty is recorded but has zero reset authority. Progress-reset
+    authority is reserved for trusted deterministic epistemic/task transitions.
     """
 
     def _sync_progress_generation(self) -> bool:
@@ -27,12 +27,6 @@ class RuntimeProgressMixin:
         return True
 
     def _progress_facts_hash(self) -> str:
-        """Hash verified semantic content while excluding reference metadata.
-
-        Evidence-ref churn must not manufacture progress, but verified values
-        are preserved exactly because whitespace and formatting can be semantic
-        for source code and other domain values.
-        """
         content = {
             key: {
                 "value": claim.value,
@@ -51,12 +45,6 @@ class RuntimeProgressMixin:
             raise IntegrityError(f"progress evidence artifact ref is invalid: {exc}") from exc
 
     def _verified_observation_fingerprint(self, ref: str) -> str:
-        """Consume the exact verified bytes, then canonicalize decoded JSON.
-
-        The verified-read primitive hashes and returns one logical buffer; this
-        method never reopens a previously verified path. JSON mapping order is
-        cosmetic and canonicalized. String contents remain exact.
-        """
         try:
             raw = self.artifacts.verified_read_bytes(ref)
         except (ValueError, IntegrityError) as exc:
@@ -102,12 +90,21 @@ class RuntimeProgressMixin:
         generation = int(self.state.strategy_generation)
         family_signature, exact_signature = decision_progress_signatures(decision)
 
+        signals: list[ProgressEvent] = []
         reasons: list[str] = []
         if self._progress_facts_hash() != baseline["facts_hash"]:
+            signals.append(ProgressEvent(
+                ProgressKind.EPISTEMIC,
+                source="verified_fact_content_changed",
+                credit=1.0,
+                verified=True,
+                goal_relation="not_inferred",
+            ))
             reasons.append("verified_fact_content_changed")
 
         prior_fingerprints = set(baseline["successful_fingerprints"])
         novel_fingerprints: list[str] = []
+        novel_refs: list[str] = []
         start = int(baseline["observation_count"])
         for observation in self.state.observations[start:]:
             if not observation.ok:
@@ -117,10 +114,29 @@ class RuntimeProgressMixin:
             fingerprint = self._verified_observation_fingerprint(observation.artifact_ref)
             if fingerprint not in prior_fingerprints and fingerprint not in novel_fingerprints:
                 novel_fingerprints.append(fingerprint)
+                novel_refs.append(observation.artifact_ref)
         if novel_fingerprints:
-            reasons.append("novel_successful_observation_content")
+            signals.append(ProgressEvent(
+                ProgressKind.ACTIVITY,
+                source="novel_successful_observation_content",
+                credit=0.0,
+                verified=False,
+                evidence_refs=tuple(novel_refs),
+                goal_relation="unknown",
+                details={"fingerprints": list(novel_fingerprints)},
+            ))
 
-        made_progress = bool(reasons)
+        for signal in signals:
+            if signal.kind == ProgressKind.ACTIVITY:
+                progress.activity_events += 1
+            elif signal.kind == ProgressKind.EPISTEMIC:
+                progress.epistemic_events += 1
+            elif signal.kind == ProgressKind.TASK:
+                progress.task_events += 1
+            self.log("progress.signal", signal.dump())
+
+        max_credit = max((signal.credit for signal in signals), default=0.0)
+        made_progress = max_credit >= self.progress_policy.reset_credit_threshold
         progress.evaluations += 1
         self.metrics["progress_evaluations"] = int(self.metrics.get("progress_evaluations", 0)) + 1
 
@@ -194,6 +210,9 @@ class RuntimeProgressMixin:
             "exact_signature": exact_signature,
             "made_progress": made_progress,
             "progress_reasons": list(reasons),
+            "progress_signals": [signal.dump() for signal in signals],
+            "max_credit": max_credit,
+            "reset_credit_threshold": self.progress_policy.reset_credit_threshold,
             "novel_successful_observation_fingerprints": novel_fingerprints,
             "strategy_generation": generation,
             "generation_reset": bool(baseline.get("generation_reset", False)),

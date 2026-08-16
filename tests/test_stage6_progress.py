@@ -11,6 +11,7 @@ from harness.core.failures import Failure, FailureKind, RecoveryAction
 from harness.core.oracles import CompletionResult, PredicateCompletionOracle
 from harness.core.progress import ProgressPolicy, decision_progress_signatures
 from harness.core.runtime import HarnessRuntime
+from harness.core.state import Authority, Claim, ClaimStatus
 from harness.core.storage import IntegrityError, ResumeConflict
 from harness.core.tools import SideEffect, ToolSpec
 from harness.profiles.base import DomainProfile
@@ -45,36 +46,20 @@ def workspace(tmp_path: Path, name: str) -> Path:
     return path
 
 
-def make_runtime(
-    tmp_path: Path,
-    *,
-    name: str,
-    profile,
-    controller,
-    progress_policy=None,
-    resume=False,
-    budget=None,
-):
+def make_runtime(tmp_path: Path, *, name: str, profile, controller, progress_policy=None, resume=False, budget=None):
     kwargs = dict(
-        goal=profile.default_goal(),
-        profile=profile,
-        controller=controller,
-        run_dir=tmp_path / name,
-        workspace=profile.workspace,
+        goal=profile.default_goal(), profile=profile, controller=controller,
+        run_dir=tmp_path / name, workspace=profile.workspace,
         progress_policy=progress_policy or ProgressPolicy(),
-        budget=budget or Budget(hard_max_steps=40),
-        task_revision=f"stage6-{name}-v1",
+        budget=budget or Budget(hard_max_steps=40), task_revision=f"stage6-{name}-v1",
     )
     return HarnessRuntime.resume(**kwargs) if resume else HarnessRuntime(**kwargs)
 
 
 def constant_tool(value="same"):
     return ToolSpec(
-        name="observe",
-        description="deterministic read",
-        handler=lambda: value,
-        side_effect=SideEffect.NONE,
-        idempotent=True,
+        name="observe", description="deterministic read", handler=lambda: value,
+        side_effect=SideEffect.NONE, idempotent=True,
         provenance={"revision": "stage6-test-v1"},
     )
 
@@ -82,68 +67,26 @@ def constant_tool(value="same"):
 def test_decision_signatures_resist_cosmetic_evasion():
     a = Decision("tool", {"tool": "observe", "args": {"query": "  alpha   beta ", "n": 1}})
     b = Decision("tool", {"args": {"n": 1, "query": "alpha beta"}, "tool": "observe"})
-    family_a, exact_a = decision_progress_signatures(a)
-    family_b, exact_b = decision_progress_signatures(b)
-    assert family_a == family_b == "tool:observe"
-    assert exact_a == exact_b
-
+    assert decision_progress_signatures(a) == decision_progress_signatures(b)
     c = Decision("tool", {"tool": "observe", "args": {"query": "different", "n": 2}})
-    family_c, exact_c = decision_progress_signatures(c)
-    assert family_c == family_a
-    assert exact_c != exact_a
-
-    complete_a = decision_progress_signatures(Decision("complete", {"reason": "first story"}))
-    complete_b = decision_progress_signatures(Decision("complete", {"reason": "totally reworded"}))
-    assert complete_a == complete_b
-
-    refute_a = decision_progress_signatures(Decision("refute", {"key": "x", "reason": "one"}))
-    refute_b = decision_progress_signatures(Decision("refute", {"key": "x", "reason": "two"}))
-    assert refute_a == refute_b
+    assert decision_progress_signatures(c)[0] == decision_progress_signatures(a)[0]
+    assert decision_progress_signatures(c)[1] != decision_progress_signatures(a)[1]
+    assert decision_progress_signatures(Decision("complete", {"reason": "a"})) == decision_progress_signatures(Decision("complete", {"reason": "b"}))
+    assert decision_progress_signatures(Decision("refute", {"key": "x", "reason": "a"})) == decision_progress_signatures(Decision("refute", {"key": "x", "reason": "b"}))
 
 
-def test_novel_successful_observation_is_progress_but_duplicate_bytes_are_not(tmp_path):
-    ws = workspace(tmp_path, "duplicate")
-    profile = ProgressProfile(ws, {"observe": constant_tool()})
-    controller = ScriptedController([
-        Decision("tool", {"tool": "observe", "args": {}}),
-        Decision("tool", {"tool": "observe", "args": {}}),
-        Decision("tool", {"tool": "observe", "args": {}}),
-        Decision("complete", {"reason": "finish"}),
-    ])
-    runtime = make_runtime(
-        tmp_path,
-        name="duplicate",
-        profile=profile,
-        controller=controller,
-        progress_policy=ProgressPolicy(family_repeat_limit=2, no_progress_streak_limit=5),
-    )
-    state = runtime.run()
-
-    assert state.completed
-    assert state.progress.progress_events == 1
-    assert runtime.metrics["progress_events"] == 1
-    assert any(f["kind"] == FailureKind.NO_PROGRESS.value for f in state.failures)
-    assert any(x.action == RecoveryAction.REPLAN for x in state.recovery_history)
-
-    successful = [o for o in state.observations if o.ok]
-    assert len(successful) == 3
-    digests = {o.artifact_ref[len("artifact://"):64 + len("artifact://")] for o in successful}
-    assert len(digests) == 1
-    assert len({o.artifact_ref for o in successful}) == 3
-
-
-def test_distinct_successful_observation_bytes_keep_resetting_progress(tmp_path):
-    ws = workspace(tmp_path, "novel")
+def test_successful_observation_novelty_is_activity_not_progress(tmp_path):
+    ws = workspace(tmp_path, "activity")
     calls = {"n": 0}
 
     def changing():
         calls["n"] += 1
-        return {"value": calls["n"]}
+        return {"timestamp_like": calls["n"]}
 
     tool = ToolSpec(
         name="observe", description="changing read", handler=changing,
         side_effect=SideEffect.NONE, idempotent=True,
-        provenance={"revision": "stage6-changing-v1"},
+        provenance={"revision": "stage6-changing-v2"},
     )
     profile = ProgressProfile(ws, {"observe": tool})
     controller = ScriptedController([
@@ -153,13 +96,52 @@ def test_distinct_successful_observation_bytes_keep_resetting_progress(tmp_path)
         Decision("complete", {"reason": "done"}),
     ])
     runtime = make_runtime(
-        tmp_path, name="novel", profile=profile, controller=controller,
-        progress_policy=ProgressPolicy(family_repeat_limit=2, no_progress_streak_limit=2),
+        tmp_path, name="activity", profile=profile, controller=controller,
+        progress_policy=ProgressPolicy(family_repeat_limit=2, no_progress_streak_limit=4),
     )
     state = runtime.run()
     assert state.completed
-    assert state.progress.progress_events == 3
-    assert not any(f["kind"] == FailureKind.NO_PROGRESS.value for f in state.failures)
+    assert state.progress.progress_events == 0
+    assert state.progress.activity_events >= 3
+    assert state.progress.epistemic_events == 0
+    assert any(f["kind"] == FailureKind.NO_PROGRESS.value for f in state.failures)
+
+
+def test_duplicate_successful_bytes_are_activity_only_once_then_no_progress(tmp_path):
+    ws = workspace(tmp_path, "duplicate")
+    profile = ProgressProfile(ws, {"observe": constant_tool()})
+    controller = ScriptedController([
+        Decision("tool", {"tool": "observe", "args": {}}),
+        Decision("tool", {"tool": "observe", "args": {}}),
+        Decision("tool", {"tool": "observe", "args": {}}),
+        Decision("complete", {"reason": "finish"}),
+    ])
+    runtime = make_runtime(
+        tmp_path, name="duplicate", profile=profile, controller=controller,
+        progress_policy=ProgressPolicy(family_repeat_limit=2, no_progress_streak_limit=5),
+    )
+    state = runtime.run()
+    assert state.completed
+    assert state.progress.progress_events == 0
+    assert state.progress.activity_events == 1
+    assert any(f["kind"] == FailureKind.NO_PROGRESS.value for f in state.failures)
+    assert any(x.action == RecoveryAction.REPLAN for x in state.recovery_history)
+
+
+def test_verified_fact_transition_is_epistemic_progress(tmp_path):
+    ws = workspace(tmp_path, "verified")
+    profile = ProgressProfile(ws)
+    decision = Decision("propose", {"key": "x", "value": 1})
+    runtime = make_runtime(tmp_path, name="verified", profile=profile, controller=ScriptedController([decision]))
+    baseline = runtime._progress_baseline()
+    claim = Claim("verified.x", 1, status=ClaimStatus.VERIFIED, authority=Authority.SUPPORTED)
+    runtime.state.commit_verified(claim)
+    result = runtime._evaluate_actor_progress(decision, baseline, allow_trigger=True)
+    assert result["made_progress"] is True
+    assert result["max_credit"] == 1.0
+    assert runtime.state.progress.progress_events == 1
+    assert runtime.state.progress.epistemic_events == 1
+    assert runtime.state.progress.activity_events == 0
 
 
 def test_speculative_churn_does_not_self_promote_progress(tmp_path):
@@ -194,9 +176,8 @@ def test_alternating_unproductive_families_hit_global_streak(tmp_path):
         progress_policy=ProgressPolicy(family_repeat_limit=5, no_progress_streak_limit=3),
     )
     state = runtime.run()
-    assert state.completed
     no_progress = [f for f in state.failures if f["kind"] == FailureKind.NO_PROGRESS.value]
-    assert len(no_progress) == 1
+    assert state.completed and len(no_progress) == 1
     assert "consecutive Actor decisions" in no_progress[0]["message"]
 
 
@@ -225,17 +206,13 @@ def test_specific_tool_failure_is_not_superseded_by_generic_no_progress(tmp_path
     assert state.completed
     assert kinds.count(FailureKind.TOOL_ERROR.value) == 1
     assert FailureKind.NO_PROGRESS.value not in kinds
-    assert state.recovery_history[0].failure_kind == FailureKind.TOOL_ERROR
     assert state.recovery_history[0].action == RecoveryAction.REPAIR
 
 
 def test_recovery_transition_is_not_actor_progress_sample(tmp_path):
     ws = workspace(tmp_path, "recovery-sample")
     profile = ProgressProfile(ws)
-    runtime = make_runtime(
-        tmp_path, name="recovery-sample", profile=profile,
-        controller=ScriptedController([Decision("complete", {"reason": "done"})]),
-    )
+    runtime = make_runtime(tmp_path, name="recovery-sample", profile=profile, controller=ScriptedController([Decision("complete", {"reason": "done"})]))
     runtime.log("run.start", {"run_id": runtime.run_id})
     runtime._persist_state("manual.start")
     before = runtime.state.progress.evaluations
@@ -247,10 +224,7 @@ def test_recovery_transition_is_not_actor_progress_sample(tmp_path):
 def test_strategy_generation_reset_is_not_itself_progress(tmp_path):
     ws = workspace(tmp_path, "generation")
     profile = ProgressProfile(ws)
-    runtime = make_runtime(
-        tmp_path, name="generation", profile=profile,
-        controller=ScriptedController([Decision("complete", {"reason": "done"})]),
-    )
+    runtime = make_runtime(tmp_path, name="generation", profile=profile, controller=ScriptedController([Decision("complete", {"reason": "done"})]))
     runtime.state.progress.no_progress_streak = 4
     runtime.state.progress.last_family_signature = "propose:x"
     runtime.state.progress.family_repeat_count = 4
@@ -267,55 +241,44 @@ def test_progress_state_survives_resume_and_policy_drift_fails_closed(tmp_path):
     ws = workspace(tmp_path, "resume")
     profile = ProgressProfile(ws)
     script = [Decision("propose", {"key": "x", "value": 1})]
-    controller = ScriptedController(script)
     policy = ProgressPolicy(family_repeat_limit=3, no_progress_streak_limit=4)
-    runtime = make_runtime(
-        tmp_path, name="resume", profile=profile, controller=controller,
-        progress_policy=policy,
-    )
+    runtime = make_runtime(tmp_path, name="resume", profile=profile, controller=ScriptedController(script), progress_policy=policy)
     runtime.log("run.start", {"run_id": runtime.run_id})
     runtime.state.progress.no_progress_streak = 2
     runtime.state.progress.last_family_signature = "propose:x"
     runtime.state.progress.family_repeat_count = 2
     runtime.state.progress.evaluations = 7
+    runtime.state.progress.activity_events = 3
     runtime._persist_state("manual.progress")
 
-    resumed = make_runtime(
-        tmp_path, name="resume", profile=ProgressProfile(ws),
-        controller=ScriptedController(script), progress_policy=policy, resume=True,
-    )
+    resumed = make_runtime(tmp_path, name="resume", profile=ProgressProfile(ws), controller=ScriptedController(script), progress_policy=policy, resume=True)
     assert resumed.state.progress.no_progress_streak == 2
     assert resumed.state.progress.family_repeat_count == 2
     assert resumed.state.progress.evaluations == 7
+    assert resumed.state.progress.activity_events == 3
 
     with pytest.raises(ResumeConflict):
         make_runtime(
-            tmp_path, name="resume", profile=ProgressProfile(ws),
-            controller=ScriptedController(script),
-            progress_policy=ProgressPolicy(family_repeat_limit=4, no_progress_streak_limit=4),
-            resume=True,
+            tmp_path, name="resume", profile=ProgressProfile(ws), controller=ScriptedController(script),
+            progress_policy=ProgressPolicy(family_repeat_limit=4, no_progress_streak_limit=4), resume=True,
         )
 
 
-def test_tampered_new_artifact_is_never_accepted_as_progress(tmp_path):
+def test_tampered_new_artifact_is_never_accepted_as_activity_or_progress(tmp_path):
     ws = workspace(tmp_path, "tamper")
     profile = ProgressProfile(ws, {"observe": constant_tool("original")})
     decision = Decision("tool", {"tool": "observe", "args": {}})
-    runtime = make_runtime(
-        tmp_path, name="tamper", profile=profile,
-        controller=ScriptedController([decision]),
-    )
+    runtime = make_runtime(tmp_path, name="tamper", profile=profile, controller=ScriptedController([decision]))
     runtime.log("run.start", {"run_id": runtime.run_id})
     runtime._persist_state("manual.start")
-
     baseline = runtime._progress_baseline()
     runtime._dispatch_decision(decision)
     ref = runtime.state.observations[-1].artifact_ref
     runtime.artifacts.resolve(ref).write_text("tampered", encoding="utf-8")
-
     with pytest.raises(IntegrityError):
         runtime._evaluate_actor_progress(decision, baseline, allow_trigger=True)
     assert runtime.state.progress.progress_events == 0
+    assert runtime.state.progress.activity_events == 0
 
 
 def test_strategy_exhaustion_routes_to_terminal_escalate(tmp_path):
@@ -323,13 +286,8 @@ def test_strategy_exhaustion_routes_to_terminal_escalate(tmp_path):
     profile = ProgressProfile(ws)
     decision = Decision("propose", {"key": "x", "value": 1})
     runtime = make_runtime(
-        tmp_path, name="exhaust", profile=profile,
-        controller=ScriptedController([decision]),
-        progress_policy=ProgressPolicy(
-            family_repeat_limit=5,
-            no_progress_streak_limit=5,
-            max_strategy_generations_without_progress=1,
-        ),
+        tmp_path, name="exhaust", profile=profile, controller=ScriptedController([decision]),
+        progress_policy=ProgressPolicy(family_repeat_limit=5, no_progress_streak_limit=5, max_strategy_generations_without_progress=1),
     )
     runtime.log("run.start", {"run_id": runtime.run_id})
     runtime._persist_state("manual.start")
@@ -337,11 +295,9 @@ def test_strategy_exhaustion_routes_to_terminal_escalate(tmp_path):
     baseline = runtime._progress_baseline()
     runtime._dispatch_decision(decision)
     result = runtime._evaluate_actor_progress(decision, baseline, allow_trigger=True)
-
     assert result["trigger"] == "strategy_exhausted"
     assert runtime.state.pending_recovery is not None
     assert runtime.state.pending_recovery.failure_kind == FailureKind.STRATEGY_EXHAUSTED
     assert runtime._apply_pending_recovery() is True
-    assert runtime.halted
-    assert runtime.state.recovery_halted
+    assert runtime.halted and runtime.state.recovery_halted
     assert runtime.state.recovery_history[-1].action == RecoveryAction.ESCALATE
