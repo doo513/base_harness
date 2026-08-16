@@ -1,92 +1,60 @@
-# Verified-State Harness
+# Base Harness
 
-This branch is a standalone implementation of the new harness architecture. The repository's `main` branch remains the preserved legacy **Base Harness**; this research branch intentionally does not carry the old root implementation forward.
+Base Harness is a small single-agent MVP for turning a user request and local problem files into a bounded context packet. It keeps the implementation local and deterministic: intake, task classification, safe inspections, context budgeting, packet building, and compact trace records.
 
-## Project hypothesis
+## What Is Included
 
-A general-purpose agent harness should not trust an Actor's narrative of progress. It should externalize goal contracts, evidence, verification, isolation, persistence, and completion into deterministic/runtime-enforced mechanisms.
+- `harness/core/intake.py` for request intake and provided-file summaries.
+- `harness/core/task_classifier.py` and `harness/core/tool_router.py` for heuristic task labels and initial tool choices.
+- `harness/core/workflow.py` for the end-to-end intake workflow.
+- `harness/core/context_budget.py` for shared limits on tool output, snippets, source refs, and samples.
+- `harness/core/packet.py` for compact context packets with summaries, snippets, source refs, unknowns, and next actions.
+- `harness/core/trace.py` for small JSONL trace records.
+- `harness/tools/` for bounded local file, archive, data, PDF, web, and command helpers.
+- `tests/` for unit and workflow coverage.
+- `scripts/validate_harness.py` for repository validation.
 
-Core invariant:
+The MVP stays local and deterministic. It does not include a vector database, managed worker runtime, fake MCP server, or external orchestration layer.
 
-> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success.**
+## Day 1 Commands
+
+Validate the harness:
+
+```bash
+python3 -m compileall harness
+python3 -m unittest discover -s tests
+python3 scripts/validate_harness.py --strict
+```
+
+Run the problem-responsive workflow from Python:
+
+```python
+from harness.core.workflow import run_intake_workflow
+
+result = run_intake_workflow(
+    "Inspect the problem statement and input format",
+    workspace_path=".",
+    provided_files=["problem.md", "input.jsonl"],
+)
+
+packet = result["packet"]
+trace_path = result["trace_path"]
+```
 
 ## Architecture
 
-```text
-Goal / Requirement Contract
-        ↓
-Observation / Evidence Gate
-        ↓
-Trusted Working State
-        ↓
-Actor Decision
-        ↓
-Capability / Permission / Isolation Gate
-        ↓
-Tool Runtime
-        ↓
-Evidence / Hypothesis
-        ↓
-Verifier Chain
-        ↓
-Kernel-owned State Commit
-
-Completion request
-        ↓
-Sealed Completion Oracle
-        ↓
-Kernel accepts / rejects
-
-Persistence plane
-  Manifest → hash-chained events → atomic checkpoint
-           → side-effect receipts → deterministic replay
-
-+ Domain Profile
-  tools() · state_schema() · failure_taxonomy()
-  memory_policy() · verification_contract() · completion_oracle()
-```
-
-## Current Stage status
-
-| Stage | Scope | Status |
-|---|---|---|
-| 00 | Research / contracts | COMPLETE |
-| 01 | Truth + execution integrity | COMPLETE |
-| 02 | Capability isolation + sealed oracle | PASS / EXITED |
-| 03 | Persistence + resume + reproducibility | PASS / EXITED |
-| 04 | Semantic verification | NEXT / NOT STARTED |
-
-Current package version: **v0.4.0**.
-
-Stage 03 evidence includes 59 passing regression tests, direct forced-termination/resume probes, duplicate external action count 0, deterministic replay hash checks, checkpoint corruption fail-closed behavior, and a re-run of the Stage 02 filesystem/network attack probe.
-
-## Repository layout
+The workflow is:
 
 ```text
-src/                harness implementation
-tests/              regression + Stage adversarial tests
-scripts/            direct runtime/attack probes
-evidence/           machine-readable execution evidence
-docs/               implementation reports and research records
-docs/stages/        Stage-by-Stage status and exit reports
-docs/handoff/       continuation material for other agents
-docs/archive/       historical artifact identity/index material
+request + optional files
+  -> intake
+  -> task classification
+  -> initial tool selection
+  -> safe bounded local discovery
+  -> context packet
+  -> compact trace JSONL
 ```
 
-## Development rule
+Tools apply limits before returning data. Files are listed with default cache/build directories ignored, request-term grep results are capped, text reads are line-bounded, CSV/JSON/JSONL inspection returns schema-like samples, archives are listed without extraction, and PDF/web helpers return structured unsupported results unless real support is configured. Command tools are available as explicit calls, but the intake workflow does not run experiment commands automatically.
 
-This branch is the continuing development line. **Do not create a branch per Stage.** Each Stage is represented by code, version, evidence, and Markdown reports in this branch. `main` remains untouched unless the user explicitly requests otherwise.
-
-## Stage 02 guarantee boundary
-
-The production sandbox is `LinuxNamespaceSandboxBackend` and is accepted only when its live runtime attestation succeeds. It uses Linux user/mount/PID/network namespaces, chrooted mount views, read-only verifier/oracle views, sealed oracle assets, capability dropping, environment sanitization, and direct attack probes. Unsupported hosts fail closed.
-
-## Stage 03 guarantee boundary
-
-Non-idempotent side effects use durable PREPARED/COMMITTED receipts. A COMMITTED operation is not automatically replayed. A PREPARED-only receipt is ambiguous after a crash and therefore halts/fails closed. This is an **at-most-once automatic execution** guarantee; the project does not claim universal exactly-once semantics for arbitrary external systems.
-
-## Next work
-
-Stage 04 must begin by freezing the semantic verification contract and adversarial false-positive/false-negative matrix. A verifier existing or returning `True` is not, by itself, evidence of semantic correctness.
-
-See `docs/handoff/README_HANDOFF.md` and `docs/handoff/02_CURRENT_STATUS.md` before continuing implementation.
+The packet contains only summaries, bounded snippets, source refs, unknowns, and next actions. It does not embed full raw tool outputs.

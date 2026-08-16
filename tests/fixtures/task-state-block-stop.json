@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "goals": [
+    {
+      "id": "G001",
+      "title": "Unfinished without proof",
+      "status": "in_progress",
+      "evidence": []
+    }
+  ]
+}
+
