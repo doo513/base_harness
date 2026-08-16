@@ -11,7 +11,7 @@ from harness.core.retrieval import (
     RetrievalPolicy,
     RetrievalResultSnapshot,
 )
-from harness.core.storage import IntegrityError
+from harness.core.storage import IntegrityError, canonical_hash
 
 from stage8_probe_support import gateway, runtime, source
 
@@ -78,6 +78,51 @@ def main() -> int:
             and not oversized.state.evidence_refs,
             "admitted_items": len(oversized.state.retrieval.items),
             "artifact_refs": len(oversized.state.artifacts),
+        }
+
+        mid_batch_policy = RetrievalPolicy(
+            enabled=True,
+            default_top_k=2,
+            max_admitted_per_request=2,
+            max_context_items=2,
+        )
+        mid_batch = runtime(
+            root,
+            "mid-batch",
+            retrieval_gateway=gateway([
+                source("a", "needle first"),
+                source("b", "needle second"),
+            ]),
+            retrieval_policy=mid_batch_policy,
+        )
+        before_state_hash = canonical_hash(mid_batch.state.snapshot())
+        before_metrics = dict(mid_batch.metrics)
+        original_read = mid_batch.artifacts.verified_read_bytes
+        read_calls = {"count": 0}
+
+        def fail_second_read(ref):
+            read_calls["count"] += 1
+            if read_calls["count"] == 2:
+                raise IntegrityError("injected second-candidate integrity failure")
+            return original_read(ref)
+
+        mid_batch.artifacts.verified_read_bytes = fail_second_read
+        blocked = False
+        try:
+            mid_batch._handle_retrieval_request("needle")
+        except IntegrityError:
+            blocked = True
+        outcomes["mid_batch_failure_state_atomic"] = {
+            "passed": blocked
+            and canonical_hash(mid_batch.state.snapshot()) == before_state_hash
+            and mid_batch.metrics == before_metrics
+            and not mid_batch.state.retrieval.items
+            and not mid_batch.state.retrieval.results
+            and not mid_batch.state.artifacts
+            and not mid_batch.state.evidence_refs,
+            "live_items": len(mid_batch.state.retrieval.items),
+            "live_snapshots": len(mid_batch.state.retrieval.results),
+            "live_artifact_refs": len(mid_batch.state.artifacts),
         }
 
         supersede = runtime(
@@ -161,12 +206,15 @@ def main() -> int:
     summary = {
         "all_passed": all(item["passed"] for item in outcomes.values()),
         "scenario_count": len(outcomes),
-        "partial_admission_failures": 0 if outcomes["oversized_content_atomic_block"]["passed"] else 1,
+        "partial_admission_failures": sum(
+            0 if outcomes[name]["passed"] else 1
+            for name in ("oversized_content_atomic_block", "mid_batch_failure_state_atomic")
+        ),
         "implicit_supersessions": 0 if outcomes["explicit_supersession_only"]["passed"] else 1,
     }
     print(json.dumps({
         "stage": "08",
-        "probe": "retrieval-adversarial-rc1",
+        "probe": "retrieval-adversarial-rc2",
         "outcomes": outcomes,
         "summary": summary,
     }, ensure_ascii=False, indent=2, sort_keys=True))
