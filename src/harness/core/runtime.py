@@ -17,8 +17,10 @@ from .verification import VerifierChain
 from .failures import Failure, FailureKind, FailureRouter, RecoveryAction
 from .budget import Budget
 from .progress import ProgressPolicy
+from .context import ContextPolicy, ContextProjector
 from .runtime_recovery import RuntimeRecoveryMixin
 from .runtime_progress import RuntimeProgressMixin
+from .runtime_context import RuntimeContextMixin
 from .runtime_controller_state import RuntimeControllerStateMixin
 from .runtime_persistence import RuntimePersistenceMixin
 from .runtime_execution import RuntimeExecutionMixin
@@ -27,11 +29,12 @@ from .runtime_execution import RuntimeExecutionMixin
 class HarnessRuntime(
     RuntimeRecoveryMixin,
     RuntimeProgressMixin,
+    RuntimeContextMixin,
     RuntimeControllerStateMixin,
     RuntimePersistenceMixin,
     RuntimeExecutionMixin,
 ):
-    """Single-actor verified-state kernel with durable recovery/progress control."""
+    """Single-actor verified-state kernel with recovery, progress, and context governance."""
 
     def __init__(
         self,
@@ -46,6 +49,7 @@ class HarnessRuntime(
         capability_policy: CapabilityPolicy | None = None,
         failure_router: FailureRouter | None = None,
         progress_policy: ProgressPolicy | None = None,
+        context_policy: ContextPolicy | None = None,
         resume: bool = False,
         task_revision: str | None = None,
         model_revision: str | None = None,
@@ -58,6 +62,8 @@ class HarnessRuntime(
         self.capability_policy = capability_policy or CapabilityPolicy.default()
         self.failure_router = failure_router or FailureRouter()
         self.progress_policy = progress_policy or ProgressPolicy()
+        self.context_policy = context_policy or ContextPolicy()
+        self.context_projector = ContextProjector(self.context_policy)
         self.resume_mode = bool(resume)
         self.task_revision = task_revision
         self.model_revision = model_revision
@@ -171,6 +177,7 @@ class HarnessRuntime(
         ]
         descriptor["failure_recovery"] = self.failure_router.descriptor()
         descriptor["progress_control"] = self.progress_policy.descriptor()
+        descriptor["context_governance"] = self.context_policy.descriptor()
         return descriptor
 
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -246,6 +253,7 @@ class HarnessRuntime(
                         if self.state.pending_recovery is not None else None
                     ),
                     "progress": self.state.progress.dump(),
+                    "context_governance": self.context_policy.descriptor(),
                 },
             )
             self._persist_state("resume.start")
@@ -256,11 +264,14 @@ class HarnessRuntime(
                     "run_id": self.run_id,
                     "goal": self.goal.goal,
                     "acceptance": self.goal.acceptance,
+                    "constraints": self.goal.constraints,
+                    "pinned_constraints": self.goal.pinned_constraints,
                     "workspace": str(self.workspace),
                     "profile": self.profile.name,
                     "manifest_hash": self.manifest_hash,
                     "provenance_warnings": self.manifest_body.get("provenance_warnings", []),
                     "progress_control": self.progress_policy.descriptor(),
+                    "context_governance": self.context_policy.descriptor(),
                     "security": {
                         "strict_layout": self.security_config.strict_layout,
                         "strict_tool_isolation": self.security_config.strict_tool_isolation,
