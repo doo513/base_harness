@@ -1,7 +1,8 @@
 # Stage 05 — Exit Decision
 
 Decision: **PASS / EXITED**  
-Release: `v0.6.0`
+Release: `v0.6.0`  
+Release commit: `7f2a167434abc9d1a000f285118c2757e149b8a0`
 
 ## Exit criteria
 
@@ -26,11 +27,35 @@ repeat-after-switch immediate switch  0
 unresolved Critical/High finding      0
 ```
 
-Final candidate evidence is GitHub Actions run `31936441736`: 94 passed / 5 environment-dependent skips, with all direct probes passing.
+## Release verification
+
+The actual `v0.6.0` release snapshot was independently executed in GitHub Actions run `31936623337` after version promotion and documentation updates:
+
+```text
+compileall                          PASS
+pytest                              94 passed / 5 skipped
+Stage 03 resume probe               4 / 4 PASS
+duplicate external actions         0
+Stage 04 semantic matrix            8 / 8 PASS
+Stage 04 FP / FN                    0 / 0
+Stage 05 base recovery              PASS
+Stage 05 adversarial                PASS
+Stage 05 terminal                   PASS
+Stage 05 crash-window               PASS
+Stage 05 strategy generation        PASS
+unsafe automatic retries            0
+verified fact mutations             0
+ambiguous external executions       0
+lost scheduled recoveries           0
+hard-budget step overshoot           0
+consecutive switch-after-new-fail   0
+```
+
+The five skipped tests are hosted-environment live Linux namespace tests and are not counted as Stage 02 production isolation evidence.
 
 ## What this PASS means
 
-The Kernel can now represent, persist, resume, supersede, apply, and terminally halt typed recovery-control transitions. Recovery cannot directly promote truth, declare completion, execute a tool, or replay an ambiguous non-idempotent effect.
+The Kernel can represent, persist, resume, supersede, apply, and terminally halt typed recovery-control transitions. Recovery cannot directly promote truth, declare completion, execute a tool, or replay an ambiguous non-idempotent effect.
 
 ## What this PASS does not mean
 
@@ -40,4 +65,4 @@ It does not establish universal automatic repair, semantic understanding of repe
 
 **Stage 06 — Loop / Progress Control.**
 
-Stage 06 should begin by freezing a deterministic Progress Contract. It must answer how the harness determines that a strategy is making meaningful progress or semantically repeating itself without giving the Actor authority to self-report progress. Do not begin with embeddings/LLM similarity; first define observable progress signals, normalized action/failure signatures, generation boundaries, and fail-closed escalation behavior.
+Stage 06 begins by freezing a deterministic Progress Contract. It must define how the harness determines meaningful progress versus repeated/no-progress behavior without trusting Actor self-reporting. Initial work must use inspectable deterministic signals before any embedding/LLM similarity mechanism is considered.

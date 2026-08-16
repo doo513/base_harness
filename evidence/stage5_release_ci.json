@@ -1,0 +1,61 @@
+{
+  "stage": "05",
+  "release": "v0.6.0",
+  "release_commit": "7f2a167434abc9d1a000f285118c2757e149b8a0",
+  "github_actions_run": 31936623337,
+  "result": "PASS",
+  "compileall": "PASS",
+  "pytest": {"passed": 94, "skipped": 5, "duration_seconds": 22.62},
+  "stage03_resume_probe": {
+    "passed": 4,
+    "total": 4,
+    "duplicate_external_actions": 0,
+    "all_passed": true
+  },
+  "stage04_semantic_probe": {
+    "matrix_cases": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "level_inflation_blocked": true,
+    "semantic_key_masquerade_blocked": true,
+    "artifact_tamper_blocked": true,
+    "all_passed": true
+  },
+  "stage05_recovery_probe": {
+    "scenario_count": 4,
+    "unsafe_retries": 0,
+    "verified_fact_mutations": 0,
+    "resume_recovery_divergence": 0,
+    "all_passed": true
+  },
+  "stage05_adversarial_probe": {
+    "scenario_count": 3,
+    "step_overshoot": 0,
+    "audit_link_mismatches": 0,
+    "numeric_signature_collisions": 0,
+    "all_passed": true
+  },
+  "stage05_terminal_probe": {
+    "scenario_count": 2,
+    "ambiguous_effect_executions": 0,
+    "pending_terminal_transitions": 0,
+    "budget_step_overshoot": 0,
+    "all_passed": true
+  },
+  "stage05_crash_window_probe": {
+    "scenario_count": 2,
+    "lost_scheduled_recoveries": 0,
+    "budget_boundary_nonterminal_applies": 0,
+    "all_passed": true
+  },
+  "stage05_strategy_generation_probe": {
+    "consecutive_switches_after_one_new_failure": 0,
+    "repeat_count_after_switch": 1,
+    "new_generation_action": "repair",
+    "all_passed": true
+  },
+  "environment": {
+    "hosted_linux_namespace_tests_skipped": 5,
+    "stage02_interpretation": "not production isolation proof; prior direct Stage 02 evidence remains authoritative"
+  }
+}
