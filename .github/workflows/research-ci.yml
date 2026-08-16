@@ -36,6 +36,8 @@ jobs:
         run: python scripts/stage5_crash_window_probe.py
       - name: Stage 05 strategy generation probe
         run: python scripts/stage5_strategy_generation_probe.py
+      - name: Stage 05 recovery effectiveness A/B benchmark
+        run: python scripts/stage5_recovery_effectiveness_benchmark.py
       - name: Stage 06 progress probe
         run: python scripts/stage6_progress_probe.py
       - name: Stage 06 adversarial progress probe
