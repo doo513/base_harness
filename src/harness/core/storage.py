@@ -202,9 +202,10 @@ class ReceiptStore:
 class ArtifactStore:
     """Content-addressed artifact storage with single-buffer verified reads.
 
-    Path resolution is only path confinement/existence. Content verification is
-    performed by `verified_read_bytes()`, which hashes and returns the exact same
-    byte buffer read from one opened regular-file descriptor.
+    `resolve_ref_path()` performs only ref/path confinement and existence checks.
+    It does not make a Path a verified content object. `verified_read_bytes()`
+    opens one regular file, reads one logical buffer, verifies the SHA-256 over
+    that exact buffer, and returns the same buffer to the caller.
     """
 
     PREFIX = "artifact://"
@@ -234,11 +235,12 @@ class ArtifactStore:
 
     @classmethod
     def resolve_ref_path(cls, root: str | Path, ref: str) -> Path:
-        """Resolve for path confinement/existence only; this does not verify bytes."""
         root_path = Path(root).resolve()
         token = cls._token_from_ref(ref)
         cls.digest_from_ref(ref)
         path = root_path / token
+        # Token validation already forbids separators. This resolved-path check
+        # additionally documents and enforces the artifact-root confinement.
         try:
             path.resolve(strict=False).relative_to(root_path)
         except ValueError as exc:
@@ -292,8 +294,7 @@ class ArtifactStore:
         finally:
             os.close(dir_fd)
 
-        actual = hashlib.sha256(raw).hexdigest()
-        if actual != expected:
+        if hashlib.sha256(raw).hexdigest() != expected:
             raise IntegrityError("artifact content hash mismatch")
         return raw
 
