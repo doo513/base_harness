@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import json
+import math
 from typing import Any
 
 from .failures import Failure, FailureKind
@@ -14,9 +14,14 @@ class RuntimeProgressMixin:
 
     Activity novelty is recorded but has zero reset authority. Progress-reset
     authority is reserved for trusted deterministic epistemic/task transitions.
+    Profile task authority is deliberately monotonic: milestone removal, score
+    decrease, or authority activation/deactivation during a turn cannot reset a
+    no-progress horizon.
     """
 
     TASK_PROGRESS_SNAPSHOT_MAX_BYTES = 65_536
+    TASK_PROGRESS_MAX_MILESTONES = 256
+    TASK_PROGRESS_MAX_MILESTONE_CHARS = 512
 
     def _sync_progress_generation(self) -> bool:
         progress = self.state.progress
@@ -40,7 +45,7 @@ class RuntimeProgressMixin:
         }
         return canonical_hash(content)
 
-    def _task_progress_snapshot_hash(self) -> str | None:
+    def _task_progress_snapshot(self) -> dict[str, Any] | None:
         hook = getattr(self.profile, "task_progress_snapshot", None)
         if hook is None:
             return None
@@ -52,24 +57,55 @@ class RuntimeProgressMixin:
             raise IntegrityError("profile task_progress_snapshot mutated durable harness state")
         if raw is None:
             return None
-
-        try:
-            encoded = json.dumps(
-                raw,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            ).encode("utf-8")
-        except (TypeError, ValueError, OverflowError) as exc:
+        if not isinstance(raw, dict):
+            raise IntegrityError("profile task_progress_snapshot must be an object or None")
+        unknown = set(raw) - {"milestones", "score"}
+        if unknown:
             raise IntegrityError(
-                f"profile task_progress_snapshot is not deterministic JSON: {exc}"
-            ) from exc
+                "profile task_progress_snapshot contains unsupported fields: "
+                + ", ".join(sorted(str(key) for key in unknown))
+            )
+
+        milestones_raw = raw.get("milestones", [])
+        if not isinstance(milestones_raw, list):
+            raise IntegrityError("task progress milestones must be a list of strings")
+        if len(milestones_raw) > self.TASK_PROGRESS_MAX_MILESTONES:
+            raise IntegrityError("task progress milestone count exceeds configured bound")
+        milestones: list[str] = []
+        seen: set[str] = set()
+        for index, item in enumerate(milestones_raw):
+            if not isinstance(item, str) or not item.strip():
+                raise IntegrityError(f"task progress milestone[{index}] must be a non-empty string")
+            if len(item) > self.TASK_PROGRESS_MAX_MILESTONE_CHARS:
+                raise IntegrityError(f"task progress milestone[{index}] exceeds configured bound")
+            if item in seen:
+                raise IntegrityError("task progress milestones must be unique")
+            seen.add(item)
+            milestones.append(item)
+
+        score_raw = raw.get("score", 0.0)
+        if isinstance(score_raw, bool) or not isinstance(score_raw, (int, float)):
+            raise IntegrityError("task progress score must be a finite non-negative number")
+        score = float(score_raw)
+        if not math.isfinite(score) or score < 0.0:
+            raise IntegrityError("task progress score must be a finite non-negative number")
+
+        normalized = {
+            "milestones": sorted(milestones),
+            "score": score,
+        }
+        encoded = json.dumps(
+            normalized,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
         if len(encoded) > self.TASK_PROGRESS_SNAPSHOT_MAX_BYTES:
             raise IntegrityError(
                 "profile task_progress_snapshot exceeds deterministic snapshot byte bound"
             )
-        return hashlib.sha256(encoded).hexdigest()
+        return normalized
 
     @staticmethod
     def _digest_prefix_from_artifact_ref(ref: str) -> str:
@@ -103,12 +139,12 @@ class RuntimeProgressMixin:
 
     def _progress_baseline(self) -> dict[str, Any]:
         facts_hash = self._progress_facts_hash()
-        task_progress_hash = self._task_progress_snapshot_hash()
+        task_progress_snapshot = self._task_progress_snapshot()
         successful_fingerprints = self._known_successful_observation_fingerprints()
         generation_reset = self._sync_progress_generation()
         return {
             "facts_hash": facts_hash,
-            "task_progress_hash": task_progress_hash,
+            "task_progress_snapshot": task_progress_snapshot,
             "observation_count": len(self.state.observations),
             "successful_fingerprints": successful_fingerprints,
             "strategy_generation": int(self.state.strategy_generation),
@@ -138,21 +174,46 @@ class RuntimeProgressMixin:
             ))
             reasons.append("verified_fact_content_changed")
 
-        task_progress_after = self._task_progress_snapshot_hash()
-        if task_progress_after != baseline.get("task_progress_hash"):
-            signals.append(ProgressEvent(
-                ProgressKind.TASK,
-                source="profile_task_progress_snapshot_changed",
-                credit=1.0,
-                verified=True,
-                goal_relation="profile_explicit",
-                details={
-                    "before_hash": baseline.get("task_progress_hash"),
-                    "after_hash": task_progress_after,
-                    "snapshot_bytes_bound": self.TASK_PROGRESS_SNAPSHOT_MAX_BYTES,
-                },
-            ))
-            reasons.append("profile_task_progress_snapshot_changed")
+        task_before = baseline.get("task_progress_snapshot")
+        task_after = self._task_progress_snapshot()
+        if (task_before is None) != (task_after is None):
+            raise IntegrityError(
+                "profile task progress authority changed availability during one Actor transition"
+            )
+        task_regression: dict[str, Any] | None = None
+        if task_before is not None and task_after is not None:
+            before_milestones = set(task_before["milestones"])
+            after_milestones = set(task_after["milestones"])
+            removed = sorted(before_milestones - after_milestones)
+            added = sorted(after_milestones - before_milestones)
+            before_score = float(task_before["score"])
+            after_score = float(task_after["score"])
+            score_decreased = after_score < before_score
+            score_increased = after_score > before_score
+
+            if removed or score_decreased:
+                task_regression = {
+                    "removed_milestones": removed,
+                    "before_score": before_score,
+                    "after_score": after_score,
+                    "added_milestones_ignored_for_credit": added,
+                }
+                self.log("progress.task_regression", dict(task_regression))
+            elif added or score_increased:
+                signals.append(ProgressEvent(
+                    ProgressKind.TASK,
+                    source="profile_task_progress_advanced",
+                    credit=1.0,
+                    verified=True,
+                    goal_relation="profile_explicit_monotonic",
+                    details={
+                        "added_milestones": added,
+                        "before_score": before_score,
+                        "after_score": after_score,
+                        "snapshot_bytes_bound": self.TASK_PROGRESS_SNAPSHOT_MAX_BYTES,
+                    },
+                ))
+                reasons.append("profile_task_progress_advanced")
 
         prior_fingerprints = set(baseline["successful_fingerprints"])
         novel_fingerprints: list[str] = []
@@ -265,8 +326,9 @@ class RuntimeProgressMixin:
             "progress_signals": [signal.dump() for signal in signals],
             "max_credit": max_credit,
             "reset_credit_threshold": self.progress_policy.reset_credit_threshold,
-            "task_progress_before_hash": baseline.get("task_progress_hash"),
-            "task_progress_after_hash": task_progress_after,
+            "task_progress_before": task_before,
+            "task_progress_after": task_after,
+            "task_progress_regression": task_regression,
             "novel_successful_observation_fingerprints": novel_fingerprints,
             "strategy_generation": generation,
             "generation_reset": bool(baseline.get("generation_reset", False)),
