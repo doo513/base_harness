@@ -23,13 +23,16 @@ class BaseProgressProfile(DomainProfile):
 
 class CompletionMilestoneProfile(BaseProgressProfile):
     def task_progress_snapshot(self, *, goal, state):
-        return {"completion_milestone": bool(state.completed)}
+        return {
+            "milestones": ["completed"] if state.completed else [],
+            "score": 1 if state.completed else 0,
+        }
 
 
 class MutatingSnapshotProfile(BaseProgressProfile):
     def task_progress_snapshot(self, *, goal, state):
         state.completed = True
-        return {"completion_milestone": True}
+        return {"milestones": ["completed"], "score": 1}
 
 
 class OpaqueSnapshotProfile(BaseProgressProfile):
@@ -56,7 +59,7 @@ class ProgressHarness(RuntimeProgressMixin):
         self.failures.append(failure)
 
 
-def test_profile_explicit_task_snapshot_delta_grants_task_progress(tmp_path):
+def test_profile_explicit_monotonic_task_advance_grants_progress(tmp_path):
     harness = ProgressHarness(tmp_path, CompletionMilestoneProfile())
     baseline = harness._progress_baseline()
     harness.state.completed = True
@@ -68,7 +71,7 @@ def test_profile_explicit_task_snapshot_delta_grants_task_progress(tmp_path):
     )
 
     assert result["made_progress"] is True
-    assert "profile_task_progress_snapshot_changed" in result["progress_reasons"]
+    assert "profile_task_progress_advanced" in result["progress_reasons"]
     assert harness.state.progress.task_events == 1
     assert harness.state.progress.progress_events == 1
 
@@ -84,10 +87,44 @@ def test_default_profile_grants_no_task_progress_authority(tmp_path):
         allow_trigger=False,
     )
 
-    assert all(
-        signal["kind"] != "task" for signal in result["progress_signals"]
-    )
+    assert all(signal["kind"] != "task" for signal in result["progress_signals"])
     assert harness.state.progress.task_events == 0
+
+
+def test_task_progress_regression_does_not_grant_credit(tmp_path):
+    harness = ProgressHarness(tmp_path, CompletionMilestoneProfile())
+    harness.state.completed = True
+    baseline = harness._progress_baseline()
+    harness.state.completed = False
+
+    result = harness._evaluate_actor_progress(
+        Decision("complete", {"reason": "regressed"}),
+        baseline,
+        allow_trigger=False,
+    )
+
+    assert result["made_progress"] is False
+    assert result["task_progress_regression"] is not None
+    assert result["task_progress_regression"]["removed_milestones"] == ["completed"]
+    assert harness.state.progress.task_events == 0
+
+
+def test_score_decrease_is_not_progress_even_without_milestone_removal(tmp_path):
+    class ScoreProfile(BaseProgressProfile):
+        def task_progress_snapshot(self, *, goal, state):
+            score = 1 if state.completed else 0
+            return {"milestones": [], "score": score}
+
+    harness = ProgressHarness(tmp_path, ScoreProfile())
+    harness.state.completed = True
+    baseline = harness._progress_baseline()
+    harness.state.completed = False
+    result = harness._evaluate_actor_progress(
+        Decision("complete", {"reason": "score decreased"}), baseline, allow_trigger=False
+    )
+    assert result["made_progress"] is False
+    assert result["task_progress_regression"]["before_score"] == 1.0
+    assert result["task_progress_regression"]["after_score"] == 0.0
 
 
 def test_task_progress_snapshot_must_be_pure(tmp_path):
@@ -96,17 +133,38 @@ def test_task_progress_snapshot_must_be_pure(tmp_path):
         harness._progress_baseline()
 
 
-def test_task_progress_snapshot_must_be_deterministic_json(tmp_path):
+def test_task_progress_snapshot_rejects_unsupported_schema(tmp_path):
     harness = ProgressHarness(tmp_path, OpaqueSnapshotProfile())
-    with pytest.raises(IntegrityError, match="not deterministic JSON"):
+    with pytest.raises(IntegrityError, match="unsupported fields"):
         harness._progress_baseline()
 
 
 def test_task_progress_snapshot_is_bounded(tmp_path):
     class HugeSnapshotProfile(BaseProgressProfile):
         def task_progress_snapshot(self, *, goal, state):
-            return {"blob": "x" * (RuntimeProgressMixin.TASK_PROGRESS_SNAPSHOT_MAX_BYTES + 1)}
+            return {
+                "milestones": [
+                    "x" * (RuntimeProgressMixin.TASK_PROGRESS_MAX_MILESTONE_CHARS + 1)
+                ],
+                "score": 0,
+            }
 
     harness = ProgressHarness(tmp_path, HugeSnapshotProfile())
-    with pytest.raises(IntegrityError, match="exceeds deterministic snapshot byte bound"):
+    with pytest.raises(IntegrityError, match="milestone\[0\] exceeds configured bound"):
         harness._progress_baseline()
+
+
+def test_task_progress_authority_cannot_toggle_during_transition(tmp_path):
+    class ToggleAuthorityProfile(BaseProgressProfile):
+        def task_progress_snapshot(self, *, goal, state):
+            if state.completed:
+                return {"milestones": ["completed"], "score": 1}
+            return None
+
+    harness = ProgressHarness(tmp_path, ToggleAuthorityProfile())
+    baseline = harness._progress_baseline()
+    harness.state.completed = True
+    with pytest.raises(IntegrityError, match="changed availability"):
+        harness._evaluate_actor_progress(
+            Decision("complete", {"reason": "toggle"}), baseline, allow_trigger=False
+        )
