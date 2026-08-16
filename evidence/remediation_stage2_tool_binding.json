@@ -1,6 +1,7 @@
 {
   "scope": "stage02-tool-backend-attestation-execution-binding",
   "classification": "confirmed_code_security_defect",
+  "release_version": "0.8.3",
   "red": {
     "run_id": 31948573578,
     "conclusion": "failure_expected_red_gate",
@@ -18,16 +19,38 @@
     "pytest": {"passed": 140, "skipped": 5, "failed": 0},
     "attestation_execution_mismatch_observed": false,
     "unsafe_handler_calls": 0,
-    "attested_backend_execution_calls": 0,
     "private_canary_changed": false,
     "result_ok": false,
     "security_violation": true,
     "prior_stage_probes": true
   },
-  "cost_probe_first_run": {
+  "cost": {
+    "run_id": 31948967565,
+    "valid_path": {"attestation_calls": 1, "backend_execution_calls": 1, "handler_indirections": 0},
+    "blocked_mismatch": {"attestation_calls": 0, "backend_execution_calls": 0, "unsafe_handler_calls": 0},
+    "additional_backend_calls_for_valid_path": 0,
+    "additional_model_tokens": 0,
+    "additional_checkpoint_or_event_records": 0
+  },
+  "candidate_ci": {
+    "version": "0.8.3rc1",
+    "commit": "04d8d7c3ac030140f1a6714e5f31f7b82136b4a3",
+    "run_id": 31949075789,
+    "conclusion": "success"
+  },
+  "release_ci": {
+    "version": "0.8.3",
+    "commit": "3873d31e32ac184639a86d997781bd183aefc094",
+    "run_id": 31949135582,
+    "conclusion": "success",
+    "pytest": {"passed": 140, "skipped": 5, "failed": 0},
+    "stage03_resume": {"passed": 4, "total": 4, "duplicate_external_actions": 0},
+    "stage04_semantic": {"cases": 8, "false_positives": 0, "false_negatives": 0},
+    "all_prior_and_remediation_probes": true
+  },
+  "known_probe_incident": {
     "run_id": 31948865697,
-    "conclusion": "failure_after_all_functional_security_gates_passed",
-    "cause": "Python probe typo: lowercase true instead of True",
+    "cause": "cost probe Python typo: lowercase true instead of True",
     "production_code_changed_by_correction": false
   },
   "fix": {
@@ -37,22 +60,7 @@
     "runtime_owns_backend_invocation": true,
     "same_backend_object_attested_and_executed": true,
     "builtin_shell_migrated": true,
-    "declarative_semantics_provenance_bound": [
-      "execution_kind",
-      "timeout_seconds",
-      "command_arg",
-      "require_zero_exit"
-    ]
+    "declarative_semantics_provenance_bound": ["execution_kind", "timeout_seconds", "command_arg", "require_zero_exit"]
   },
-  "cost": {
-    "valid_path_expected_attestations": 1,
-    "valid_path_expected_backend_executions": 1,
-    "valid_path_handler_indirections": 0,
-    "blocked_mismatch_attestations": 0,
-    "blocked_mismatch_executions": 0,
-    "blocked_mismatch_handler_calls": 0,
-    "additional_model_tokens": 0,
-    "additional_checkpoint_or_event_records": 0
-  },
-  "release_status": "pending_corrected_cost_gate_and_v0.8.3_snapshot"
+  "release_status": "pass_frozen"
 }
