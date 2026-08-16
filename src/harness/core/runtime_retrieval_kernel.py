@@ -17,7 +17,7 @@ from .storage import ArtifactStore, IntegrityError
 
 
 class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
-    """Stage-08 kernel boundary with deterministic query derivation and atomic state admission.
+    """Stage-08 kernel boundary with deterministic request framing and atomic state admission.
 
     Provider artifact writes may leave unreferenced content-addressed files if a
     later preparation step fails, but HarnessState, retrieval history, artifact
@@ -27,17 +27,14 @@ class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
 
     @staticmethod
     def _kernel_query_terms(actor_request: str) -> str:
-        """Derive the provider-visible query deterministically from Actor text.
+        """Normalize the explicit Actor retrieval request deterministically.
 
-        The Actor supplies an explicit retrieval request, not hidden provider
-        controls. The Kernel normalizes, case-folds, deduplicates, and sorts the
-        terms before any provider sees them. This keeps same-request semantics
-        stable and prevents whitespace/order/case churn from changing retrieval
-        identity.
+        Stage 08 keeps the Actor-controlled field explicit and inspectable while
+        Kernel-owned scope/top-k/provider/ranking/admission form the durable
+        request descriptor. More semantic query planning is intentionally left
+        for a later stage rather than silently changing persisted query meaning.
         """
-        normalized = normalize_retrieval_query(actor_request)
-        terms = sorted(set(normalized.casefold().split()))
-        return " ".join(terms)
+        return normalize_retrieval_query(actor_request)
 
     def _build_retrieval_request(
         self,
@@ -271,8 +268,8 @@ class RuntimeRetrievalMixin(_BaseRuntimeRetrievalMixin):
             "provider": provider_before,
             "query_ownership": {
                 "actor_field": "query",
-                "provider_visible_query": request.normalized_query,
-                "kernel_transform": "casefold+deduplicate+sort-terms-v1",
+                "kernel_owned_fields": ["scope", "top_k", "provider", "ranking", "admission"],
+                "kernel_transform": "whitespace-normalize-v1",
             },
             "transaction": {
                 "prepared_items": len(prepared),
