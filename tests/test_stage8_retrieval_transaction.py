@@ -10,7 +10,7 @@ from harness.core.controller import Decision, ScriptedController
 from harness.core.oracles import CompletionResult, PredicateCompletionOracle
 from harness.core.retrieval import LocalLexicalRetrievalGateway, RetrievalPolicy, RetrievalSourceItem
 from harness.core.runtime import HarnessRuntime
-from harness.core.storage import IntegrityError, canonical_hash
+from harness.core.storage import IntegrityError, PersistenceError, canonical_hash
 from harness.profiles.base import DomainProfile
 
 
@@ -98,6 +98,32 @@ def test_mid_batch_integrity_failure_leaves_live_state_unmodified(tmp_path, monk
     assert rt.state.artifacts == before_artifacts
     assert rt.state.evidence_refs == before_evidence
     assert rt.metrics == before_metrics
+
+
+def test_storage_write_oserror_becomes_persistence_failure_and_leaves_state_clean(tmp_path, monkeypatch):
+    rt = runtime(
+        tmp_path,
+        "write-failure",
+        items=[source("a", "needle one")],
+        controller=ScriptedController([Decision("retrieve", {"query": "needle"})]),
+    )
+    before_retrieval = canonical_hash(rt.state.retrieval.dump())
+
+    def fail_write(*args, **kwargs):
+        raise OSError("injected read-only filesystem")
+
+    monkeypatch.setattr(rt.artifacts, "put_text", fail_write)
+    with pytest.raises(PersistenceError, match="retrieval artifact write failed"):
+        rt._handle_retrieval_request("needle")
+    assert canonical_hash(rt.state.retrieval.dump()) == before_retrieval
+    assert rt.state.artifacts == []
+    assert rt.state.evidence_refs == []
+
+    # The public decision-dispatch path must classify the same storage failure as
+    # persistence rather than as an implementation defect.
+    rt.step_once()
+    assert rt.state.failures[-1]["kind"] == "persistence_error"
+    assert rt.state.failures[-1]["target"] == "retrieval"
 
 
 def test_successful_batch_commits_items_snapshot_and_refs_together(tmp_path):
