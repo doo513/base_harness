@@ -1,42 +1,62 @@
 # Stage 06 — Loop / Progress Control
 
-Status: **IN PROGRESS — CONTRACT FROZEN**.
-
-Target release: `v0.7.0` only after all gates PASS.
+Status: **PASS CANDIDATE — RELEASE VERIFICATION REQUIRED**  
+Candidate: `v0.7.0-rc3`
 
 ## Purpose
 
-Stage 06 adds deterministic, kernel-owned progress accounting on top of Stage 05 recovery. It is intended to bound repeated successful-but-unproductive Actor behavior that does not naturally enter the typed failure path.
+Stage 06 adds deterministic, kernel-owned progress accounting on top of Stage 05 recovery. It bounds inspectable repeated/no-progress behavior without trusting Actor self-reporting or introducing an LLM/embedding progress judge.
 
-## Design order
+## Implemented control model
 
 ```text
-preflight re-review
--> freeze Progress Contract
--> implement durable ProgressState + policy descriptor
--> evaluate Actor decision outcome only
--> schedule NO_PROGRESS through Stage 05
--> add strategy-exhaustion terminal path
--> adversarial matrix
--> resume/provenance tests
--> full Stage 01–05 regression
--> final logic/implementation/structure re-review
--> PASS/PARTIAL/FAIL
+Actor Decision
+-> trusted baseline
+-> existing dispatch / verification / failure gates
+-> deterministic progress evaluation
+   ├─ verified semantic fact content changed
+   └─ novel integrity-checked successful observation content
+-> no progress windows
+   ├─ same decision family
+   └─ global alternating-family streak
+-> FailureKind.NO_PROGRESS
+-> Stage 05 recovery
+-> repeated failure: SWITCH_STRATEGY
+-> generation exhaustion: STRATEGY_EXHAUSTED -> ESCALATE
 ```
 
-## Important distinction
+## Important boundaries
 
-Stage 05 already handles explicit failures such as tool errors, verification failures, security violations, and persistence ambiguity. Stage 06 must not replace those routes.
+Progress is not truth. Stage 06 cannot commit a fact or accept completion.
 
-Stage 06 focuses on paths such as:
+Actor narrative, speculative state churn, failed output, recovery transitions, evidence-ref metadata churn, and strategy switches do not independently count as progress.
 
-- repeated successful tool calls that return the same evidence;
-- repeated speculative state churn;
-- alternating Actor decisions that consume budget but add no verified state or novel successful evidence;
-- repeated completion requests rejected without any intervening progress.
+Novel successful evidence is a deterministic syntactic signal. Stage 06 does **not** claim that novelty is semantically useful or goal-relevant.
 
-## Authority boundary
+## Candidate evidence
 
-Progress is a control signal only. It does not grant semantic truth authority and cannot directly create verified facts or accept completion.
+GitHub Actions `31937830666`:
 
-See `CONTRACT.md` for the frozen semantics and adversarial exit matrix.
+```text
+pytest                             112 passed / 5 skipped
+Stage 03 resume                    4 / 4 PASS
+Stage 04 semantic                  8 / 8 PASS, FP=0/FN=0
+Stage 05 all direct probes         PASS
+Stage 06 base                      3 / 3 PASS
+Stage 06 adversarial               3 / 3 PASS
+Stage 06 resume                    3 / 3 PASS
+Stage 06 boundary                  4 / 4 PASS
+Stage 06 strategy                  6 / 6 PASS
+```
+
+The five skips are hosted-runner live Linux namespace tests and are not counted as Stage 02 production isolation proof.
+
+See:
+
+- `CONTRACT.md`
+- `../../STAGE6_PREFLIGHT_REREVIEW.md`
+- `../../STAGE6_IMPLEMENTATION_REPORT.md`
+- `../../STAGE6_EVIDENCE_MATRIX.md`
+- `../../STAGE6_FINAL_REREVIEW.md`
+
+Stage 06 becomes PASS / EXITED only after the actual `v0.7.0` release snapshot independently passes the same gates.

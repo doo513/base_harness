@@ -1,59 +1,86 @@
 # 03 — Next Stage Task
 
-# Stage 06 — Loop / Progress Control
+# Stage 07 — Context Governance
 
-Version target: `v0.7.0` only after PASS.
+Version target: `v0.8.0` only after PASS.
 
-## Entry condition
+## Why this is next
 
-Stage 05 Failure Recovery must be PASS / EXITED with durable recovery scheduling/application, no known security/persistence retry bypass, and no unresolved Critical/High recovery defect. Entry is satisfied by `v0.6.0` once the release snapshot CI succeeds.
+The architecture names a Context Governor as a core component, but the current runtime `_context()` directly exposes broad state to the Actor:
 
-## Research question
+- pinned constraints and acceptance criteria;
+- all verified facts;
+- all current/refuted hypotheses;
+- unknowns;
+- all observations;
+- recent failures;
+- recovery/progress control state;
+- tool metadata.
 
-How can the Kernel distinguish **meaningful progress** from repeated/no-progress behavior without trusting the Actor to self-report progress and without turning a heuristic similarity score into truth authority?
+Stage 06 can now detect deterministic no-progress, but an Actor can still receive an unbounded or poorly scoped context containing stale, duplicate, low-value, or untrusted observation material. Adding long-term memory or retrieval before defining this projection boundary would make that problem harder to reason about.
 
 ## First action
 
-Freeze a **Progress Contract** before implementation.
+Do **not** begin by adding vector retrieval, RAG, LLM summarization, or automatic memory.
 
-It must define:
+First freeze a **Context Projection Contract** defining:
 
-1. which observable state changes count as progress;
-2. normalized action/failure/target/purpose signatures;
-3. relationship to `strategy_generation`;
-4. when progress resets a no-progress counter;
-5. when repetition triggers Stage 05 `REPLAN`, `SWITCH_STRATEGY`, or terminal escalation;
-6. budget accounting for repeated work;
-7. persistence/resume behavior for progress state;
-8. false-positive protection so equivalent useful retries are not blocked incorrectly;
-9. false-negative protection so cosmetic argument changes do not evade loop detection;
-10. evidence required before any semantic extension beyond deterministic signatures.
+1. fields that are mandatory and may never be dropped (`goal`, pinned constraints, acceptance, critical recovery/terminal state);
+2. trusted verified facts versus untrusted/speculative/observational material;
+3. freshness/staleness representation and supersession;
+4. deterministic observation selection and ordering under a context budget;
+5. raw artifact/evidence references that remain available when previews are omitted;
+6. treatment of untrusted tool/remote text so it cannot become system-level instruction authority;
+7. context truncation/compression rules that cannot silently rewrite epistemic status or authority;
+8. provenance/config fingerprint for context-policy changes;
+9. resume determinism for the same context projection;
+10. how a future memory/retrieval subsystem must enter through this gateway rather than directly modifying trusted state.
 
-## Initial constraint
+## Required preflight review
 
-Do **not** begin with embeddings, an LLM judge, a planner hierarchy, or a general semantic similarity subsystem. Start with deterministic, inspectable progress signals and a synthetic adversarial matrix.
+Before implementation, inspect at minimum:
 
-## Candidate observable signals
+- `RuntimeExecutionMixin._context()`;
+- `HarnessState` freshness/supersession representation;
+- observation preview/artifact storage;
+- GoalContract pinned constraints and acceptance propagation;
+- recovery/progress directive visibility;
+- token/size budget interfaces;
+- DomainProfile extension surface.
 
-- verified fact set/hash change;
-- new integrity-checked evidence/artifact;
-- hypothesis/refutation state change;
-- completion-oracle result change;
-- tool target/purpose/action signature;
-- repeated failure signature within a strategy generation;
-- strategy generation change;
-- explicit unknown resolved/introduced.
+Find and record structural defects before modifying code.
 
-These are candidates, not yet frozen semantics.
+## Required adversarial scenarios
 
-## Required preservation
+```text
+many duplicate observations              -> bounded context, raw evidence retained
+very large tool output                    -> preview bounded, artifact drill-down retained
+stale/superseded fact                     -> not represented as current truth
+untrusted observation says "ignore goal" -> remains data, never system/kernel instruction
+hypothesis text claims VERIFIED            -> status remains speculative in projection
+context pressure                           -> goal/pinned constraints/acceptance never dropped
+recent specific failure/recovery           -> required control context preserved
+progress state                             -> visible without granting Actor mutation authority
+policy threshold/config drift on resume    -> fail closed
+deterministic same state                   -> deterministic same projection
+future retrieval/memory candidate          -> enters as untrusted evidence unless separately verified
+```
 
-- Actor cannot self-promote progress into truth.
-- Stage 03 receipt semantics remain authoritative for side effects.
-- Stage 04 verification remains authoritative for facts.
-- Stage 05 recovery remains kernel-owned.
-- no hidden retry loop outside hard budget.
+## Exit minimum
 
-## Exit direction
+```text
+Context Projection Contract frozen             PASS
+mandatory goal/control fields never dropped    PASS
+trusted/untrusted representation preserved     PASS
+bounded deterministic projection               PASS
+raw evidence drill-down retained               PASS
+untrusted text cannot gain instruction authority PASS
+context policy in provenance                    PASS
+resume projection determinism                   PASS
+full Stage 01-06 regression                     PASS
+final re-review: unresolved Critical/High       0
+```
 
-PASS requires direct evidence that repeated non-progress paths are bounded and cause deterministic recovery/escalation while legitimate evidence-producing retries continue, with Stage 01–05 regression preserved.
+## Non-goals
+
+Stage 07 is not long-term memory, RAG, embeddings, skill learning, subagents, planner hierarchy, semantic relevance ranking by an LLM, or model routing. Those features must depend on the context-governance boundary rather than bypass it.

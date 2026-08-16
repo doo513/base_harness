@@ -1,0 +1,54 @@
+{
+  "stage": "06",
+  "status": "pass_candidate",
+  "candidate_version": "0.7.0rc3",
+  "candidate_commit": "3188ea75f7ca3d503cd8557cd7dd8bd562eaa2d4",
+  "github_actions_run": 31937830666,
+  "pytest": {"passed": 112, "skipped": 5, "failed": 0},
+  "stage03_resume": {"passed": 4, "total": 4, "duplicate_external_actions": 0},
+  "stage04_semantic": {"passed": 8, "total": 8, "false_positives": 0, "false_negatives": 0},
+  "stage05": {
+    "base_recovery": true,
+    "adversarial": true,
+    "terminal": true,
+    "crash_window": true,
+    "strategy_generation": true
+  },
+  "stage06": {
+    "base": {"passed": 3, "total": 3, "actor_self_progress_acceptances": 0},
+    "adversarial": {
+      "passed": 3,
+      "total": 3,
+      "cosmetic_evasions": 0,
+      "specific_failure_supersessions": 0,
+      "tamper_progress_acceptances": 0
+    },
+    "resume": {
+      "passed": 3,
+      "total": 3,
+      "resume_progress_divergence": 0,
+      "policy_drift_acceptances": 0
+    },
+    "boundary": {
+      "passed": 4,
+      "total": 4,
+      "historical_tamper_actor_calls": 0,
+      "global_repeat_identity_divergence": 0,
+      "fact_metadata_false_progress": 0,
+      "whitespace_false_no_progress": 0
+    },
+    "strategy": {
+      "passed": 6,
+      "total": 6,
+      "recovery_actor_samples": 0,
+      "failed_output_progress_acceptances": 0,
+      "strategy_exhaustion_nonterminal": 0
+    }
+  },
+  "known_limits": [
+    "historical successful artifact integrity scan has cumulative O(n^2)-like cost over growing histories",
+    "syntactically novel evidence is not proof of semantic usefulness",
+    "new verified facts are not automatically proven relevant to the active goal"
+  ],
+  "release_verification_required": true
+}

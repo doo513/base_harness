@@ -9,67 +9,51 @@ Stage 02  PASS / EXITED
 Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
 Stage 05  PASS / EXITED   v0.6.0
-Stage 06  NEXT / NOT STARTED
+Stage 06  PASS CANDIDATE  v0.7.0 release verification pending
 ```
 
-## Stage 02 boundary
+## Existing guarantee boundaries
 
-`LinuxNamespaceSandboxBackend` is production-isolated only when live `runtime_probe` succeeds. Five current hosted-CI namespace tests skip because that environment cannot establish the production probe; these skips are not treated as PASS evidence and do not replace the previously recorded direct Stage 02 attack evidence.
+- Stage 02 production isolation requires a successful live `runtime_probe`; hosted namespace skips are not proof.
+- Stage 03 non-idempotent execution is at-most-once automatic execution, not universal exactly-once semantics.
+- Stage 04 generic structured verification does not solve arbitrary natural-language truth.
+- Stage 05 proves durable recovery-control state, not guaranteed LLM semantic repair or arbitrary external rollback.
 
-## Stage 03 guarantee
+## Stage 06 candidate
+
+Final candidate before release promotion: `v0.7.0-rc3`, commit `3188ea75f7ca3d503cd8557cd7dd8bd562eaa2d4`, GitHub Actions `31937830666`.
 
 ```text
-COMMITTED non-idempotent receipt -> deduplicate
-PREPARED-only receipt            -> ambiguous, halt/fail closed
+pytest                              112 passed / 5 skipped
+Stage 03 resume                     4 / 4 PASS; duplicate=0
+Stage 04 semantic                   8 / 8 PASS; FP=0/FN=0
+Stage 05 all direct probes          PASS
+Stage 06 base                       3 / 3 PASS
+Stage 06 adversarial                3 / 3 PASS
+Stage 06 resume                     3 / 3 PASS
+Stage 06 boundary                   4 / 4 PASS
+Stage 06 strategy                   6 / 6 PASS
+zero-tolerance Stage 06 counters    all 0
 ```
 
-This is at-most-once automatic execution, not universal exactly-once semantics.
+Implemented candidate semantics:
 
-## Stage 04 guarantee
+- progress policy and state are durable/provenance-bound;
+- Actor narrative/speculation cannot self-declare progress;
+- verified fact semantic-content changes can be progress while evidence-ref metadata churn cannot;
+- successful evidence must be integrity checked and content-novel;
+- historical successful evidence is revalidated before Actor continuation;
+- specific Stage 05 failures outrank generic no-progress;
+- recovery is not an Actor progress sample;
+- same-family and global no-progress windows are deterministic;
+- strategy switch resets local windows but is not progress;
+- identical evidence remains known across strategies;
+- strategy exhaustion routes to terminal Stage 05 `ESCALATE`.
 
-Domain `VerificationContract` controls verifier coverage/strength/evidence requirements. Generic structured assertions are evidence-integrity checked and cannot masquerade as arbitrary domain-semantic facts. Natural-language truth is not generically solved.
+Known boundaries: semantic relevance is not solved and historical evidence revalidation has cumulative performance cost.
 
-## Stage 05 — Failure Recovery
+## Current gate
 
-Status: **PASS / EXITED**.  
-Version: `v0.6.0`.
+The package/version is being promoted to the `v0.7.0` release snapshot. **Do not begin Stage 07 until the release snapshot independently passes the same CI/probe matrix and `STAGE6_EXIT_DECISION.md` records PASS / EXITED.**
 
-Implemented:
-- execution-semantic resume provenance hardening (`v0.5.1`);
-- explicit stateful-controller checkpoint protocol (`v0.5.2`);
-- durable `RecoveryTransition` PENDING/APPLIED/SUPERSEDED state;
-- immediate scheduling/application checkpoints;
-- recovery-before-Actor ordering on resume;
-- logical-only speculative rollback;
-- explicit retry-safety gate;
-- terminal fail-closed recovery for security/persistence/budget;
-- generation-scoped repeat escalation;
-- failure/recovery audit linkage and budget-boundary checks.
-
-Final candidate evidence (`v0.6.0-rc6`, commit `c50a4bd15a86b3e26bf1fe52c15edde61738edd0`, Actions `31936441736`):
-
-```text
-pytest                             94 passed / 5 skipped
-Stage 03 resume probe              4 / 4 PASS
-duplicate external actions        0
-Stage 04 semantic matrix           8 / 8 PASS
-Stage 04 FP / FN                   0 / 0
-Stage 05 base recovery             PASS
-Stage 05 adversarial               PASS
-Stage 05 terminal                  PASS
-Stage 05 crash-window              PASS
-Stage 05 strategy generation       PASS
-unsafe automatic retries           0
-verified-fact recovery mutations   0
-ambiguous external executions      0
-lost scheduled recoveries          0
-hard-budget step overshoot          0
-```
-
-Important scope: Stage 05 proves durable recovery-control state, not guaranteed LLM semantic repair or external transaction rollback.
-
-## Current unresolved work
-
-The next allowed Stage is **Stage 06 — Loop / Progress Control**.
-
-Before implementation, freeze a Progress Contract defining kernel-observable progress, no-progress identity, generation/reset semantics, escalation policy, and interaction with Stage 05 recovery. Do not begin with an embedding/LLM similarity heuristic.
+After that gate, the next planned Stage is **Stage 07 — Context Governance** with a Context Projection Contract first.

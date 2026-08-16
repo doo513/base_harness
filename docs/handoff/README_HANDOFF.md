@@ -9,31 +9,31 @@ Stage 02  PASS / EXITED
 Stage 03  PASS / EXITED   v0.4.0
 Stage 04  PASS / EXITED   v0.5.0
 Stage 05  PASS / EXITED   v0.6.0
-Stage 06  NEXT / NOT STARTED
+Stage 06  PASS CANDIDATE  v0.7.0 release verification pending
 ```
 
-## Stage 05 final evidence
+## Stage 06 final candidate evidence
 
-Final candidate `v0.6.0-rc6`:
+`v0.7.0-rc3` / commit `3188ea75f7ca3d503cd8557cd7dd8bd562eaa2d4` / Actions `31937830666`:
 
 ```text
-commit                     c50a4bd15a86b3e26bf1fe52c15edde61738edd0
-GitHub Actions             31936441736
-pytest                     94 passed / 5 skipped
+pytest                     112 passed / 5 skipped
 Stage 03 resume            4 / 4 PASS; duplicate=0
 Stage 04 semantic          8 / 8 PASS; FP=0/FN=0
-Stage 05 recovery          PASS
-Stage 05 adversarial       PASS
-Stage 05 terminal          PASS
-Stage 05 crash-window      PASS
-Stage 05 strategy-gen      PASS
+Stage 05 all probes        PASS
+Stage 06 base              3 / 3 PASS
+Stage 06 adversarial       3 / 3 PASS
+Stage 06 resume            3 / 3 PASS
+Stage 06 boundary          4 / 4 PASS
+Stage 06 strategy          6 / 6 PASS
+zero-tolerance counters    all 0
 ```
 
-Five skips are hosted-environment live Linux namespace tests. They do not replace Stage 02 production isolation evidence.
+Five skips are hosted-environment live Linux namespace tests and do not replace Stage 02 production isolation evidence.
 
-## Stage 05 guarantee boundary
+## Stage 06 guarantee boundary
 
-The kernel durably schedules/applies recovery control transitions and terminal fail-closed states. It does **not** guarantee that an LLM semantically follows REPAIR/REPLAN, does not provide exactly-once Actor directive delivery, and does not transactionally roll back arbitrary external systems.
+Stage 06 is deterministic/syntactic progress control, not semantic progress understanding. New canonical tool output or newly verified truth can still be irrelevant to the active goal. Continuously changing valid outputs can remain syntactically novel. Historical successful evidence is conservatively re-hashed before Actor continuation, with a known cumulative performance cost.
 
 ## Mandatory workflow
 
@@ -66,9 +66,10 @@ Continue only on `research/verified-state-stage03`. Do not create a Stage branch
 7. `06_EVIDENCE_STANDARD.md`
 8. `08_AGENT_OPERATING_RULES.md`
 9. `15_DO_NOT_DO.md`
-10. `../STAGE5_IMPLEMENTATION_REPORT.md`
-11. `../STAGE5_EVIDENCE_MATRIX.md`
-12. `../STAGE5_FINAL_REREVIEW.md`
-13. `../STAGE5_EXIT_DECISION.md`
+10. `../STAGE6_PREFLIGHT_REREVIEW.md`
+11. `../STAGE6_IMPLEMENTATION_REPORT.md`
+12. `../STAGE6_EVIDENCE_MATRIX.md`
+13. `../STAGE6_FINAL_REREVIEW.md`
+14. `../stages/stage-06-loop-progress/CONTRACT.md`
 
-The next agent's first task is to re-review the v0.6.0 baseline and freeze the Stage 06 Progress Contract. Do not start with embeddings or an LLM similarity judge.
+The immediate task is **release verification for `v0.7.0`**. Only after that succeeds and `STAGE6_EXIT_DECISION.md` is written may Stage 07 Context Governance begin.
