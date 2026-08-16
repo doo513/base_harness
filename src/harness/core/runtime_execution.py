@@ -4,7 +4,7 @@ from .state import HarnessState, Claim, ClaimStatus, Authority, Observation
 from .storage import PersistenceError, IntegrityError, ResumeConflict
 from .tools import ToolCall
 from .security import Principal, Capability
-from .verification import VerificationLevel
+from .verification import VerificationLevel, VerifierChain
 from .failures import Failure, FailureKind
 
 
@@ -46,17 +46,54 @@ class RuntimeExecutionMixin:
             return
         self.metrics["verification_attempts"] += 1
         self.capability_policy.require(Principal.VERIFIER, Capability.VERIFY)
-        results = self.verifiers.run(
+
+        registry = self.profile.claim_verification_registry()
+        claim_class = None
+        chain = self.verifiers
+        contract = self.profile.verification_contract()
+        if registry is not None:
+            rule = registry.resolve(claim.key)
+            if rule is None:
+                self.log("verification.claim_class_rejected", {
+                    "claim": claim.key,
+                    "reason": "unknown claim class",
+                    "registry": registry.dump(),
+                })
+                self.fail(Failure(
+                    FailureKind.VERIFICATION_FAILED,
+                    f"verification failed: {claim.key}: unknown claim class for profile {self.profile.name}",
+                    action=claim.key,
+                    signature_key=f"claim_class:unknown:{self.profile.name}",
+                ))
+                return
+            claim_class = rule.claim_class
+            allowed = set(rule.allowed_verifiers)
+            selected = [
+                verifier for verifier in self.verifiers.verifiers
+                if str(getattr(verifier, "name", type(verifier).__name__)) in allowed
+            ]
+            if not selected:
+                self.fail(Failure(
+                    FailureKind.IMPLEMENTATION_ERROR,
+                    f"claim class {claim_class} resolved to no configured verifier",
+                    action=claim.key,
+                    signature_key=f"claim_class:no_verifier:{claim_class}",
+                ))
+                return
+            chain = VerifierChain(selected)
+            contract = rule.contract
+
+        results = chain.run(
             claim.value,
             {
                 "state": self.state.snapshot(),
                 "goal": self.goal.goal,
                 "claim_key": claim.key,
+                "claim_class": claim_class,
                 "claim_evidence_refs": claim.evidence_refs,
                 "artifact_root": str(self.artifacts.root),
             },
         )
-        contract = self.profile.verification_contract()
         assessment = contract.assess(results)
         serial = [
             {
@@ -74,7 +111,12 @@ class RuntimeExecutionMixin:
         ]
         self.log(
             "verification",
-            {"claim": claim.key, "results": serial, "assessment": assessment.dump()},
+            {
+                "claim": claim.key,
+                "claim_class": claim_class,
+                "results": serial,
+                "assessment": assessment.dump(),
+            },
         )
         if assessment.accepted:
             claim.status = ClaimStatus.VERIFIED
@@ -87,7 +129,11 @@ class RuntimeExecutionMixin:
             self.state.commit_verified(claim)
             self.log(
                 "state.commit",
-                {"claim": claim.dump(), "verification_assessment": assessment.dump()},
+                {
+                    "claim": claim.dump(),
+                    "claim_class": claim_class,
+                    "verification_assessment": assessment.dump(),
+                },
             )
         else:
             reason = "; ".join(assessment.reasons) or "verification contract rejected candidate"

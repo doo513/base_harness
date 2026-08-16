@@ -6,6 +6,7 @@ from harness.core.verification import (
     VerificationRequirement,
     VerificationLevel,
 )
+from harness.core.claim_contracts import ClaimContractRegistry, ClaimContractRule
 from harness.core.oracles import NeverAcceptOracle, PredicateCompletionOracle
 from harness.core.tools import make_shell_tool
 from .base import DomainProfile
@@ -41,8 +42,6 @@ class CTFProfile(DomainProfile):
         return VerificationLevel.STRUCTURAL
 
     def verification_contract(self):
-        # Intermediate CTF claims may enter state as evidence-supported facts;
-        # final task success still requires the independent external oracle.
         return VerificationContract(
             minimum_level=VerificationLevel.STRUCTURAL,
             requirements=(
@@ -50,6 +49,19 @@ class CTFProfile(DomainProfile):
                 VerificationRequirement("evidence_present", VerificationLevel.STRUCTURAL, require_evidence=True),
             ),
         )
+
+    def claim_verification_registry(self):
+        # Stage 04 does not claim domain-semantic truth for arbitrary CTF
+        # intermediates. The catch-all class is explicitly structural and maps
+        # only to SUPPORTED authority; final task success remains the oracle.
+        return ClaimContractRegistry((
+            ClaimContractRule(
+                claim_class="ctf.intermediate_supported",
+                key_prefix="",
+                contract=self.verification_contract(),
+                allowed_verifiers=("exists", "evidence_ref"),
+            ),
+        ))
 
     def completion_oracle(self):
         if self.external_oracle is None:

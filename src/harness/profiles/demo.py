@@ -5,6 +5,7 @@ from harness.core.verification import (
     VerificationRequirement,
     VerificationLevel,
 )
+from harness.core.claim_contracts import ClaimContractRegistry, ClaimContractRule
 from harness.core.oracles import PredicateCompletionOracle, CompletionResult
 from .base import DomainProfile
 
@@ -31,6 +32,16 @@ class DemoProfile(DomainProfile):
             minimum_level=VerificationLevel.SCHEMA,
             requirements=(VerificationRequirement("candidate_exists", VerificationLevel.SCHEMA),),
         )
+
+    def claim_verification_registry(self):
+        return ClaimContractRegistry((
+            ClaimContractRule(
+                claim_class="demo.state",
+                key_prefix="demo.",
+                contract=self.verification_contract(),
+                allowed_verifiers=("exists",),
+            ),
+        ))
 
     def completion_oracle(self):
         def check(*, goal, state, workspace):

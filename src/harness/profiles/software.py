@@ -7,6 +7,7 @@ from harness.core.verification import (
     VerificationRequirement,
     VerificationLevel,
 )
+from harness.core.claim_contracts import ClaimContractRegistry, ClaimContractRule
 from harness.core.oracles import CommandCompletionOracle, SealedCommandCompletionOracle, NeverAcceptOracle
 from harness.core.tools import make_shell_tool
 from .base import DomainProfile
@@ -58,6 +59,16 @@ class SoftwareProfile(DomainProfile):
                 VerificationRequirement("artifact_semantics", VerificationLevel.EXECUTION, require_evidence=True, minimum_confidence=1.0),
             ),
         )
+
+    def claim_verification_registry(self):
+        return ClaimContractRegistry((
+            ClaimContractRule(
+                claim_class="software.artifact_assertion",
+                key_prefix="artifact_assertion.",
+                contract=self.verification_contract(),
+                allowed_verifiers=("exists", "evidence_ref", "structured_artifact_assertion"),
+            ),
+        ))
 
     def completion_oracle(self):
         if not self.acceptance_commands:
