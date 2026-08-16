@@ -26,6 +26,8 @@ jobs:
         run: python scripts/stage3_resume_probe.py
       - name: Stage 04 semantic probe
         run: python scripts/stage4_semantic_probe.py
+      - name: Stage 04 repository-style semantic benchmark
+        run: python scripts/stage4_realworld_semantic_benchmark.py
       - name: Stage 05 recovery probe
         run: python scripts/stage5_recovery_probe.py
       - name: Stage 05 adversarial recovery probe
