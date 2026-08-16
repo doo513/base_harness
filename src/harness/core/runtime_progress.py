@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any
 
 from .failures import Failure, FailureKind
-from .progress import decision_progress_signatures
-from .storage import IntegrityError
+from .progress import decision_progress_signatures, normalize_progress_value
+from .storage import IntegrityError, canonical_hash
 
 
 class RuntimeProgressMixin:
@@ -26,6 +27,22 @@ class RuntimeProgressMixin:
         progress.family_repeat_count = 0
         return True
 
+    def _progress_facts_hash(self) -> str:
+        """Hash semantic verified-fact content, not Actor-churnable metadata.
+
+        Evidence refs are intentionally excluded. Re-attaching a different ref
+        to the same already-verified key/value must not manufacture progress.
+        """
+        content = {
+            key: {
+                "value": normalize_progress_value(claim.value),
+                "status": claim.status.value,
+                "authority": claim.authority.value,
+            }
+            for key, claim in sorted(self.state.facts.items())
+        }
+        return canonical_hash(content)
+
     @staticmethod
     def _digest_prefix_from_artifact_ref(ref: str) -> str:
         if not isinstance(ref, str) or not ref.startswith("artifact://"):
@@ -38,7 +55,8 @@ class RuntimeProgressMixin:
             raise IntegrityError("progress evidence artifact digest is malformed")
         return digest
 
-    def _verify_artifact_digest(self, ref: str) -> str:
+    def _verified_observation_fingerprint(self, ref: str) -> str:
+        """Integrity-check raw bytes, then fingerprint normalized JSON content."""
         expected = self._digest_prefix_from_artifact_ref(ref)
         try:
             path = self.artifacts.resolve(ref)
@@ -46,25 +64,39 @@ class RuntimeProgressMixin:
             raise IntegrityError(f"progress evidence artifact ref is invalid: {exc}") from exc
         if not path.is_file():
             raise IntegrityError("progress evidence artifact is missing")
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        raw = path.read_bytes()
+        actual = hashlib.sha256(raw).hexdigest()
         if actual != expected:
             raise IntegrityError("progress evidence artifact content hash mismatch")
-        return expected
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise IntegrityError(f"progress evidence artifact JSON cannot be decoded: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise IntegrityError("progress evidence artifact payload is not an object")
+        if payload.get("ok") is not True:
+            raise IntegrityError("successful observation points to a non-success artifact payload")
+        return canonical_hash(normalize_progress_value(payload))
 
-    def _known_successful_observation_digests(self) -> set[str]:
-        digests: set[str] = set()
+    def _known_successful_observation_fingerprints(self) -> set[str]:
+        fingerprints: set[str] = set()
         for observation in self.state.observations:
             if not observation.ok or observation.artifact_ref is None:
                 continue
-            digests.add(self._digest_prefix_from_artifact_ref(observation.artifact_ref))
-        return digests
+            # Historical evidence is re-verified rather than trusting only the
+            # digest embedded in its reference. This turns later tamper into a
+            # typed persistence failure at the next Actor boundary.
+            fingerprints.add(self._verified_observation_fingerprint(observation.artifact_ref))
+        return fingerprints
 
     def _progress_baseline(self) -> dict[str, Any]:
+        facts_hash = self._progress_facts_hash()
+        successful_fingerprints = self._known_successful_observation_fingerprints()
         generation_reset = self._sync_progress_generation()
         return {
-            "facts_hash": self._facts_hash(),
+            "facts_hash": facts_hash,
             "observation_count": len(self.state.observations),
-            "successful_digests": self._known_successful_observation_digests(),
+            "successful_fingerprints": successful_fingerprints,
             "strategy_generation": int(self.state.strategy_generation),
             "generation_reset": generation_reset,
         }
@@ -81,22 +113,22 @@ class RuntimeProgressMixin:
         family_signature, exact_signature = decision_progress_signatures(decision)
 
         reasons: list[str] = []
-        if self._facts_hash() != baseline["facts_hash"]:
-            reasons.append("verified_fact_hash_changed")
+        if self._progress_facts_hash() != baseline["facts_hash"]:
+            reasons.append("verified_fact_content_changed")
 
-        prior_digests = set(baseline["successful_digests"])
-        novel_digests: list[str] = []
+        prior_fingerprints = set(baseline["successful_fingerprints"])
+        novel_fingerprints: list[str] = []
         start = int(baseline["observation_count"])
         for observation in self.state.observations[start:]:
             if not observation.ok:
                 continue
             if observation.artifact_ref is None:
                 raise IntegrityError("successful observation is missing artifact_ref")
-            digest = self._verify_artifact_digest(observation.artifact_ref)
-            if digest not in prior_digests and digest not in novel_digests:
-                novel_digests.append(digest)
-        if novel_digests:
-            reasons.append("novel_successful_observation_digest")
+            fingerprint = self._verified_observation_fingerprint(observation.artifact_ref)
+            if fingerprint not in prior_fingerprints and fingerprint not in novel_fingerprints:
+                novel_fingerprints.append(fingerprint)
+        if novel_fingerprints:
+            reasons.append("novel_successful_observation_content")
 
         made_progress = bool(reasons)
         progress.evaluations += 1
@@ -135,7 +167,7 @@ class RuntimeProgressMixin:
                             "progress control exhausted strategy generations without recognized progress: "
                             f"generation={generation}, last_progress_generation={progress.last_progress_generation}"
                         ),
-                        action=family_signature,
+                        action="stage6:strategy_exhausted",
                         signature_key="stage6:strategy_exhausted",
                     )
                 elif progress.family_repeat_count >= self.progress_policy.family_repeat_limit:
@@ -155,9 +187,9 @@ class RuntimeProgressMixin:
                         FailureKind.NO_PROGRESS,
                         (
                             "consecutive Actor decisions produced no recognized progress: "
-                            f"streak={progress.no_progress_streak}"
+                            f"streak={progress.no_progress_streak}; latest_family={family_signature}"
                         ),
-                        action=family_signature,
+                        action="stage6:global_no_progress",
                         signature_key="stage6:global_no_progress",
                     )
 
@@ -184,7 +216,7 @@ class RuntimeProgressMixin:
             "exact_signature": exact_signature,
             "made_progress": made_progress,
             "progress_reasons": list(reasons),
-            "novel_successful_observation_digests": novel_digests,
+            "novel_successful_observation_fingerprints": novel_fingerprints,
             "strategy_generation": generation,
             "generation_reset": bool(baseline.get("generation_reset", False)),
             "no_progress_streak": progress.no_progress_streak,

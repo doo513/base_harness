@@ -208,9 +208,6 @@ class RuntimeExecutionMixin:
             try:
                 result, receipt_id, deduplicated = self._execute_tool_durable(call)
             except (PersistenceError, IntegrityError, ResumeConflict) as exc:
-                # Persistence ambiguity is terminal, but terminality is owned by
-                # the recovery transition rather than an ad-hoc runtime flag.
-                # This guarantees CHECKPOINT_STOP is itself persisted/applied.
                 self.fail(Failure(FailureKind.PERSISTENCE_ERROR, str(exc), action=call.tool))
                 return
             observation = self._store_tool_observation(call.tool, result)
@@ -261,7 +258,24 @@ class RuntimeExecutionMixin:
         if self._apply_pending_recovery():
             return True
 
-        progress_baseline = self._progress_baseline()
+        try:
+            progress_baseline = self._progress_baseline()
+        except (PersistenceError, IntegrityError, ResumeConflict) as exc:
+            self.fail(Failure(
+                FailureKind.PERSISTENCE_ERROR,
+                f"progress baseline integrity failure: {exc}",
+                action="progress_baseline",
+                signature_key="stage6:progress_evidence_integrity",
+            ))
+            return False
+        except Exception as exc:
+            self.fail(Failure(
+                FailureKind.IMPLEMENTATION_ERROR,
+                f"progress baseline error: {type(exc).__name__}: {exc}",
+                action="progress_baseline",
+            ))
+            return False
+
         try:
             actor_state = HarnessState.from_snapshot(self.state.snapshot())
             decision = self.controller.decide(self.goal.goal, actor_state, self._context())
@@ -284,9 +298,6 @@ class RuntimeExecutionMixin:
         if self.state.completed or self.halted:
             return False
 
-        # A more specific Stage 05 failure always has precedence. We still
-        # account for the Actor sample, but generic no-progress recovery cannot
-        # supersede the already scheduled transition.
         allow_progress_trigger = self.state.pending_recovery is None
         try:
             self._evaluate_actor_progress(
