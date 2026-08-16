@@ -207,7 +207,9 @@ class RuntimeExecutionMixin:
             try:
                 result, receipt_id, deduplicated = self._execute_tool_durable(call)
             except (PersistenceError, IntegrityError, ResumeConflict) as exc:
-                self.halted = True
+                # Persistence ambiguity is terminal, but terminality is owned by
+                # the recovery transition rather than an ad-hoc runtime flag.
+                # This guarantees CHECKPOINT_STOP is itself persisted/applied.
                 self.fail(Failure(FailureKind.PERSISTENCE_ERROR, str(exc), action=call.tool))
                 return
             observation = self._store_tool_observation(call.tool, result)
@@ -255,8 +257,6 @@ class RuntimeExecutionMixin:
             self._check_completion(decision.payload.get("reason", ""))
 
     def step_once(self) -> bool:
-        # A pending kernel transition has priority over Actor execution. This is
-        # the key resume invariant for Stage 05.
         if self._apply_pending_recovery():
             return True
 
@@ -268,8 +268,6 @@ class RuntimeExecutionMixin:
             self.fail(Failure(FailureKind.IMPLEMENTATION_ERROR, f"controller error: {type(exc).__name__}: {exc}"))
             return False
 
-        # A valid Actor decision is the acknowledgement boundary for a one-shot
-        # recovery directive. The decision itself still passes every normal gate.
         self._consume_recovery_directive()
         self.log("decision", {"kind": decision.kind, "payload": decision.payload})
         try:
