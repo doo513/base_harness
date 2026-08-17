@@ -34,10 +34,17 @@ def main() -> int:
             network_policy=NetworkPolicy.DENY,
         )
 
-        echo_script = 'while IFS= read -r line; do printf "E:%s\\n" "$line"; done'
+        # Regression shape: startup output becomes readable before the response.
+        # Old read semantics returned after the first readable byte and could
+        # therefore return only "ready". The bounded observation window must
+        # accumulate the delayed response in the same read call.
+        delayed_echo_script = (
+            'printf "ready\\n"; '
+            'while IFS= read -r line; do sleep 0.15; printf "E:%s\\n" "$line"; done'
+        )
         created = runtime.execute(ToolCall("session", {
             "op": "create",
-            "argv": ["/bin/sh", "-c", echo_script],
+            "argv": ["/bin/sh", "-c", delayed_echo_script],
         }))
         assert created.ok, created.error
         assert created.isolation and created.isolation["source"] == "runtime_probe"
@@ -51,10 +58,11 @@ def main() -> int:
         observed = runtime.execute(ToolCall("session", {
             "op": "read",
             "session_id": sid,
-            "wait_seconds": 1.0,
+            "wait_seconds": 0.5,
         }))
         assert observed.ok, observed.error
         echoed = _decode(observed.output, "stdout_b64")
+        assert b"ready" in echoed, echoed
         assert b"E:ping" in echoed, echoed
         closed = runtime.execute(ToolCall("session", {"op": "close", "session_id": sid}))
         assert closed.ok, closed.error
@@ -83,6 +91,7 @@ def main() -> int:
                 "all_passed": True,
                 "attestation_source": att.source,
                 "interactive_io": True,
+                "bounded_wait_accumulates_delayed_response": True,
                 "outside_workspace_read_blocked": True,
                 "network_policy": NetworkPolicy.DENY.value,
             },
