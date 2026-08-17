@@ -8,6 +8,7 @@
 - [x] P3 execution result -> observation normalization
 - [x] Unit tests for the new meta contracts
 - [x] Roadmap and architecture documentation
+- [x] GitHub Actions validation workflow
 
 ## Intentionally not implemented yet
 
@@ -17,12 +18,14 @@
 - [ ] information-gain tool routing (P5)
 - [ ] multi-agent execution (P8)
 
-## Validation boundary
+## Validation
 
-The branch contains unittest coverage, but tests were not executed by the assistant's local container because that runtime could not resolve `github.com` to clone the branch. Run the normal repository validation commands before merging:
+The branch is validated remotely with Python 3.12 using:
 
 ```bash
 python3 -m compileall harness
 python3 -m unittest discover -s tests
 python3 scripts/validate_harness.py --strict
 ```
+
+The pull-request validation run completed successfully after the P0-P3 meta implementation and verifier separation were applied.
