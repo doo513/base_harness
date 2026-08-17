@@ -8,6 +8,7 @@ import os
 import select
 import signal
 import subprocess
+import time
 
 
 class NetworkPolicy(str, Enum):
@@ -88,6 +89,12 @@ class PopenExecutionSession:
 
     The process is started in its own process group so interrupt/close apply to
     the complete launched process tree rather than only a shell wrapper.
+
+    ``wait_seconds`` is a bounded observation window, not merely a wait for the
+    first readable byte. A read accumulates stdout/stderr that becomes available
+    anywhere in that window. ``wait_seconds=0`` remains an immediate non-blocking
+    drain. This avoids losing a command response when startup output becomes
+    readable before the later response while still keeping every read bounded.
     """
 
     def __init__(self, proc: subprocess.Popen[bytes], *, cleanup: Callable[[], None] | None = None):
@@ -130,12 +137,66 @@ class PopenExecutionSession:
             raise ValueError("max_bytes must be a positive integer")
         if not isinstance(wait_seconds, (int, float)) or isinstance(wait_seconds, bool) or wait_seconds < 0:
             raise ValueError("wait_seconds must be non-negative")
-        streams = [stream for stream in (self.proc.stdout, self.proc.stderr) if stream is not None]
-        if streams and wait_seconds > 0:
-            select.select(streams, [], [], float(wait_seconds))
-        stdout = self._read_fd(self.proc.stdout, max_bytes)
-        stderr = self._read_fd(self.proc.stderr, max_bytes)
-        return SessionIOResult(stdout=stdout, stderr=stderr, returncode=self.proc.poll())
+
+        wait_seconds = float(wait_seconds)
+        deadline = time.monotonic() + wait_seconds
+        active: dict[Any, str] = {
+            stream: name
+            for name, stream in (("stdout", self.proc.stdout), ("stderr", self.proc.stderr))
+            if stream is not None
+        }
+        chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
+        totals = {"stdout": 0, "stderr": 0}
+
+        def drain_available() -> None:
+            for stream, name in list(active.items()):
+                remaining = max_bytes - totals[name]
+                if remaining <= 0:
+                    continue
+                while remaining > 0:
+                    try:
+                        chunk = os.read(stream.fileno(), min(remaining, 65536))
+                    except BlockingIOError:
+                        break
+                    except OSError:
+                        active.pop(stream, None)
+                        break
+                    if not chunk:
+                        active.pop(stream, None)
+                        break
+                    chunks[name].append(chunk)
+                    totals[name] += len(chunk)
+                    remaining -= len(chunk)
+
+        while True:
+            drain_available()
+            if wait_seconds == 0.0:
+                break
+
+            observable = [
+                stream
+                for stream, name in active.items()
+                if totals[name] < max_bytes
+            ]
+            if not observable:
+                break
+
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0:
+                break
+
+            readable, _, _ = select.select(observable, [], [], remaining_time)
+            if not readable:
+                break
+
+        # One final non-blocking drain closes the small boundary between the
+        # last readiness notification/deadline and result construction.
+        drain_available()
+        return SessionIOResult(
+            stdout=b"".join(chunks["stdout"]),
+            stderr=b"".join(chunks["stderr"]),
+            returncode=self.proc.poll(),
+        )
 
     def interrupt(self) -> None:
         if self._closed or self.proc.poll() is not None:
