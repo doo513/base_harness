@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, Any, Sequence
+from typing import Protocol, Any, Sequence, Callable
 from enum import Enum
 import os
+import select
+import signal
 import subprocess
 
 
@@ -34,6 +36,21 @@ class ExecutionResult:
     timed_out: bool = False
 
 
+@dataclass(frozen=True)
+class SessionIOResult:
+    stdout: bytes = b""
+    stderr: bytes = b""
+    returncode: int | None = None
+
+
+class ExecutionSession(Protocol):
+    def send(self, data: bytes) -> None: ...
+    def read(self, *, max_bytes: int = 65536, wait_seconds: float = 0.0) -> SessionIOResult: ...
+    def interrupt(self) -> None: ...
+    def status(self) -> SessionIOResult: ...
+    def close(self) -> SessionIOResult: ...
+
+
 class ExecutionBackend(Protocol):
     name: str
 
@@ -44,8 +61,7 @@ class ExecutionBackend(Protocol):
         command: str,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
-    ) -> ExecutionResult:
-        ...
+    ) -> ExecutionResult: ...
 
     def run_argv(
         self,
@@ -54,19 +70,123 @@ class ExecutionBackend(Protocol):
         argv: Sequence[str],
         timeout_seconds: float,
         env: dict[str, str] | None = None,
-    ) -> ExecutionResult:
-        ...
+    ) -> ExecutionResult: ...
 
-    def isolation_attestation(self, *, workspace: Path) -> IsolationAttestation:
-        ...
+    def open_argv_session(
+        self,
+        *,
+        workspace: Path,
+        argv: Sequence[str],
+        env: dict[str, str] | None = None,
+    ) -> ExecutionSession: ...
+
+    def isolation_attestation(self, *, workspace: Path) -> IsolationAttestation: ...
+
+
+class PopenExecutionSession:
+    """Binary, non-blocking wrapper around a long-lived subprocess.
+
+    The process is started in its own process group so interrupt/close apply to
+    the complete launched process tree rather than only a shell wrapper.
+    """
+
+    def __init__(self, proc: subprocess.Popen[bytes], *, cleanup: Callable[[], None] | None = None):
+        self.proc = proc
+        self._cleanup = cleanup
+        self._closed = False
+        for stream in (proc.stdout, proc.stderr):
+            if stream is not None:
+                os.set_blocking(stream.fileno(), False)
+
+    @staticmethod
+    def _read_fd(stream, limit: int) -> bytes:
+        if stream is None or limit <= 0:
+            return b""
+        chunks: list[bytes] = []
+        remaining = limit
+        while remaining > 0:
+            try:
+                chunk = os.read(stream.fileno(), min(remaining, 65536))
+            except BlockingIOError:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def send(self, data: bytes) -> None:
+        if self._closed or self.proc.stdin is None:
+            raise RuntimeError("session stdin is closed")
+        if self.proc.poll() is not None:
+            raise RuntimeError("session process has exited")
+        view = memoryview(bytes(data))
+        while view:
+            written = os.write(self.proc.stdin.fileno(), view)
+            view = view[written:]
+
+    def read(self, *, max_bytes: int = 65536, wait_seconds: float = 0.0) -> SessionIOResult:
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+            raise ValueError("max_bytes must be a positive integer")
+        if not isinstance(wait_seconds, (int, float)) or isinstance(wait_seconds, bool) or wait_seconds < 0:
+            raise ValueError("wait_seconds must be non-negative")
+        streams = [stream for stream in (self.proc.stdout, self.proc.stderr) if stream is not None]
+        if streams and wait_seconds > 0:
+            select.select(streams, [], [], float(wait_seconds))
+        stdout = self._read_fd(self.proc.stdout, max_bytes)
+        stderr = self._read_fd(self.proc.stderr, max_bytes)
+        return SessionIOResult(stdout=stdout, stderr=stderr, returncode=self.proc.poll())
+
+    def interrupt(self) -> None:
+        if self._closed or self.proc.poll() is not None:
+            return
+        try:
+            os.killpg(self.proc.pid, signal.SIGINT)
+        except ProcessLookupError:
+            return
+
+    def status(self) -> SessionIOResult:
+        return SessionIOResult(returncode=self.proc.poll())
+
+    def close(self) -> SessionIOResult:
+        if self._closed:
+            return SessionIOResult(returncode=self.proc.poll())
+        try:
+            if self.proc.stdin is not None:
+                try:
+                    self.proc.stdin.close()
+                except OSError:
+                    pass
+            if self.proc.poll() is None:
+                try:
+                    os.killpg(self.proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    self.proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(self.proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    self.proc.wait(timeout=1.0)
+            result = self.read(max_bytes=1024 * 1024, wait_seconds=0.0)
+            return SessionIOResult(result.stdout, result.stderr, self.proc.poll())
+        finally:
+            self._closed = True
+            for stream in (self.proc.stdout, self.proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            if self._cleanup is not None:
+                self._cleanup()
+                self._cleanup = None
 
 
 class LocalProcessBackend:
-    """Plain subprocess backend.
-
-    It deliberately reports filesystem/network isolation as false. This makes
-    strict mode fail closed rather than pretending cwd is a sandbox.
-    """
+    """Plain subprocess backend. It deliberately reports no OS sandbox."""
 
     name = "local_process"
 
@@ -86,38 +206,50 @@ class LocalProcessBackend:
             base.update({str(k): str(v) for k, v in supplied.items()})
         return base
 
+    @staticmethod
+    def _validate_argv(argv: Sequence[str]) -> list[str]:
+        argv = list(argv)
+        if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+            raise ValueError("argv must contain non-empty NUL-free strings")
+        return argv
+
     def run_shell(self, *, workspace, command, timeout_seconds, env=None):
         try:
             proc = subprocess.run(
-                command,
-                cwd=Path(workspace),
-                shell=True,
-                text=True,
-                capture_output=True,
-                timeout=timeout_seconds,
-                env=self._env(env, workspace=Path(workspace)),
+                command, cwd=Path(workspace), shell=True, text=True, capture_output=True,
+                timeout=timeout_seconds, env=self._env(env, workspace=Path(workspace)),
             )
             return ExecutionResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired as exc:
             return ExecutionResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
 
     def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
-        argv = list(argv)
-        if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
-            return ExecutionResult(2, "", "argv must contain non-empty NUL-free strings")
+        try:
+            argv = self._validate_argv(argv)
+        except ValueError as exc:
+            return ExecutionResult(2, "", str(exc))
         try:
             proc = subprocess.run(
-                argv,
-                cwd=Path(workspace),
-                shell=False,
-                text=True,
-                capture_output=True,
-                timeout=timeout_seconds,
-                env=self._env(env, workspace=Path(workspace)),
+                argv, cwd=Path(workspace), shell=False, text=True, capture_output=True,
+                timeout=timeout_seconds, env=self._env(env, workspace=Path(workspace)),
             )
             return ExecutionResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired as exc:
             return ExecutionResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
+
+    def open_argv_session(self, *, workspace, argv, env=None):
+        argv = self._validate_argv(argv)
+        proc = subprocess.Popen(
+            argv,
+            cwd=Path(workspace),
+            shell=False,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._env(env, workspace=Path(workspace)),
+            start_new_session=True,
+        )
+        return PopenExecutionSession(proc)
 
     def isolation_attestation(self, *, workspace):
         return IsolationAttestation(
@@ -130,11 +262,7 @@ class LocalProcessBackend:
 
 
 class RecordingIsolatedTestBackend:
-    """Test-only backend.
-
-    It does not execute arbitrary commands. Tests inject deterministic outcomes
-    while exercising policy code that requires a positively attested backend.
-    """
+    """Test-only backend for policy tests; it never executes arbitrary commands."""
 
     name = "recording_isolated_test"
 
@@ -143,20 +271,12 @@ class RecordingIsolatedTestBackend:
         self.calls: list[dict[str, Any]] = []
 
     def run_shell(self, *, workspace, command, timeout_seconds, env=None):
-        self.calls.append({
-            "workspace": str(Path(workspace).resolve()),
-            "command": command,
-            "timeout_seconds": timeout_seconds,
-        })
+        self.calls.append({"workspace": str(Path(workspace).resolve()), "command": command, "timeout_seconds": timeout_seconds})
         return self.outcomes.get(command, ExecutionResult(0, "", ""))
 
     def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
         argv = tuple(argv)
-        self.calls.append({
-            "workspace": str(Path(workspace).resolve()),
-            "argv": list(argv),
-            "timeout_seconds": timeout_seconds,
-        })
+        self.calls.append({"workspace": str(Path(workspace).resolve()), "argv": list(argv), "timeout_seconds": timeout_seconds})
         return self.outcomes.get(argv, ExecutionResult(0, "", ""))
 
     def isolation_attestation(self, *, workspace):
