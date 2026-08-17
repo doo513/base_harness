@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, Any
+from typing import Protocol, Any, Sequence
 from enum import Enum
 import os
 import subprocess
@@ -47,6 +47,16 @@ class ExecutionBackend(Protocol):
     ) -> ExecutionResult:
         ...
 
+    def run_argv(
+        self,
+        *,
+        workspace: Path,
+        argv: Sequence[str],
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> ExecutionResult:
+        ...
+
     def isolation_attestation(self, *, workspace: Path) -> IsolationAttestation:
         ...
 
@@ -67,10 +77,6 @@ class LocalProcessBackend:
         if self.inherit_env:
             base = dict(os.environ)
         else:
-            # Minimal environment: enough for common CLI lookup without leaking
-            # the parent process's arbitrary API keys/secrets. HOME is redirected
-            # to the actor workspace so tools do not automatically discover the
-            # harness user's normal home configuration.
             base = {
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                 "HOME": str(Path(workspace).resolve()),
@@ -91,18 +97,27 @@ class LocalProcessBackend:
                 timeout=timeout_seconds,
                 env=self._env(env, workspace=Path(workspace)),
             )
-            return ExecutionResult(
-                returncode=proc.returncode,
-                stdout=proc.stdout,
-                stderr=proc.stderr,
-            )
+            return ExecutionResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired as exc:
-            return ExecutionResult(
-                returncode=124,
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or "",
-                timed_out=True,
+            return ExecutionResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
+
+    def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
+        argv = list(argv)
+        if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+            return ExecutionResult(2, "", "argv must contain non-empty NUL-free strings")
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=Path(workspace),
+                shell=False,
+                text=True,
+                capture_output=True,
+                timeout=timeout_seconds,
+                env=self._env(env, workspace=Path(workspace)),
             )
+            return ExecutionResult(proc.returncode, proc.stdout, proc.stderr)
+        except subprocess.TimeoutExpired as exc:
+            return ExecutionResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
 
     def isolation_attestation(self, *, workspace):
         return IsolationAttestation(
@@ -110,10 +125,7 @@ class LocalProcessBackend:
             network_isolated=False,
             environment_sanitized=not self.inherit_env,
             source="backend_declaration",
-            evidence={
-                "cwd_only": True,
-                "note": "cwd is not an OS filesystem sandbox",
-            },
+            evidence={"cwd_only": True, "note": "cwd is not an OS filesystem sandbox"},
         )
 
 
@@ -126,7 +138,7 @@ class RecordingIsolatedTestBackend:
 
     name = "recording_isolated_test"
 
-    def __init__(self, outcomes: dict[str, ExecutionResult] | None = None):
+    def __init__(self, outcomes: dict[Any, ExecutionResult] | None = None):
         self.outcomes = dict(outcomes or {})
         self.calls: list[dict[str, Any]] = []
 
@@ -136,10 +148,16 @@ class RecordingIsolatedTestBackend:
             "command": command,
             "timeout_seconds": timeout_seconds,
         })
-        return self.outcomes.get(
-            command,
-            ExecutionResult(0, "", ""),
-        )
+        return self.outcomes.get(command, ExecutionResult(0, "", ""))
+
+    def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
+        argv = tuple(argv)
+        self.calls.append({
+            "workspace": str(Path(workspace).resolve()),
+            "argv": list(argv),
+            "timeout_seconds": timeout_seconds,
+        })
+        return self.outcomes.get(argv, ExecutionResult(0, "", ""))
 
     def isolation_attestation(self, *, workspace):
         return IsolationAttestation(
