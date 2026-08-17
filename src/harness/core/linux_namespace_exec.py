@@ -130,6 +130,28 @@ class LinuxNamespaceExecutionMixin:
         except Exception as exc:
             return ExecutionResult(126, "", f"sandbox setup failed: {type(exc).__name__}: {exc}")
 
+    def _run_shell_unchecked(
+        self,
+        *,
+        workspace: Path,
+        command: str,
+        timeout_seconds: float,
+        env: dict[str, str] | None,
+    ) -> ExecutionResult:
+        """Compatibility path used by the live sandbox probe.
+
+        Shell semantics are explicit and are implemented as structured argv so
+        the namespace setup still receives the executable/arguments separately.
+        """
+        if not isinstance(command, str) or not command.strip():
+            return ExecutionResult(2, "", "command must be a non-empty string")
+        return self._run_argv_unchecked(
+            workspace=Path(workspace),
+            argv=["/bin/sh", "-c", command],
+            timeout_seconds=timeout_seconds,
+            env=env,
+        )
+
     def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
         argv = list(argv)
         if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
@@ -141,9 +163,9 @@ class LinuxNamespaceExecutionMixin:
     def run_shell(self, *, workspace, command, timeout_seconds, env=None):
         if not isinstance(command, str) or not command.strip():
             return ExecutionResult(2, "", "command must be a non-empty string")
-        return self.run_argv(
+        return self._run_shell_unchecked(
             workspace=Path(workspace),
-            argv=["/bin/sh", "-c", command],
+            command=command,
             timeout_seconds=timeout_seconds,
             env=env,
         )
