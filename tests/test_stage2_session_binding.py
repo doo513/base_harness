@@ -37,6 +37,36 @@ def test_local_persistent_session_send_read_uses_structured_argv(tmp_path):
     assert marker.exists() is False
 
 
+def test_session_read_wait_window_accumulates_startup_and_delayed_response(tmp_path):
+    """Regression for the first-readable-byte race found by CTF integration CI.
+
+    The child emits startup output immediately, then deliberately delays its
+    response after reading input. A read with a 0.5 s observation window must
+    retain the startup bytes *and* continue observing long enough to capture the
+    later response in the same bounded call.
+    """
+    code = (
+        "import sys,time; "
+        "print('ready', flush=True); "
+        "line=sys.stdin.readline(); "
+        "time.sleep(0.15); "
+        "print('E:'+line.strip(), flush=True); "
+        "sys.stdin.readline()"
+    )
+    session = LocalProcessBackend().open_argv_session(
+        workspace=tmp_path,
+        argv=[sys.executable, "-u", "-c", code],
+    )
+    try:
+        session.send(b"ping\n")
+        observed = session.read(wait_seconds=0.5)
+        assert b"ready\n" in observed.stdout
+        assert b"E:ping\n" in observed.stdout
+        assert observed.returncode is None
+    finally:
+        session.close()
+
+
 def test_strict_session_attestation_and_execution_use_same_backend_object(tmp_path):
     class FakeSession:
         def __init__(self): self.sent = []
