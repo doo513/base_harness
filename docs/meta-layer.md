@@ -21,11 +21,13 @@ The meta layer introduces four contracts:
 
 ## Safety Boundary
 
-The orchestrator does not select a model and does not execute commands by itself. Callers must inject a `reasoner` and an `executor`. This prevents the meta layer from turning the existing bounded intake workflow into an implicit arbitrary-command loop.
+The orchestrator does not select a model and does not execute commands by itself. Callers inject a `reasoner`, an `executor`, and optionally a semantic `verifier`. This prevents the meta layer from turning the existing bounded intake workflow into an implicit arbitrary-command loop.
+
+Tool execution success is intentionally distinct from goal verification. For example, `exit_code == 0` can produce useful evidence, but it does not automatically mark a success criterion as verified. The default verifier only accepts evidence already marked as verified; a stronger evaluator can be injected later.
 
 ## Completion Semantics
 
-A loop is complete only when required success criteria have verified evidence. Evidence presence by itself is insufficient. With no success criteria, verification does not implicitly pass.
+A loop is complete only when required success criteria have verified evidence, or when an injected verifier explicitly returns a passing `VerificationResult`. Evidence presence by itself is insufficient. With no success criteria, the default verifier does not implicitly pass.
 
 ## Intended Next Step
 
