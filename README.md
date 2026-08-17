@@ -16,6 +16,20 @@ Base Harness is a small single-agent MVP for turning a user request and local pr
 
 The MVP stays local and deterministic. It does not include a vector database, managed worker runtime, fake MCP server, or external orchestration layer.
 
+## Closed-Loop Meta Layer
+
+The repository also contains a deterministic meta layer for the next harness stages:
+
+- `harness/core/contracts.py`: loop stages, success criteria, typed evidence, actions, observations, and verification results.
+- `harness/core/verification.py`: semantic completion checks based on verified evidence rather than evidence presence alone.
+- `harness/core/execution.py`: normalization from existing tool results into loop observations.
+- `harness/core/orchestrator.py`: injectable `Context -> Reason -> Act -> Observe -> Verify` loop around `run_intake_workflow()`.
+- `harness/core/benchmark.py`: baseline/harness benchmark records and comparison summaries.
+
+The orchestrator deliberately does not embed an LLM provider or unrestricted command runner. A reasoner and executor must be injected explicitly, so the meta layer remains deterministic and testable while later stages can connect real providers safely.
+
+The development priority and rationale are recorded in `docs/base-harness-priority-roadmap.md`.
+
 ## Day 1 Commands
 
 Validate the harness:
