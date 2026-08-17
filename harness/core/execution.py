@@ -11,8 +11,15 @@ def observation_from_tool_result(
     *,
     criterion_id: str | None = None,
     expected: str | None = None,
+    verified: bool = False,
 ) -> Observation:
-    """Normalize an existing harness tool result into a closed-loop observation."""
+    """Normalize an existing harness tool result into a closed-loop observation.
+
+    Tool success and semantic verification are intentionally separate. A command
+    returning zero may be useful evidence, but it does not prove that a goal's
+    success criterion is satisfied. Callers may set ``verified=True`` only after
+    an explicit verifier/evaluator has accepted the observation.
+    """
 
     exit_code_value = result.get("exit_code", result.get("returncode"))
     exit_code = exit_code_value if isinstance(exit_code_value, int) else None
@@ -38,8 +45,8 @@ def observation_from_tool_result(
                 source=action.name,
                 observed=summary,
                 expected=expected,
-                verified=ok,
-                metadata={"exit_code": exit_code},
+                verified=bool(ok and verified),
+                metadata={"exit_code": exit_code, "tool_ok": ok},
             ),
         )
 
