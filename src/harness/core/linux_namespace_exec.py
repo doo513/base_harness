@@ -11,10 +11,6 @@ from .sandbox_primitives import ExecutionResult, NetworkPolicy
 class LinuxNamespaceExecutionMixin:
     def _prepare_root(self, root: Path, *, workspace: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
-
-        # /usr is the primary immutable runtime tree. Preserve the common
-        # merged-/usr symlinks inside the chroot instead of bind-mounting the
-        # host root filesystem.
         (root / "usr").mkdir(parents=True, exist_ok=True)
         for link, target in (
             ("bin", "usr/bin"),
@@ -26,9 +22,6 @@ class LinuxNamespaceExecutionMixin:
             if not p.exists() and not p.is_symlink():
                 p.symlink_to(target)
 
-        # Workspace and explicit read-only mounts keep the same absolute path
-        # inside the chroot. This preserves existing command templates such as
-        # {workspace} and {sealed_root} without exposing unrelated host paths.
         for source in (workspace, *self.runtime_read_only_paths, *self.read_only_paths):
             target = self._path_target(root, source)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -53,13 +46,9 @@ class LinuxNamespaceExecutionMixin:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.touch(exist_ok=True)
 
-        # /vsh-tmp becomes a namespace-local tmpfs during setup. A dedicated
-        # path avoids masking workspaces that legitimately live below /tmp.
         (root / "tmp").mkdir(parents=True, exist_ok=True)
         (root / "vsh-tmp").mkdir(parents=True, exist_ok=True)
 
-        # The chroot skeleton itself must not become a second writable area.
-        # Mounts are installed afterwards by the namespace setup process.
         directories = [p for p in root.rglob("*") if p.is_dir() and not p.is_symlink()]
         for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
             directory.chmod(0o555)
@@ -75,12 +64,13 @@ class LinuxNamespaceExecutionMixin:
             specs.append(f"{source}::{source}")
         return specs
 
-    def _unshare_command(self, *, root: Path, workspace: Path, command: str) -> list[str]:
+    def _unshare_argv_command(self, *, root: Path, workspace: Path, argv: list[str]) -> list[str]:
         available, found = self.required_commands_available()
         if not available:
             missing = [name for name, path in found.items() if not path]
             raise RuntimeError(f"missing Linux sandbox commands: {', '.join(missing)}")
 
+        mount_specs = self._mount_specs()
         cmd = [
             found["unshare"] or "unshare",
             "--user",
@@ -100,33 +90,26 @@ class LinuxNamespaceExecutionMixin:
             str(root),
             str(workspace),
             "rw" if self.workspace_writable else "ro",
-            command,
-            *self._mount_specs(),
+            str(len(mount_specs)),
+            *mount_specs,
+            *argv,
         ])
         return cmd
 
-    def _run_shell_unchecked(
+    def _run_argv_unchecked(
         self,
         *,
         workspace: Path,
-        command: str,
+        argv: list[str],
         timeout_seconds: float,
         env: dict[str, str] | None,
     ) -> ExecutionResult:
         if platform.system() != "Linux":
-            return ExecutionResult(
-                returncode=126,
-                stdout="",
-                stderr="Linux namespace sandbox is only available on Linux",
-            )
+            return ExecutionResult(126, "", "Linux namespace sandbox is only available on Linux")
 
         workspace = Path(workspace).expanduser().resolve()
         if not workspace.exists() or not workspace.is_dir():
-            return ExecutionResult(
-                returncode=126,
-                stdout="",
-                stderr=f"workspace must be an existing directory: {workspace}",
-            )
+            return ExecutionResult(126, "", f"workspace must be an existing directory: {workspace}")
 
         try:
             self._validate_ro_paths(workspace)
@@ -135,38 +118,32 @@ class LinuxNamespaceExecutionMixin:
                 root = Path(td).resolve()
                 self._prepare_root(root, workspace=workspace)
                 proc = subprocess.run(
-                    self._unshare_command(root=root, workspace=workspace, command=command),
+                    self._unshare_argv_command(root=root, workspace=workspace, argv=argv),
                     text=True,
                     capture_output=True,
                     timeout=timeout_seconds,
                     env=self._env(env, workspace=workspace),
                 )
-                return ExecutionResult(
-                    returncode=proc.returncode,
-                    stdout=proc.stdout,
-                    stderr=proc.stderr,
-                )
+                return ExecutionResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired as exc:
-            return ExecutionResult(
-                returncode=124,
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or "",
-                timed_out=True,
-            )
+            return ExecutionResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
         except Exception as exc:
-            return ExecutionResult(
-                returncode=126,
-                stdout="",
-                stderr=f"sandbox setup failed: {type(exc).__name__}: {exc}",
-            )
+            return ExecutionResult(126, "", f"sandbox setup failed: {type(exc).__name__}: {exc}")
+
+    def run_argv(self, *, workspace, argv, timeout_seconds, env=None):
+        argv = list(argv)
+        if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+            return ExecutionResult(2, "", "argv must contain non-empty NUL-free strings")
+        return self._run_argv_unchecked(
+            workspace=Path(workspace), argv=argv, timeout_seconds=timeout_seconds, env=env
+        )
 
     def run_shell(self, *, workspace, command, timeout_seconds, env=None):
         if not isinstance(command, str) or not command.strip():
             return ExecutionResult(2, "", "command must be a non-empty string")
-        return self._run_shell_unchecked(
+        return self.run_argv(
             workspace=Path(workspace),
-            command=command,
+            argv=["/bin/sh", "-c", command],
             timeout_seconds=timeout_seconds,
             env=env,
         )
-
