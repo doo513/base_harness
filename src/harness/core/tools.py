@@ -7,6 +7,7 @@ from pathlib import Path
 import atexit
 import base64
 import binascii
+import hashlib
 import uuid
 
 from .security import Principal, CapabilityPolicy, SecurityViolation, capability_for_side_effect
@@ -198,7 +199,12 @@ class ActionRuntime:
         if not self.strict_isolation or spec.side_effect not in {SideEffect.WRITE, SideEffect.EXTERNAL}: return None, None
         declarative = (SandboxedCommandToolSpec, SandboxedArgvToolSpec, SandboxedSessionToolSpec)
         if not isinstance(spec, declarative):
-            return ("strict isolation forbids generic in-process WRITE/EXTERNAL tools; use a sandboxed declarative tool so the attested backend owns execution", None)
+            return (
+                "strict isolation forbids generic in-process WRITE/EXTERNAL tools; "
+                "use SandboxedCommandToolSpec, SandboxedArgvToolSpec, or SandboxedSessionToolSpec "
+                "so the attested backend owns execution",
+                None,
+            )
         backend = spec.execution_backend
         att = backend.isolation_attestation(workspace=spec.execution_workspace)
         att_dict = {"filesystem_isolated": att.filesystem_isolated, "network_isolated": att.network_isolated, "environment_sanitized": att.environment_sanitized, "source": att.source, "evidence": att.evidence, "execution_kind": spec.execution_kind, "backend_name": getattr(backend, "name", type(backend).__name__)}
@@ -234,11 +240,7 @@ class ActionRuntime:
 
     @staticmethod
     def _session_output(result, *, session_id: str | None = None):
-        out = {
-            "stdout_b64": base64.b64encode(result.stdout).decode("ascii"),
-            "stderr_b64": base64.b64encode(result.stderr).decode("ascii"),
-            "returncode": result.returncode,
-        }
+        out = {"stdout_b64": base64.b64encode(result.stdout).decode("ascii"), "stderr_b64": base64.b64encode(result.stderr).decode("ascii"), "returncode": result.returncode}
         if session_id is not None: out["session_id"] = session_id
         return out
 
@@ -293,7 +295,7 @@ class ActionRuntime:
                     try: data = base64.b64decode(data_b64, validate=True)
                     except (binascii.Error, ValueError): return ToolResult(False, error="data_b64 is not valid base64", isolation=isolation)
                     session.send(data)
-                    return ToolResult(True, output={"session_id": session_id, "input_sha256": __import__("hashlib").sha256(data).hexdigest(), "bytes_sent": len(data)}, isolation=isolation)
+                    return ToolResult(True, output={"session_id": session_id, "input_sha256": hashlib.sha256(data).hexdigest(), "bytes_sent": len(data)}, isolation=isolation)
                 if op == "read":
                     allowed = {"op", "session_id", "max_bytes", "wait_seconds"}
                     if set(call.args) - allowed: return ToolResult(False, error="session read has unsupported arguments", isolation=isolation)
