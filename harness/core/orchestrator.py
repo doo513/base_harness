@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from harness.core.contracts import (
     Action,
@@ -17,15 +17,19 @@ from harness.core.workflow import run_intake_workflow
 
 Reasoner = Callable[[LoopState, dict], Action | None]
 Executor = Callable[[Action], Observation]
+Verifier = Callable[[LoopState], VerificationResult]
+
+
+def default_verifier(state: LoopState) -> VerificationResult:
+    return verify_criteria(state.success_criteria, state.evidence)
 
 
 class ClosedLoopOrchestrator:
     """Deterministic orchestration shell around the existing intake workflow.
 
     The orchestrator intentionally does not own an LLM provider or a command runner.
-    Those capabilities are injected as `reasoner` and `executor`, which keeps the
-    meta layer testable and prevents this scaffold from silently executing arbitrary
-    actions.
+    Reasoning, execution, and semantic verification are injectable so the meta layer
+    stays testable and does not silently turn bounded discovery into arbitrary action.
     """
 
     def __init__(
@@ -33,12 +37,14 @@ class ClosedLoopOrchestrator:
         *,
         reasoner: Reasoner,
         executor: Executor,
+        verifier: Verifier | None = None,
         max_iterations: int = 8,
     ) -> None:
         if max_iterations < 1:
             raise ValueError("max_iterations must be >= 1")
         self.reasoner = reasoner
         self.executor = executor
+        self.verifier = verifier or default_verifier
         self.max_iterations = max_iterations
 
     def run(
@@ -47,7 +53,7 @@ class ClosedLoopOrchestrator:
         *,
         workspace_path: str | Path = ".",
         provided_files: Sequence[str | Path] | None = None,
-        success_criteria: Sequence[str | dict] | None = None,
+        success_criteria: Sequence[str | Mapping[str, object]] | None = None,
     ) -> dict:
         intake_result = run_intake_workflow(
             user_request,
@@ -61,12 +67,12 @@ class ClosedLoopOrchestrator:
             success_criteria=criteria,
         )
 
-        verification: VerificationResult = verify_criteria(state.success_criteria, state.evidence)
+        verification = self.verifier(state)
 
         for _ in range(self.max_iterations):
             action = self.reasoner(state, intake_result)
             if action is None:
-                verification = verify_criteria(state.success_criteria, state.evidence)
+                verification = self.verifier(state)
                 final_stage = LoopStage.COMPLETE if verification.passed else LoopStage.BLOCKED
                 state = replace(state, stage=final_stage)
                 break
@@ -74,8 +80,8 @@ class ClosedLoopOrchestrator:
             state = replace(state, stage=LoopStage.ACT, last_action=action)
             observation = self.executor(action)
             state = state.with_observation(observation)
-            verification = verify_criteria(state.success_criteria, state.evidence)
             state = replace(state, stage=LoopStage.VERIFY)
+            verification = self.verifier(state)
 
             if verification.passed:
                 state = replace(state, stage=LoopStage.COMPLETE)
@@ -83,8 +89,12 @@ class ClosedLoopOrchestrator:
 
             state = replace(state, stage=LoopStage.REASON)
         else:
-            verification = verify_criteria(state.success_criteria, state.evidence)
-            state = replace(state, stage=LoopStage.BLOCKED, notes=state.notes + ("iteration budget exhausted",))
+            verification = self.verifier(state)
+            state = replace(
+                state,
+                stage=LoopStage.BLOCKED,
+                notes=state.notes + ("iteration budget exhausted",),
+            )
 
         return {
             "intake": intake_result,
