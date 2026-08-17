@@ -21,12 +21,12 @@ The MVP stays local and deterministic. It does not include a vector database, ma
 The repository also contains a deterministic meta layer for the next harness stages:
 
 - `harness/core/contracts.py`: loop stages, success criteria, typed evidence, actions, observations, and verification results.
-- `harness/core/verification.py`: semantic completion checks based on verified evidence rather than evidence presence alone.
-- `harness/core/execution.py`: normalization from existing tool results into loop observations.
+- `harness/core/verification.py`: completion checks based on verified evidence rather than evidence presence alone.
+- `harness/core/execution.py`: normalization from existing tool results into loop observations without equating tool success with semantic success.
 - `harness/core/orchestrator.py`: injectable `Context -> Reason -> Act -> Observe -> Verify` loop around `run_intake_workflow()`.
 - `harness/core/benchmark.py`: baseline/harness benchmark records and comparison summaries.
 
-The orchestrator deliberately does not embed an LLM provider or unrestricted command runner. A reasoner and executor must be injected explicitly, so the meta layer remains deterministic and testable while later stages can connect real providers safely.
+The orchestrator deliberately does not embed an LLM provider or unrestricted command runner. A reasoner, executor, and optional semantic verifier are injected explicitly, so the meta layer remains deterministic and testable while later stages can connect real providers safely.
 
 The development priority and rationale are recorded in `docs/base-harness-priority-roadmap.md`.
 
