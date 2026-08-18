@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from time import monotonic, sleep
 from typing import Any, Callable, Mapping, Protocol
+import hashlib
 import json
 import shlex
 import subprocess
@@ -372,3 +373,14 @@ class ModelGateway:
                 for alias, config in sorted(self.models.items())
             },
         }
+
+    @property
+    def revision(self) -> str:
+        payload = json.dumps(
+            self.descriptor(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return "model-gateway:" + hashlib.sha256(payload).hexdigest()
