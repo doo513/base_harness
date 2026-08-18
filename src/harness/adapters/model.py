@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
-import subprocess
+
+from harness.model_gateway import ModelGateway
+
 
 @dataclass
 class ModelProfile:
@@ -10,26 +12,26 @@ class ModelProfile:
     planner_threshold: str = "complex"
     metadata: dict[str, Any] | None = None
 
-class CommandModelAdapter:
-    """Use any local model/agent command as a controller backend.
 
-    The command receives a JSON object with `system` and `user` on stdin and must
-    print one harness Decision JSON object on stdout.
+class CommandModelAdapter:
+    """Backward-compatible command adapter backed by the Model Gateway.
+
+    The command receives JSON with `system` and `user` on stdin and must print
+    one harness Decision JSON object on stdout. Execution is argv-based through
+    the gateway; it no longer uses `shell=True`.
     """
+
     def __init__(self, command: str, timeout_seconds: float = 120):
         self.command = command
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = float(timeout_seconds)
+        self.gateway = ModelGateway.single_command(command, timeout_seconds=self.timeout_seconds)
+
+    @property
+    def revision(self) -> str:
+        return self.gateway.revision
+
+    def telemetry_snapshot(self) -> dict[str, Any]:
+        return self.gateway.telemetry_snapshot()
 
     def complete(self, *, system: str, user: str) -> str:
-        import json
-        proc = subprocess.run(
-            self.command,
-            shell=True,
-            input=json.dumps({"system": system, "user": user}, ensure_ascii=False),
-            text=True,
-            capture_output=True,
-            timeout=self.timeout_seconds,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(f"model command failed ({proc.returncode}): {proc.stderr[-2000:]}")
-        return proc.stdout.strip()
+        return self.gateway.complete(system=system, user=user)
