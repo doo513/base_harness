@@ -63,6 +63,9 @@ class WorkspaceContract:
         contract.validate()
         return contract
 
+    def contains_path(self, path: str | Path) -> bool:
+        return self._contains(self.root, self._resolve(path))
+
     def validate(self) -> None:
         if not self.root.exists():
             raise WorkspaceContractError(f"workspace root does not exist: {self.root}")
@@ -76,6 +79,17 @@ class WorkspaceContract:
             if value is not None and not self._contains(self.root, value):
                 raise WorkspaceContractError(
                     f"{name} must stay inside workspace root: {value}"
+                )
+
+    def validate_tool_workspaces(self, tools: dict[str, Any]) -> None:
+        for name, spec in sorted(tools.items()):
+            execution_workspace = getattr(spec, "execution_workspace", None)
+            if execution_workspace is None:
+                continue
+            resolved = self._resolve(execution_workspace)
+            if not self._contains(self.root, resolved):
+                raise WorkspaceContractError(
+                    f"tool {name!r} execution workspace escapes workspace root: {resolved}"
                 )
 
     def resolve_actor_path(self, relative_path: str | Path) -> Path:
@@ -100,5 +114,6 @@ class WorkspaceContract:
             "build_dir": str(self.build_dir) if self.build_dir is not None else None,
             "cache_dir": str(self.cache_dir) if self.cache_dir is not None else None,
             "managed_paths_inside_root": True,
+            "tool_execution_workspaces_inside_root": True,
             "os_isolation_authority": False,
         }
