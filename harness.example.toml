@@ -1,0 +1,41 @@
+profile = "software"
+run_dir = "./run"
+default_model = "primary"
+
+[workspace]
+root = "."
+temp_dir = ".harness-tmp"
+build_dir = "build"
+cache_dir = ".cache/harness"
+
+[security]
+strict_layout = false
+strict_tool_isolation = false
+network_policy = "allow"
+require_sealed_oracle = false
+
+[models.primary]
+provider = "openai-compatible"
+model = "example-model"
+endpoint = "https://example.invalid/v1"
+api_key = "env:MODEL_API_KEY"
+timeout_seconds = 120
+
+[models.local]
+provider = "command"
+command = "local-agent --json"
+timeout_seconds = 120
+
+[[mcp]]
+name = "repo"
+transport = "stdio"
+command = ["mcp-repo"]
+enabled = false
+
+[mcp.env]
+TOKEN = "env:MCP_TOKEN"
+
+[[plugins]]
+name = "example"
+module = "example_plugin"
+enabled = false
