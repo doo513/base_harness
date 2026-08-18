@@ -1,19 +1,40 @@
 import argparse
 from pathlib import Path
 
+from harness import __version__
+from harness.config import ConfigError, HarnessConfig, load_harness_config
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
 from harness.core.security import SecurityConfig
 from harness.core.sandbox import LocalProcessBackend, LinuxNamespaceSandboxBackend, NetworkPolicy
+from harness.core.workspace import WorkspaceContract
 from harness.adapters.model import CommandModelAdapter
 from harness.profiles import CTFProfile, HackathonProfile, SoftwareProfile, DemoProfile
 
+
+def _load_optional_config() -> HarnessConfig:
+    bootstrap = argparse.ArgumentParser(add_help=False)
+    bootstrap.add_argument("--config")
+    known, _ = bootstrap.parse_known_args()
+    if not known.config:
+        return HarnessConfig()
+    try:
+        return load_harness_config(known.config)
+    except ConfigError as exc:
+        bootstrap.error(str(exc))
+        raise AssertionError("argparse.error must terminate")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Verified-State Harness v0.4.0")
-    parser.add_argument("--profile", choices=["demo", "ctf", "hackathon", "software"], default="demo")
-    parser.add_argument("--run-dir", default="./run")
-    parser.add_argument("--workspace", default=".")
+    config = _load_optional_config()
+    security_defaults = dict(config.security)
+
+    parser = argparse.ArgumentParser(description=f"Verified-State Harness v{__version__}")
+    parser.add_argument("--config", help="TOML harness configuration file.")
+    parser.add_argument("--profile", choices=["demo", "ctf", "hackathon", "software"], default=config.profile)
+    parser.add_argument("--run-dir", default=config.run_dir)
+    parser.add_argument("--workspace", default=config.workspace.root)
     parser.add_argument("--goal")
     parser.add_argument("--accept-command", action="append", default=[],
                         help="Fixed harness-side acceptance command (software/hackathon). Repeatable.")
@@ -30,18 +51,48 @@ def main():
                         help="Fail closed when required reproducibility provenance is missing.")
     parser.add_argument("--sealed-oracle-root",
                         help="Operator-owned acceptance assets outside the actor workspace (software/hackathon).")
-    parser.add_argument("--execution-backend", choices=["local", "linux-namespace"], default="local",
-                        help="Shell execution backend. linux-namespace provides the Stage-02 production sandbox on supported Linux hosts.")
-    parser.add_argument("--strict-layout", action="store_true",
-                        help="Require run/oracle paths to be outside the actor workspace.")
-    parser.add_argument("--strict-tool-isolation", action="store_true",
-                        help="Fail closed unless WRITE/EXTERNAL tools use a positively attested isolation backend.")
-    parser.add_argument("--network-policy", choices=["allow", "deny"], default="allow")
-    parser.add_argument("--require-sealed-oracle", action="store_true",
-                        help="Reject runtime construction unless the profile uses a sealed completion oracle.")
+    parser.add_argument(
+        "--execution-backend",
+        choices=["local", "linux-namespace"],
+        default="local",
+        help="Shell execution backend. linux-namespace provides the Stage-02 production sandbox on supported Linux hosts.",
+    )
+    parser.add_argument(
+        "--strict-layout",
+        action=argparse.BooleanOptionalAction,
+        default=bool(security_defaults.get("strict_layout", False)),
+        help="Require run/oracle paths to be outside the actor workspace.",
+    )
+    parser.add_argument(
+        "--strict-tool-isolation",
+        action=argparse.BooleanOptionalAction,
+        default=bool(security_defaults.get("strict_tool_isolation", False)),
+        help="Fail closed unless WRITE/EXTERNAL tools use a positively attested isolation backend.",
+    )
+    parser.add_argument(
+        "--network-policy",
+        choices=["allow", "deny"],
+        default=str(security_defaults.get("network_policy", "allow")),
+    )
+    parser.add_argument(
+        "--require-sealed-oracle",
+        action=argparse.BooleanOptionalAction,
+        default=bool(security_defaults.get("require_sealed_oracle", False)),
+        help="Reject runtime construction unless the profile uses a sealed completion oracle.",
+    )
     parser.add_argument("--require-oracle-isolation", action="store_true",
                         help="Require the sealed oracle backend to report strong filesystem isolation.")
     args = parser.parse_args()
+
+    try:
+        workspace_contract = WorkspaceContract.build(
+            args.workspace,
+            temp_dir=config.workspace.temp_dir,
+            build_dir=config.workspace.build_dir,
+            cache_dir=config.workspace.cache_dir,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     network_policy = NetworkPolicy(args.network_policy)
     if args.execution_backend == "linux-namespace":
@@ -107,7 +158,7 @@ def main():
         profile=profile,
         controller=controller,
         run_dir=Path(args.run_dir),
-        workspace=Path(args.workspace),
+        workspace_contract=workspace_contract,
         budget=Budget(hard_max_steps=args.max_steps),
         security_config=SecurityConfig(
             strict_layout=args.strict_layout,
@@ -122,6 +173,7 @@ def main():
     state = runtime.run()
     print(f"completed={state.completed} steps={state.step}")
     print(f"run_dir={Path(args.run_dir).resolve()}")
+
 
 if __name__ == "__main__":
     main()
