@@ -1,9 +1,13 @@
-name: research-ci
+name: core-regression-ci
 
 on:
   push:
     branches:
-      - research/verified-state-stage03
+      - develop
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
 
 jobs:
   verify:
