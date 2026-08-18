@@ -20,6 +20,7 @@ from .progress import ProgressPolicy
 from .context import ContextPolicy, ContextProjector
 from .provenance import capture_build_provenance
 from .retrieval import RetrievalPolicy
+from .workspace import WorkspaceContract, WorkspaceContractError
 from .runtime_recovery import RuntimeRecoveryMixin
 from .runtime_retrieval_kernel import RuntimeRetrievalMixin
 from .runtime_progress import RuntimeProgressMixin
@@ -49,6 +50,7 @@ class HarnessRuntime(
         run_dir,
         budget=None,
         workspace=None,
+        workspace_contract: WorkspaceContract | None = None,
         security_config: SecurityConfig | None = None,
         capability_policy: CapabilityPolicy | None = None,
         failure_router: FailureRouter | None = None,
@@ -88,7 +90,18 @@ class HarnessRuntime(
         self.halted = False
         self.elapsed_before_resume = 0.0
 
-        self.workspace = Path(workspace or getattr(profile, "workspace", ".")).resolve()
+        requested_workspace = Path(workspace or getattr(profile, "workspace", ".")).expanduser().resolve()
+        if workspace_contract is None:
+            self.workspace_contract = WorkspaceContract.build(requested_workspace)
+        else:
+            workspace_contract.validate()
+            if workspace is not None and workspace_contract.root != requested_workspace:
+                raise WorkspaceContractError(
+                    "workspace argument and workspace_contract root must identify the same directory"
+                )
+            self.workspace_contract = workspace_contract
+        self.workspace = self.workspace_contract.root
+        self.workspace_contract.ensure_managed_dirs()
         self.run_dir = Path(run_dir).resolve()
 
         # Capture build/runtime identity once before run_dir creation can alter a
@@ -114,8 +127,10 @@ class HarnessRuntime(
         except ValueError as exc:
             raise SecurityViolation(f"invalid network policy: {self.security_config.network_policy}") from exc
 
+        tool_specs = profile.tools()
+        self.workspace_contract.validate_tool_workspaces(tool_specs)
         self.actions = ActionRuntime(
-            profile.tools(),
+            tool_specs,
             capability_policy=self.capability_policy,
             principal=Principal.ACTOR,
             strict_isolation=self.security_config.strict_tool_isolation,
@@ -206,6 +221,7 @@ class HarnessRuntime(
         descriptor["profile"]["claim_verification_registry"] = (
             registry.dump() if registry is not None else None
         )
+        descriptor["workspace_contract"] = self.workspace_contract.descriptor()
         descriptor["failure_recovery"] = self.failure_router.descriptor()
         descriptor["progress_control"] = self.progress_policy.descriptor()
         descriptor["context_governance"] = self.context_policy.descriptor()
@@ -304,6 +320,7 @@ class HarnessRuntime(
                     "progress": self.state.progress.dump(),
                     "context_governance": self.context_policy.descriptor(),
                     "retrieval_memory": self._retrieval_config_descriptor(),
+                    "workspace_contract": self.workspace_contract.descriptor(),
                 },
             )
             self._persist_state("resume.start")
@@ -317,6 +334,7 @@ class HarnessRuntime(
                     "constraints": self.goal.constraints,
                     "pinned_constraints": self.goal.pinned_constraints,
                     "workspace": str(self.workspace),
+                    "workspace_contract": self.workspace_contract.descriptor(),
                     "profile": self.profile.name,
                     "manifest_hash": self.manifest_hash,
                     "provenance_warnings": self.manifest_body.get("provenance_warnings", []),
