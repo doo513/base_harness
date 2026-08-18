@@ -1,6 +1,6 @@
 # Verified-State Harness
 
-This research branch is the standalone implementation of the new harness architecture. `main` remains the preserved legacy Base Harness and is not the development line for this project.
+`develop` is the active development line for the Verified-State Harness. `preprocessing` preserves the current pre-integration snapshot; `main` is the promotion target after validated work.
 
 ## Core invariant
 
@@ -37,47 +37,51 @@ Completion request -> Completion Oracle -> Kernel accepts/rejects
 
 | Stage | Scope | Status |
 |---|---|---|
-| 00 | Research / contracts | HISTORICAL COMPLETE — retrospective canonical genealogy reconstructed |
-| 01 | Truth + execution integrity | HISTORICAL COMPLETE — retrospective canonical genealogy reconstructed |
+| 00 | Research / contracts | HISTORICAL COMPLETE |
+| 01 | Truth + execution integrity | HISTORICAL COMPLETE |
 | 02 | Capability isolation + sealed oracle | PASS / EXITED + remediation hardening |
 | 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) + provenance hardening |
 | 04 | Semantic verification | PASS / EXITED (`v0.5.0`) + claim-class hardening |
-| 05 | Failure recovery | PASS / EXITED (`v0.6.0`) + controlled effectiveness A/B evidence |
+| 05 | Failure recovery | PASS / EXITED (`v0.6.0`) + controlled effectiveness evidence |
 | 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
 | 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
-| 08 | Retrieval / Memory Gateway | **PASS / EXITED (`v0.9.0`)** |
+| 08 | Retrieval / Memory Gateway | PASS / EXITED (`v0.9.0`) |
 
-Current package version: **v0.9.0**.
-
-Stage00/01 canonical directories are retrospective provenance packages. They do not claim the labels/contracts existed in the original archive artifacts; missing archive contents are not reconstructed from memory.
-
-## Stage 08 result
-
-Stage 08 adds a bounded retrieval/evidence gateway without treating retrieval as truth or progress. Release commit `a5645fc9d059afd12088ee1c4751c0250c8a5206` built and installed `verified-state-harness 0.9.0` and passed **182 tests / 5 hosted-environment skips** plus all Stage 03–08 and remediation probes in GitHub Actions run `31954492789`.
+Current package version: **v0.9.1**.
 
 ## Guarantee boundaries
 
-### Stage 02
-Production isolation requires a successful live `runtime_probe`. Hosted-runner skips do not count as production isolation proof. Independent clean-host reproduction remains a coverage gap.
+- Stage 02 production isolation requires a successful live runtime probe; hosted skips are not production proof.
+- Stage 03 provides durable resume and at-most-once automatic handling for non-idempotent execution, not universal exactly-once semantics.
+- Stage 04 claim-class contracts do not solve arbitrary natural-language truth.
+- Stage 05 proves durable recovery control, not guaranteed semantic repair.
+- Stage 06 proves deterministic progress control, not general semantic usefulness or goal relevance.
+- Stage 07 proves governed context projection, not semantic relevance ranking.
+- Stage 08 treats retrieval as evidence only; it does not provide autonomous trusted memory, semantic remote retrieval, or automatic cross-run learning.
 
-### Stage 03
-Non-idempotent effects are at-most-once automatically executed: COMMITTED receipts deduplicate; PREPARED-only receipts halt/fail closed. No universal exactly-once claim. Environment provenance is stronger but does not claim every deployment image/VM is immutably reproduced.
+## Post-Stage08 development
 
-### Stage 04
-Claim-class contracts prevent undeclared semantic promotion, but the current synthetic matrix does not prove broad real-world semantic-verifier coverage.
+Core Stage 00-08 remains frozen except for confirmed defects. New product/integration work is tracked under `docs/tracks/` rather than creating Stage 09+.
 
-### Stage 05
-Recovery guarantees durable control transitions. A frozen deterministic matched A/B benchmark demonstrated positive causal utility: production Recovery completed 3/3 recoverable scenarios while a conservative no-automatic-recovery baseline completed 0/3, with zero terminal-safety regressions. This does **not** establish broad real-world or LLM-agent effectiveness; natural corpus validation remains open.
+Current integration order:
 
-### Stage 06
-Novel successful bytes are activity, not progress. Verified fact transitions provide deterministic epistemic progress, but goal-relevant task/world progress authority remains an open design problem.
+```text
+workspace
+-> config/secrets
+-> model gateway
+-> agent control
+-> tool contracts
+-> MCP/plugin
+-> context relevance
+-> cross-run memory
+-> software/hackathon domain completion
+-> progress/recovery alignment
+-> real E2E/benchmark
+-> TUI
+```
 
-### Stage 07
-Verified trusted-fact projection is deterministically bounded without deleting durable truth. Oversized mandatory goal/control inputs still need an entry-time fail-closed or externalized representation policy.
-
-### Stage 08
-Retrieval is evidence only. Stage 08 does not claim semantic query planning, arbitrary remote-provider honesty, automatic memory writes, or universal filesystem transactions. Failed batch preparation can leave unreferenced content-addressed artifact files that have no state/truth authority but may require later garbage collection.
+Every phase must preserve Kernel authority and leave rationale, implementation, validation, structural-review, and limitation evidence in Markdown before the next phase begins.
 
 ## Development rule
 
-Use `research/verified-state-stage03` as the single continuing research branch. Do not create a branch per Stage. Every completed Stage must include code, tests/probes, machine-readable evidence, implementation/review/exit Markdown reports, and full regression. `main` remains preserved.
+Work on `develop`. Keep `preprocessing` frozen. Promote to `main` only after validation. Do not weaken existing Stage gates to make integration easier.
