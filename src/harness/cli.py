@@ -3,13 +3,13 @@ from pathlib import Path
 
 from harness import __version__
 from harness.config import ConfigError, HarnessConfig, load_harness_config
+from harness.model_gateway import ModelGateway, ModelGatewayError
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
 from harness.core.security import SecurityConfig
 from harness.core.sandbox import LocalProcessBackend, LinuxNamespaceSandboxBackend, NetworkPolicy
 from harness.core.workspace import WorkspaceContract
-from harness.adapters.model import CommandModelAdapter
 from harness.profiles import CTFProfile, HackathonProfile, SoftwareProfile, DemoProfile
 
 
@@ -26,6 +26,17 @@ def _load_optional_config() -> HarnessConfig:
         raise AssertionError("argparse.error must terminate")
 
 
+def _configured_fallbacks(config: HarnessConfig) -> tuple[str, ...]:
+    if config.default_model is None:
+        return ()
+    raw = config.models[config.default_model].options.get("fallback_models", [])
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or any(not isinstance(item, str) or not item for item in raw):
+        raise ConfigError("default model options.fallback_models must be a list of model aliases")
+    return tuple(raw)
+
+
 def main():
     config = _load_optional_config()
     security_defaults = dict(config.security)
@@ -39,14 +50,14 @@ def main():
     parser.add_argument("--accept-command", action="append", default=[],
                         help="Fixed harness-side acceptance command (software/hackathon). Repeatable.")
     parser.add_argument("--model-command",
-                        help="Local model command: JSON {system,user} on stdin -> Decision JSON on stdout.")
+                        help="Legacy local model command. Overrides configured default_model.")
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--resume", action="store_true",
                         help="Resume the persisted run in --run-dir instead of creating a new run.")
     parser.add_argument("--task-revision",
                         help="Stable task/input revision recorded in the run manifest.")
     parser.add_argument("--model-revision",
-                        help="Stable model/provider revision recorded in the run manifest.")
+                        help="Override stable model/provider revision recorded in the run manifest.")
     parser.add_argument("--require-complete-provenance", action="store_true",
                         help="Fail closed when required reproducibility provenance is missing.")
     parser.add_argument("--sealed-oracle-root",
@@ -147,11 +158,22 @@ def main():
             pinned_constraints=goal.pinned_constraints,
         )
 
-    controller = (
-        LLMController(CommandModelAdapter(args.model_command))
-        if args.model_command
-        else DirectController()
-    )
+    gateway = None
+    try:
+        if args.model_command:
+            gateway = ModelGateway.single_command(args.model_command)
+        elif config.default_model is not None:
+            gateway = ModelGateway(
+                models=config.models,
+                default_model=config.default_model,
+                fallback_models=_configured_fallbacks(config),
+            )
+    except (ConfigError, ModelGatewayError) as exc:
+        parser.error(str(exc))
+
+    controller = LLMController(gateway) if gateway is not None else DirectController()
+    effective_model_revision = args.model_revision or (gateway.revision if gateway is not None else None)
+
     runtime_factory = HarnessRuntime.resume if args.resume else HarnessRuntime
     runtime = runtime_factory(
         goal=goal,
@@ -167,7 +189,7 @@ def main():
             require_sealed_oracle=args.require_sealed_oracle,
         ),
         task_revision=args.task_revision,
-        model_revision=args.model_revision,
+        model_revision=effective_model_revision,
         require_complete_provenance=args.require_complete_provenance,
     )
     state = runtime.run()
