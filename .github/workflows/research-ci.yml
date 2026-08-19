@@ -57,7 +57,7 @@ jobs:
           run_gate tui-module python -m harness.tui --help
           run_gate cli-console verified-harness --help
           run_gate tui-console verified-harness-tui --help
-          run_gate full-pytest pytest -q
+          run_gate full-pytest bash -c 'pytest -q > full-pytest.log 2>&1'
           run_gate core-freeze-audit python scripts/core_freeze_audit_probe.py
           run_gate stage03-resume python scripts/stage3_resume_probe.py
           run_gate stage04-semantic python scripts/stage4_semantic_probe.py
@@ -142,6 +142,14 @@ jobs:
             echo '```text'
             if [ -f ci-gates.txt ]; then cat ci-gates.txt; else echo 'validation ledger unavailable'; fi
             echo '```'
+            if [ -f full-pytest.log ]; then
+              echo
+              echo '## Full pytest tail'
+              echo
+              echo '```text'
+              tail -n 160 full-pytest.log
+              echo '```'
+            fi
           } > docs/tracks/integration-runtime/CI_STATUS.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
