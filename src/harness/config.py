@@ -195,6 +195,22 @@ def _expect_mapping(value: Any, path: str) -> dict[str, Any]:
     return dict(value)
 
 
+def _expect_list(value: Any, path: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConfigError(f"{path} must be an array")
+    return list(value)
+
+
+def _expect_bool(value: Any, path: str, *, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ConfigError(f"{path} must be a boolean")
+    return value
+
+
 def _parse_secret(value: Any, path: str) -> SecretRef | None:
     if value is None:
         return None
@@ -235,19 +251,27 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         provider = item.get("provider")
         if not isinstance(provider, str):
             raise ConfigError(f"models.{name}.provider must be a string")
+        try:
+            timeout_seconds = float(item.get("timeout_seconds", 120.0))
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"models.{name}.timeout_seconds must be numeric") from exc
         models[str(name)] = ModelConfig(
             provider=provider,
             model=item.get("model"),
             endpoint=item.get("endpoint"),
             api_key=_parse_secret(item.get("api_key"), f"models.{name}.api_key"),
             command=item.get("command"),
-            timeout_seconds=float(item.get("timeout_seconds", 120.0)),
+            timeout_seconds=timeout_seconds,
             options=_expect_mapping(item.get("options"), f"models.{name}.options"),
         )
 
     mcp_items: list[MCPServerConfig] = []
-    for index, value in enumerate(data.get("mcp", []) or []):
+    for index, value in enumerate(_expect_list(data.get("mcp"), "mcp")):
         item = _expect_mapping(value, f"mcp[{index}]")
+        known = {"name", "transport", "enabled", "command", "url", "env", "options"}
+        extra = sorted(set(item) - known)
+        if extra:
+            raise ConfigError(f"unknown mcp[{index}] keys: " + ", ".join(extra))
         env_raw = _expect_mapping(item.get("env"), f"mcp[{index}].env")
         env = {
             str(key): _parse_secret(secret, f"mcp[{index}].env.{key}")
@@ -258,23 +282,30 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         command_raw = item.get("command", [])
         if not isinstance(command_raw, list) or any(not isinstance(arg, str) or not arg for arg in command_raw):
             raise ConfigError(f"mcp[{index}].command must be a list of non-empty strings")
+        url = item.get("url")
+        if url is not None and not isinstance(url, str):
+            raise ConfigError(f"mcp[{index}].url must be a string")
         mcp_items.append(MCPServerConfig(
             name=str(item.get("name", "")),
             transport=str(item.get("transport", "")),
-            enabled=bool(item.get("enabled", True)),
+            enabled=_expect_bool(item.get("enabled"), f"mcp[{index}].enabled"),
             command=tuple(command_raw),
-            url=item.get("url"),
+            url=url,
             env={key: ref for key, ref in env.items() if ref is not None},
             options=_expect_mapping(item.get("options"), f"mcp[{index}].options"),
         ))
 
     plugin_items: list[PluginConfig] = []
-    for index, value in enumerate(data.get("plugins", []) or []):
+    for index, value in enumerate(_expect_list(data.get("plugins"), "plugins")):
         item = _expect_mapping(value, f"plugins[{index}]")
+        known = {"name", "module", "enabled", "options"}
+        extra = sorted(set(item) - known)
+        if extra:
+            raise ConfigError(f"unknown plugins[{index}] keys: " + ", ".join(extra))
         plugin_items.append(PluginConfig(
             name=str(item.get("name", "")),
             module=str(item.get("module", "")),
-            enabled=bool(item.get("enabled", True)),
+            enabled=_expect_bool(item.get("enabled"), f"plugins[{index}].enabled"),
             options=_expect_mapping(item.get("options"), f"plugins[{index}].options"),
         ))
 
