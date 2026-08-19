@@ -1,14 +1,30 @@
 # Integration Runtime Track
 
-Status: ACTIVE on `develop`.
+Status: **IMPLEMENTED / VALIDATED** on `develop`; promotion to `main` follows the final documentation CI gate.
 
 This track adds practical model/tool/workspace/domain integration around the frozen Verified-State Kernel. It does not create Stage 09 and does not relax Stage 00-08 guarantees.
 
-## Why this track exists
+## Implemented runtime surface
 
-The kernel already governs truth, completion, recovery, progress, context, retrieval admission, persistence, and tool isolation. The remaining gap is practical execution: selecting a workspace, resolving configuration and credentials, connecting real model providers, managing longer-horizon agent work, exposing structured tools/MCP/plugins, carrying useful context/memory across work, and completing Software/Hackathon domain behavior.
+```text
+workspace contract
+-> config / env-backed secrets
+-> Model Gateway
+-> Agent Control
+-> structured tool contracts
+-> MCP stdio / explicit plugins
+-> context relevance
+-> cross-run project memory
+-> Software / Hackathon / CTF profiles
+-> progress / recovery alignment
+-> E2E + evaluation infrastructure
+-> CLI
+-> TUI
+```
 
-## Phase order
+The TUI is a thin launcher/monitor over the existing CLI and Kernel. It does not create a second execution or verification authority.
+
+## Phase history
 
 1. Workspace contract
 2. Config and secret resolution
@@ -20,29 +36,50 @@ The kernel already governs truth, completion, recovery, progress, context, retri
 8. Cross-run project/episodic memory
 9. Software/Hackathon domain completion
 10. Progress/recovery alignment
-11. Real E2E and benchmark/ablation
-12. TUI
+11. Real E2E
+12. Benchmark/ablation infrastructure
+13. TUI
 
-## Phase gate
+## Validation gate
 
-Each phase must record:
+The post-implementation audit changed the validation rule from “tests/docs exist” to executable evidence:
 
-- problem/evidence motivating the change;
-- contract and non-goals;
-- files and behavior changed;
-- targeted validation;
-- full regression/prior-Stage validation status;
-- structural/security review;
-- unresolved limitations and follow-up.
+```text
+editable install
+-> compile
+-> CLI/TUI module + installed entrypoint smoke
+-> full pytest
+-> core freeze audit
+-> Stage 03-08 regression/adversarial/cost probes
+-> Stage 02 isolation/binding regression probes
+```
 
-A phase is not a prerequisite for the next phase until these checks pass. Model/tool/retrieval/plugin output never gains trusted-state or completion authority directly.
+The validated source commit recorded:
 
-## Baseline
+```text
+harness/full-regression = success
+268 passed, 7 skipped
+all listed probe gates = PASS
+```
 
-- branch: `develop`
-- pre-integration frozen branch: `preprocessing`
-- starting implementation commit: `75834ac1ecb6c022771c2efee1f19495f356ee76`
+See:
+
+- `CI_STATUS.md` for the persisted gate ledger;
+- `POST_IMPLEMENTATION_AUDIT.md` for defects found, fixes, remaining capability gaps, and the promotion decision;
+- `IMPLEMENTATION_REPORT.md` and `PHASE*.md` for implementation rationale/history.
+
+## Remaining work is evidence-driven
+
+The integration track is no longer blocked on basic runtime plumbing. Follow-up work should be driven by real runs and benchmarks rather than adding breadth speculatively. Current known gaps include interactive persisted MCP approval, stronger Windows isolation, broader native providers/MCP transport, plugin isolation, semantic context ranking, richer memory lifecycle, domain-depth expansion, progress tuning, and repeated matched real-provider performance evaluation.
+
+## Branch baseline
+
+- implementation branch: `develop`
+- user-facing promotion branch: `main`
+- archived former main: `legacy-main-pre-integration`
+- frozen pre-integration snapshot: `preprocessing`
+- starting integration commit: `75834ac1ecb6c022771c2efee1f19495f356ee76`
 - package line: `0.9.1`
-- Stage 00-08: frozen, except confirmed defect fixes
+- Stage 00-08: frozen except confirmed defect fixes
 
-The first prerequisite correction is CI/document consistency because the inherited workflows and handoff documents still referenced deleted historical branches and pre-Stage08 status.
+Model/tool/retrieval/plugin output never gains trusted-state or completion authority directly.
