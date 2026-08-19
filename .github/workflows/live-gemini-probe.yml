@@ -1,0 +1,220 @@
+name: live-gemini-harness-probe
+
+on:
+  push:
+    branches:
+      - experiment/live-gemini-api
+    paths-ignore:
+      - docs/tracks/integration-runtime/LIVE_GEMINI_STATUS.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+jobs:
+  live-gemini:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install harness
+        run: |
+          python -m pip install -r requirements-ci.lock
+          python -m pip install -e . --no-deps
+          python -m pip check
+
+      - name: Check Gemini secret
+        id: secret
+        shell: bash
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Direct Model Gateway probe
+        id: direct
+        if: steps.secret.outputs.present == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY' > direct-probe.txt 2>&1
+          import os
+          from harness.config import ModelConfig, SecretRef
+          from harness.model_gateway import ModelGateway
+
+          gateway = ModelGateway(
+              models={
+                  "gemini": ModelConfig(
+                      provider="openai-compatible",
+                      model="gemini-3.6-flash",
+                      endpoint="https://generativelanguage.googleapis.com/v1beta/openai/",
+                      api_key=SecretRef.parse("env:GEMINI_API_KEY"),
+                      timeout_seconds=120,
+                  )
+              },
+              default_model="gemini",
+              max_attempts_per_model=1,
+          )
+          response = gateway.complete(
+              system="Return only the literal text PONG.",
+              user="Connectivity probe.",
+          )
+          print("response=" + response.strip())
+          print("telemetry=" + repr(gateway.telemetry_snapshot()))
+          if response.strip() != "PONG":
+              raise SystemExit("unexpected model response")
+          PY
+
+      - name: Full Harness live probe
+        id: harness
+        if: steps.secret.outputs.present == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          rm -rf /tmp/harness-live-workspace /tmp/harness-live-run
+          mkdir -p /tmp/harness-live-workspace
+          cat > /tmp/harness-live.toml <<'TOML'
+          profile = "software"
+          run_dir = "/tmp/harness-live-run"
+          default_model = "gemini"
+
+          [workspace]
+          root = "/tmp/harness-live-workspace"
+
+          [models.gemini]
+          provider = "openai-compatible"
+          model = "gemini-3.6-flash"
+          endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/"
+          api_key = "env:GEMINI_API_KEY"
+          timeout_seconds = 120
+
+          [security]
+          strict_layout = false
+          strict_tool_isolation = false
+          network_policy = "allow"
+          require_sealed_oracle = false
+          TOML
+
+          python scripts/run_live_case.py \
+            --config /tmp/harness-live.toml \
+            --workspace /tmp/harness-live-workspace \
+            --run-dir /tmp/harness-live-run \
+            --profile software \
+            --goal 'Create result.txt containing exactly HARNESS_GEMINI_OK followed by one newline. Use available tools. Request completion only when the acceptance condition is satisfied.' \
+            --accept-command 'python -c "from pathlib import Path; assert Path(\"result.txt\").read_text(encoding=\"utf-8\") == \"HARNESS_GEMINI_OK\\n\""' \
+            --max-steps 20 \
+            --task-revision live-gemini-v1 \
+            > harness-probe.txt 2>&1
+
+          test "$(cat /tmp/harness-live-workspace/result.txt 2>/dev/null || true)" = 'HARNESS_GEMINI_OK'
+
+      - name: Build live probe report
+        if: always()
+        shell: bash
+        env:
+          SECRET_PRESENT: ${{ steps.secret.outputs.present }}
+          DIRECT_OUTCOME: ${{ steps.direct.outcome }}
+          HARNESS_OUTCOME: ${{ steps.harness.outcome }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p docs/tracks/integration-runtime
+          overall=FAIL
+          reason='live probe did not complete'
+          if [ "$SECRET_PRESENT" != 'true' ]; then
+            overall=BLOCKED
+            reason='Repository Secret GEMINI_API_KEY is not configured'
+          elif [ "$DIRECT_OUTCOME" = 'success' ] && [ "$HARNESS_OUTCOME" = 'success' ]; then
+            overall=PASS
+            reason='direct Model Gateway and full Harness live probes passed'
+          elif [ "$DIRECT_OUTCOME" = 'success' ]; then
+            reason='Gemini API reachable through Model Gateway, but full Harness probe failed'
+          else
+            reason='direct Gemini Model Gateway probe failed'
+          fi
+
+          {
+            echo '# Live Gemini API / Harness Status'
+            echo
+            echo "- Source commit: $SOURCE_SHA"
+            echo '- Runner: GitHub Actions ubuntu-latest'
+            echo '- Model: `gemini-3.6-flash`'
+            echo '- Provider path: OpenAI-compatible Gemini endpoint'
+            echo "- Result: **$overall**"
+            echo "- Reason: $reason"
+            echo "- Repository secret present: $SECRET_PRESENT"
+            echo "- Direct Model Gateway: $DIRECT_OUTCOME"
+            echo "- Full Harness run: $HARNESS_OUTCOME"
+            echo
+            echo 'The API key value is never written to this report, repository files, or command output.'
+            if [ -f direct-probe.txt ]; then
+              echo
+              echo '## Direct probe output'
+              echo '```text'
+              tail -n 80 direct-probe.txt
+              echo '```'
+            fi
+            if [ -f harness-probe.txt ]; then
+              echo
+              echo '## Harness probe tail'
+              echo '```text'
+              tail -n 160 harness-probe.txt
+              echo '```'
+            fi
+            if [ -f /tmp/harness-live-run/metrics.json ]; then
+              echo
+              echo '## Harness metrics'
+              echo '```json'
+              cat /tmp/harness-live-run/metrics.json
+              echo
+              echo '```'
+            fi
+          } > docs/tracks/integration-runtime/LIVE_GEMINI_STATUS.md
+
+      - name: Publish observable live status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SECRET_PRESENT: ${{ steps.secret.outputs.present }}
+          DIRECT_OUTCOME: ${{ steps.direct.outcome }}
+          HARNESS_OUTCOME: ${{ steps.harness.outcome }}
+        run: |
+          state=failure
+          description='Gemini live probe failed'
+          if [ "$SECRET_PRESENT" != 'true' ]; then
+            state=error
+            description='GEMINI_API_KEY repository secret is missing'
+          elif [ "$DIRECT_OUTCOME" = 'success' ] && [ "$HARNESS_OUTCOME" = 'success' ]; then
+            state=success
+            description='Gemini direct + Harness live probes passed'
+          elif [ "$DIRECT_OUTCOME" = 'success' ]; then
+            description='Gemini reachable; Harness live probe failed'
+          fi
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d "{\"state\":\"$state\",\"context\":\"harness/live-gemini\",\"description\":\"$description\"}"
+
+      - name: Persist live report on experiment branch
+        if: always()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/tracks/integration-runtime/LIVE_GEMINI_STATUS.md
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'ci: record live Gemini probe [skip ci]'
+          git push
