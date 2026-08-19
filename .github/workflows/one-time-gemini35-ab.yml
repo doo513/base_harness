@@ -34,15 +34,15 @@ jobs:
         id: exp
         continue-on-error: true
         run: |
-          python scripts/run_gemini35_lite_ab_experiment.py | tee /tmp/gemini35-lite-ab.log
+          python scripts/run_gemini31_lite_ab_experiment.py | tee /tmp/gemini31-lite-ab.log
       - name: Commit artifacts to experiment branch
         if: always()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/experiments/gemini35-flash-lite-ab || true
+          git add docs/experiments/gemini31-flash-lite-ab || true
           if ! git diff --cached --quiet; then
-            git commit -m 'experiment: record Gemini 3.5 Flash-Lite direct vs harness results [skip ci]'
+            git commit -m 'experiment: record Gemini 3.1 Flash-Lite direct vs harness results [skip ci]'
             git push origin HEAD:experiment/gemini35-ab-v1
           fi
       - name: Publish status on main trigger commit
@@ -53,14 +53,14 @@ jobs:
           OUTCOME: ${{ steps.exp.outcome }}
         run: |
           state=failure
-          description='Gemini 3.5 Flash-Lite A/B experiment failed'
+          description='Gemini 3.1 Flash-Lite A/B experiment failed'
           if [ "$OUTCOME" = 'success' ]; then
             state=success
-            description='Gemini 3.5 Flash-Lite Direct vs Harness A/B completed'
+            description='Gemini 3.1 Flash-Lite Direct vs Harness A/B completed'
           fi
           curl --fail-with-body -sS -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
-            -d "{\"state\":\"$state\",\"context\":\"harness/gemini35-lite-ab\",\"description\":\"$description\"}"
+            -d "{\"state\":\"$state\",\"context\":\"harness/gemini31-lite-ab\",\"description\":\"$description\"}"
