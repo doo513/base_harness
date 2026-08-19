@@ -93,6 +93,19 @@ class RuntimeContextMixin:
             self._integration_active_context_projector = projector
         return projector
 
+    def _domain_contract_context(self) -> dict[str, Any]:
+        workflow = self.profile.workflow_contract()
+        evaluation = self.profile.evaluation_contract()
+        return {
+            "profile": self.profile.name,
+            "authority": "harness_domain_contract",
+            "workflow": workflow.dump() if workflow is not None else None,
+            "evaluation": evaluation.dump() if evaluation is not None else None,
+            "evaluation_truth_authority": "none",
+            "evaluation_progress_authority": False,
+            "evaluation_completion_authority": False,
+        }
+
     def _context(self) -> dict:
         projected = self.context_projector.project(
             goal=self.goal,
@@ -119,6 +132,8 @@ class RuntimeContextMixin:
                     contract["output_schema"] = model_output
                     contract["output_schema_validation"] = "provider"
                 visible.update(contract)
+
+        projected["domain_contract"] = self._domain_contract_context()
 
         # Actor planning state is visible through the same governed model
         # projection boundary, but is explicitly non-authoritative. It is not a
