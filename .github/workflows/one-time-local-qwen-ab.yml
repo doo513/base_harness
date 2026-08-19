@@ -1,4 +1,5 @@
 name: one-time-local-qwen-ab
+# trigger: local-qwen-ab-v1
 
 on:
   push:
