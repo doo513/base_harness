@@ -94,10 +94,19 @@ class RuntimeContextMixin:
         return projector
 
     def _domain_contract_context(self) -> dict[str, Any]:
-        workflow = self.profile.workflow_contract()
-        evaluation = self.profile.evaluation_contract()
+        """Project optional post-Stage08 domain guidance without requiring it.
+
+        RuntimeContextMixin is also the standalone Stage-07 compatibility
+        boundary used by legacy/deterministic runtimes. Those runtimes do not
+        necessarily install a domain profile, so integration enrichment must
+        degrade to an explicit non-authoritative empty contract rather than
+        turning `profile` into a new Stage-07 prerequisite.
+        """
+        profile = getattr(self, "profile", None)
+        workflow = profile.workflow_contract() if profile is not None else None
+        evaluation = profile.evaluation_contract() if profile is not None else None
         return {
-            "profile": self.profile.name,
+            "profile": getattr(profile, "name", None),
             "authority": "harness_domain_contract",
             "workflow": workflow.dump() if workflow is not None else None,
             "evaluation": evaluation.dump() if evaluation is not None else None,
@@ -147,7 +156,11 @@ class RuntimeContextMixin:
             state=self.state,
         )
 
-        memory_enabled = getattr(self.retrieval_gateway, "provider_id", None) == "project_memory"
+        # Retrieval/memory is a post-Stage08 integration option. Access the
+        # optional runtime member itself defensively so standalone Stage-07
+        # runtimes retain their original construction contract.
+        retrieval_gateway = getattr(self, "retrieval_gateway", None)
+        memory_enabled = getattr(retrieval_gateway, "provider_id", None) == "project_memory"
         projected["project_memory"] = {
             "enabled": memory_enabled,
             "trust": "untrusted_project_memory",
