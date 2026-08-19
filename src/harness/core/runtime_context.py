@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .context import ContextProjection
+from .context_relevance import ActiveContextProjector
 from .tools import tool_contract_descriptor
 
 
@@ -85,6 +86,13 @@ class RuntimeContextMixin:
         """
         return projected
 
+    def _active_context_projector(self) -> ActiveContextProjector:
+        projector = getattr(self, "_integration_active_context_projector", None)
+        if projector is None:
+            projector = ActiveContextProjector()
+            self._integration_active_context_projector = projector
+        return projector
+
     def _context(self) -> dict:
         projected = self.context_projector.project(
             goal=self.goal,
@@ -116,6 +124,13 @@ class RuntimeContextMixin:
         # projection boundary, but is explicitly non-authoritative. It is not a
         # trusted fact namespace and cannot grant progress/completion credit.
         projected["agent_workflow"] = self.state.agent_control.context_view()
+
+        # Relevance affects visibility priority only. The focused namespace does
+        # not rewrite Stage-07 trust/authority or grant progress/completion.
+        projected["active_context"] = self._active_context_projector().project(
+            goal=self.goal,
+            state=self.state,
+        )
         return RuntimeContextProjection(
             projected,
             self._legacy_controller_context(),
