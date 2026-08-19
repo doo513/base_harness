@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: 35d68e24f0b8fe05e2de5fb6256bf4aa76359ef3
+- Source commit: 7267bd0b20d609d27ca2d7a5e1be1e2faa397be7
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -35,7 +35,7 @@ stage06-task-world                               PASS
 stage07-context                                  PASS
 stage07-adversarial                              PASS
 stage07-resume                                   PASS
-stage07-compat                                   FAIL
+stage07-compat                                   PASS
 stage07-trusted-context                          PASS
 stage07-context-cost                             PASS
 stage07-goal-bounds                              PASS
