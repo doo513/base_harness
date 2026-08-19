@@ -22,6 +22,12 @@ class DomainProfile(ABC):
         claim class.
         """
         return None
+    def workflow_contract(self):
+        """Optional harness-supplied domain execution workflow guidance."""
+        return None
+    def evaluation_contract(self):
+        """Optional advisory quality/rubric contract with no truth authority."""
+        return None
     def task_progress_snapshot(self, *, goal, state):
         """Optional deterministic, monotonic task/world progress snapshot.
 
