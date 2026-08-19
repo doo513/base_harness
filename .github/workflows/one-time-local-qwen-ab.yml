@@ -1,0 +1,124 @@
+name: one-time-local-qwen-ab
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-local-qwen-ab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+env:
+  OLLAMA_API_KEY: ollama
+  OLLAMA_HOST: 127.0.0.1:11434
+
+jobs:
+  local-qwen-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/local-qwen25-coder15b-ab
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install harness dependencies
+        run: |
+          python -m pip install -r requirements-ci.lock
+          python -m pip install -e . --no-deps
+          python -m pip check
+          python -m py_compile scripts/run_local_qwen_ab.py
+
+      - name: Install and start Ollama locally
+        shell: bash
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          nohup ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:11434/api/tags >/dev/null
+          ollama --version
+
+      - name: Pull local coding model
+        run: |
+          ollama pull qwen2.5-coder:1.5b-instruct
+          ollama list
+
+      - name: Probe local OpenAI-compatible endpoint
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          req = urllib.request.Request(
+              'http://127.0.0.1:11434/v1/chat/completions',
+              data=json.dumps({
+                  'model':'qwen2.5-coder:1.5b-instruct',
+                  'messages':[{'role':'user','content':'Return exactly LOCAL_MODEL_OK'}],
+                  'stream':False,
+                  'temperature':0,
+                  'max_tokens':32,
+              }).encode(),
+              headers={'Content-Type':'application/json','Authorization':'Bearer ollama'},
+              method='POST',
+          )
+          with urllib.request.urlopen(req, timeout=180) as r:
+              payload=json.loads(r.read().decode())
+          content=payload['choices'][0]['message']['content']
+          print('local_model_response=', repr(content))
+          assert 'LOCAL_MODEL_OK' in content
+          PY
+
+      - name: Run Direct vs Harness local-model experiment
+        id: experiment
+        continue-on-error: true
+        run: |
+          python scripts/run_local_qwen_ab.py | tee /tmp/local-qwen-ab.log
+
+      - name: Persist experiment artifacts to experiment branch
+        if: always()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/experiments/local-qwen25-coder15b-ab || true
+          if git diff --cached --quiet; then
+            echo 'No experiment artifacts changed.'
+            exit 0
+          fi
+          git commit -m 'experiment: record local Qwen direct vs harness results [skip ci]'
+          git push origin HEAD:experiment/local-qwen25-coder15b-ab
+
+      - name: Publish observable status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.experiment.outcome }}
+        run: |
+          state=failure
+          description='local Qwen Direct vs Harness experiment failed'
+          if [ "$OUTCOME" = 'success' ]; then
+            state=success
+            description='local Qwen Direct vs Harness experiment completed'
+          fi
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d "{\"state\":\"$state\",\"context\":\"harness/local-qwen-ab\",\"description\":\"$description\"}"
+
+      - name: Show Ollama tail
+        if: always()
+        run: tail -n 120 /tmp/ollama.log || true
