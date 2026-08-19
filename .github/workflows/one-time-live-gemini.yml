@@ -36,9 +36,20 @@ jobs:
           else
             echo 'present=false' >> "$GITHUB_OUTPUT"
           fi
+      - name: Official Gemini OpenAI-compatible model lookup
+        id: api
+        if: steps.secret.outputs.present == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          code=$(curl -sS -o /tmp/gemini-model-response.json -w '%{http_code}' \
+            'https://generativelanguage.googleapis.com/v1beta/openai/models/gemini-3.6-flash' \
+            -H "Authorization: Bearer $GEMINI_API_KEY")
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+          test "$code" = '200'
       - name: Direct Gemini through Model Gateway
         id: direct
-        if: steps.secret.outputs.present == 'true'
+        if: steps.secret.outputs.present == 'true' && steps.api.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -99,7 +110,7 @@ jobs:
             --goal 'Create result.txt containing exactly HARNESS_GEMINI_OK followed by one newline. Use available tools and request completion only after the file satisfies the acceptance condition.' \
             --accept-command 'python -c "from pathlib import Path; assert Path(\"result.txt\").read_text(encoding=\"utf-8\") == \"HARNESS_GEMINI_OK\\n\""' \
             --max-steps 20 \
-            --task-revision one-time-live-gemini-v1
+            --task-revision one-time-live-gemini-v2
           test "$(cat /tmp/harness-live-workspace/result.txt 2>/dev/null || true)" = 'HARNESS_GEMINI_OK'
       - name: Publish probe statuses
         if: always()
@@ -107,6 +118,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SECRET_PRESENT: ${{ steps.secret.outputs.present }}
+          API_OUTCOME: ${{ steps.api.outcome }}
+          API_CODE: ${{ steps.api.outputs.http_code }}
           DIRECT_OUTCOME: ${{ steps.direct.outcome }}
           HARNESS_OUTCOME: ${{ steps.harness.outcome }}
         run: |
@@ -124,6 +137,12 @@ jobs:
             post_status harness/gemini-secret success 'GEMINI_API_KEY secret is available to Actions'
           else
             post_status harness/gemini-secret error 'GEMINI_API_KEY secret is missing or empty'
+          fi
+
+          if [ "$API_OUTCOME" = 'success' ]; then
+            post_status harness/gemini-api success 'Official Gemini model lookup HTTP 200'
+          else
+            post_status harness/gemini-api failure "Official Gemini model lookup HTTP ${API_CODE:-unknown}"
           fi
 
           if [ "$DIRECT_OUTCOME" = 'success' ]; then
