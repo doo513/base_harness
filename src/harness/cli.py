@@ -7,6 +7,7 @@ from harness.model_gateway import ModelGateway, ModelGatewayError
 from harness.mcp_gateway import MCPError, MCPGateway
 from harness.plugin_gateway import PluginError, PluginGateway
 from harness.profile_composition import ProfileCompositionError, augment_profile_tools
+from harness.project_memory import ProjectMemoryError, ProjectMemoryStore
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
@@ -108,6 +109,20 @@ def main():
         )
     except ValueError as exc:
         parser.error(str(exc))
+
+    memory_store = None
+    memory_retrieval_gateway = None
+    if config.memory.enabled:
+        try:
+            project_id = config.memory.project_id or ProjectMemoryStore.default_project_id(workspace_contract.root)
+            memory_store = ProjectMemoryStore(
+                config.memory.root,
+                project_id=project_id,
+                workspace_root=workspace_contract.root,
+            )
+            memory_retrieval_gateway = memory_store.snapshot_gateway()
+        except (ProjectMemoryError, OSError, ValueError) as exc:
+            parser.error(str(exc))
 
     network_policy = NetworkPolicy(args.network_policy)
     if args.execution_backend == "linux-namespace":
@@ -214,6 +229,7 @@ def main():
     effective_model_revision = args.model_revision or (gateway.revision if gateway is not None else None)
 
     runtime_factory = HarnessRuntime.resume if args.resume else HarnessRuntime
+    memory_publish_report = None
     try:
         runtime = runtime_factory(
             goal=goal,
@@ -228,17 +244,30 @@ def main():
                 network_policy=args.network_policy,
                 require_sealed_oracle=args.require_sealed_oracle,
             ),
+            retrieval_gateway=memory_retrieval_gateway,
             task_revision=args.task_revision,
             model_revision=effective_model_revision,
             require_complete_provenance=args.require_complete_provenance,
         )
         state = runtime.run()
+        if memory_store is not None:
+            memory_publish_report = memory_store.publish_from_state(
+                state,
+                source_run_id=runtime.run_id,
+            )
     finally:
         if mcp_gateway is not None:
             mcp_gateway.close()
 
     print(f"completed={state.completed} steps={state.step}")
     print(f"run_dir={Path(args.run_dir).resolve()}")
+    if memory_publish_report is not None:
+        print(
+            "memory="
+            f"published:{len(memory_publish_report['published'])},"
+            f"deduplicated:{len(memory_publish_report['deduplicated'])},"
+            f"rejected:{len(memory_publish_report['rejected'])}"
+        )
 
 
 if __name__ == "__main__":
