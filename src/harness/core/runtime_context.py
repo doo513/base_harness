@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .context import ContextProjection
+from .tools import tool_contract_descriptor
 
 
 class RuntimeContextProjection(ContextProjection):
@@ -91,6 +92,14 @@ class RuntimeContextMixin:
             tools=self.actions.tools,
         )
         projected = self._project_retrieval_context(projected)
+
+        # Stage-07 base projection remains backward compatible. Runtime-level
+        # integration enriches only tools that explicitly declare schemas.
+        for name, spec in self.actions.tools.items():
+            visible = projected.get("tools", {}).get(name)
+            if isinstance(visible, dict):
+                visible.update(tool_contract_descriptor(spec))
+
         # Actor planning state is visible through the same governed model
         # projection boundary, but is explicitly non-authoritative. It is not a
         # trusted fact namespace and cannot grant progress/completion credit.
