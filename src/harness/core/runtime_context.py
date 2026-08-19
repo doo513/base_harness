@@ -98,7 +98,19 @@ class RuntimeContextMixin:
         for name, spec in self.actions.tools.items():
             visible = projected.get("tools", {}).get(name)
             if isinstance(visible, dict):
-                visible.update(tool_contract_descriptor(spec))
+                contract = tool_contract_descriptor(spec)
+                # External protocols such as MCP can advertise full JSON Schema
+                # 2020-12. Preserve that for model/tool-call generation without
+                # claiming our local subset validator enforces the entire spec.
+                model_input = getattr(spec, "model_input_schema", None)
+                model_output = getattr(spec, "model_output_schema", None)
+                if isinstance(model_input, dict):
+                    contract["input_schema"] = model_input
+                    contract["input_schema_validation"] = "provider"
+                if isinstance(model_output, dict):
+                    contract["output_schema"] = model_output
+                    contract["output_schema_validation"] = "provider"
+                visible.update(contract)
 
         # Actor planning state is visible through the same governed model
         # projection boundary, but is explicitly non-authoritative. It is not a
