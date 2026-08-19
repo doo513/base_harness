@@ -218,3 +218,5 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'ci: record live Gemini probe [skip ci]'
           git push
+
+# retrigger: 2026-08-20T00:57+09:00
