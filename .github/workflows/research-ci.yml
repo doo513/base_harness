@@ -25,87 +25,74 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install locked CI dependencies
+        id: install
         run: |
           python -m pip install -r requirements-ci.lock
           python -m pip install -e . --no-deps
           python -m pip check
-      - name: Compile
-        run: python -m compileall -q src tests scripts
-      - name: CLI and TUI entrypoint smoke
+
+      - name: Full validation ledger
+        id: ledger
+        if: always()
+        shell: bash
         run: |
-          python -m harness.cli --help
-          python -m harness.tui --help
-          verified-harness --help
-          verified-harness-tui --help
-      - name: Full pytest regression
-        run: pytest -q
-      - name: Core freeze audit regression probe
-        run: python scripts/core_freeze_audit_probe.py
-      - name: Stage 03 resume probe
-        run: python scripts/stage3_resume_probe.py
-      - name: Stage 04 semantic probe
-        run: python scripts/stage4_semantic_probe.py
-      - name: Stage 04 repository-style semantic benchmark
-        run: python scripts/stage4_realworld_semantic_benchmark.py
-      - name: Stage 05 recovery probe
-        run: python scripts/stage5_recovery_probe.py
-      - name: Stage 05 adversarial recovery probe
-        run: python scripts/stage5_recovery_adversarial_probe.py
-      - name: Stage 05 terminal recovery probe
-        run: python scripts/stage5_terminal_probe.py
-      - name: Stage 05 crash-window recovery probe
-        run: python scripts/stage5_crash_window_probe.py
-      - name: Stage 05 strategy generation probe
-        run: python scripts/stage5_strategy_generation_probe.py
-      - name: Stage 05 recovery routing A/B/C/D benchmark
-        run: python scripts/stage5_recovery_effectiveness_benchmark.py
-      - name: Stage 06 progress probe
-        run: python scripts/stage6_progress_probe.py
-      - name: Stage 06 adversarial progress probe
-        run: python scripts/stage6_progress_adversarial_probe.py
-      - name: Stage 06 progress resume probe
-        run: python scripts/stage6_progress_resume_probe.py
-      - name: Stage 06 progress boundary probe
-        run: python scripts/stage6_progress_boundary_probe.py
-      - name: Stage 06 progress strategy probe
-        run: python scripts/stage6_progress_strategy_probe.py
-      - name: Stage 06 task-world progress probe
-        run: python scripts/stage6_task_world_progress_probe.py
-      - name: Stage 07 context projection probe
-        run: python scripts/stage7_context_probe.py
-      - name: Stage 07 adversarial context probe
-        run: python scripts/stage7_context_adversarial_probe.py
-      - name: Stage 07 context resume probe
-        run: python scripts/stage7_context_resume_probe.py
-      - name: Stage 07 compatibility projection probe
-        run: python scripts/stage7_context_compat_probe.py
-      - name: Stage 07 trusted-context growth probe
-        run: python scripts/stage7_trusted_context_probe.py
-      - name: Stage 07 trusted-context cost probe
-        run: python scripts/stage7_trusted_context_cost_probe.py
-      - name: Stage 07 mandatory goal bounds probe
-        run: python scripts/stage7_goal_contract_bounds_probe.py
-      - name: Stage 08 retrieval base probe
-        run: python scripts/stage8_retrieval_probe.py
-      - name: Stage 08 retrieval adversarial probe
-        run: python scripts/stage8_retrieval_adversarial_probe.py
-      - name: Stage 08 retrieval resume probe
-        run: python scripts/stage8_retrieval_resume_probe.py
-      - name: Stage 08 retrieval cost probe
-        run: python scripts/stage8_retrieval_cost_probe.py
-      - name: Stage 08 single-buffer artifact integrity probe
-        run: python scripts/stage8_artifact_integrity_probe.py
-      - name: Verified-read cost probe
-        run: python scripts/remediation_artifact_cost_probe.py
-      - name: Stage 02 nested read-only submount probe
-        run: python scripts/stage2_nested_submount_probe.py
-      - name: Stage 02 mount-topology cost probe
-        run: python scripts/remediation_mount_topology_cost_probe.py
-      - name: Stage 02 backend-execution binding probe
-        run: python scripts/stage2_tool_backend_binding_probe.py
-      - name: Stage 02 backend-binding cost probe
-        run: python scripts/remediation_tool_binding_cost_probe.py
+          failures=0
+          : > ci-gates.txt
+          run_gate() {
+            label="$1"
+            shift
+            printf '%-48s ' "$label" | tee -a ci-gates.txt
+            if "$@"; then
+              echo PASS | tee -a ci-gates.txt
+            else
+              echo FAIL | tee -a ci-gates.txt
+              failures=1
+            fi
+          }
+
+          run_gate compile python -m compileall -q src tests scripts
+          run_gate cli-module python -m harness.cli --help
+          run_gate tui-module python -m harness.tui --help
+          run_gate cli-console verified-harness --help
+          run_gate tui-console verified-harness-tui --help
+          run_gate full-pytest pytest -q
+          run_gate core-freeze-audit python scripts/core_freeze_audit_probe.py
+          run_gate stage03-resume python scripts/stage3_resume_probe.py
+          run_gate stage04-semantic python scripts/stage4_semantic_probe.py
+          run_gate stage04-realworld python scripts/stage4_realworld_semantic_benchmark.py
+          run_gate stage05-recovery python scripts/stage5_recovery_probe.py
+          run_gate stage05-adversarial python scripts/stage5_recovery_adversarial_probe.py
+          run_gate stage05-terminal python scripts/stage5_terminal_probe.py
+          run_gate stage05-crash-window python scripts/stage5_crash_window_probe.py
+          run_gate stage05-strategy python scripts/stage5_strategy_generation_probe.py
+          run_gate stage05-effectiveness python scripts/stage5_recovery_effectiveness_benchmark.py
+          run_gate stage06-progress python scripts/stage6_progress_probe.py
+          run_gate stage06-adversarial python scripts/stage6_progress_adversarial_probe.py
+          run_gate stage06-resume python scripts/stage6_progress_resume_probe.py
+          run_gate stage06-boundary python scripts/stage6_progress_boundary_probe.py
+          run_gate stage06-strategy python scripts/stage6_progress_strategy_probe.py
+          run_gate stage06-task-world python scripts/stage6_task_world_progress_probe.py
+          run_gate stage07-context python scripts/stage7_context_probe.py
+          run_gate stage07-adversarial python scripts/stage7_context_adversarial_probe.py
+          run_gate stage07-resume python scripts/stage7_context_resume_probe.py
+          run_gate stage07-compat python scripts/stage7_context_compat_probe.py
+          run_gate stage07-trusted-context python scripts/stage7_trusted_context_probe.py
+          run_gate stage07-context-cost python scripts/stage7_trusted_context_cost_probe.py
+          run_gate stage07-goal-bounds python scripts/stage7_goal_contract_bounds_probe.py
+          run_gate stage08-retrieval python scripts/stage8_retrieval_probe.py
+          run_gate stage08-adversarial python scripts/stage8_retrieval_adversarial_probe.py
+          run_gate stage08-resume python scripts/stage8_retrieval_resume_probe.py
+          run_gate stage08-cost python scripts/stage8_retrieval_cost_probe.py
+          run_gate stage08-artifact-integrity python scripts/stage8_artifact_integrity_probe.py
+          run_gate verified-read-cost python scripts/remediation_artifact_cost_probe.py
+          run_gate stage02-nested-submount python scripts/stage2_nested_submount_probe.py
+          run_gate stage02-mount-cost python scripts/remediation_mount_topology_cost_probe.py
+          run_gate stage02-backend-binding python scripts/stage2_tool_backend_binding_probe.py
+          run_gate stage02-binding-cost python scripts/remediation_tool_binding_cost_probe.py
+
+          exit "$failures"
 
       - name: Publish observable regression status
         if: always()
@@ -115,10 +102,10 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           state=failure
-          description='full regression or entrypoint gate failed'
+          description='one or more full-regression gates failed'
           if [ "$JOB_STATUS" = 'success' ]; then
             state=success
-            description='full regression, probes, CLI and TUI entrypoints passed'
+            description='all regression, probes, CLI and TUI gates passed'
           fi
           curl --fail-with-body -sS \
             -X POST \
@@ -133,32 +120,29 @@ jobs:
         shell: bash
         env:
           JOB_STATUS: ${{ job.status }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
         run: |
           result=FAIL
           if [ "$JOB_STATUS" = 'success' ]; then result=PASS; fi
           mkdir -p docs/tracks/integration-runtime
-          cat > docs/tracks/integration-runtime/CI_STATUS.md <<EOF
-          # Integration Runtime CI Status
-
-          - Source commit: `${{ github.sha }}`
-          - Branch: `${{ github.ref_name }}`
-          - Result: **${result}**
-          - Runner: `ubuntu-latest`
-          - Python: `3.11`
-
-          Gates executed by this workflow:
-
-          ```text
-          editable install + pip check
-          compileall
-          CLI module/console entrypoint smoke
-          TUI module/console entrypoint smoke
-          full pytest regression
-          core freeze audit
-          Stage 03-08 regression/adversarial/cost probes
-          Stage 02 isolation/binding regression probes
-          ```
-          EOF
+          {
+            echo '# Integration Runtime CI Status'
+            echo
+            echo "- Source commit: $SOURCE_SHA"
+            echo "- Branch: $SOURCE_BRANCH"
+            echo "- Result: **$result**"
+            echo '- Runner: ubuntu-latest'
+            echo '- Python: 3.11'
+            echo "- Install gate: $INSTALL_OUTCOME"
+            echo
+            echo '## Gate ledger'
+            echo
+            echo '```text'
+            if [ -f ci-gates.txt ]; then cat ci-gates.txt; else echo 'validation ledger unavailable'; fi
+            echo '```'
+          } > docs/tracks/integration-runtime/CI_STATUS.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/tracks/integration-runtime/CI_STATUS.md
