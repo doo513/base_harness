@@ -9,6 +9,7 @@ from .security import Principal, Capability
 from .verification import VerificationLevel, VerifierChain
 from .failures import Failure, FailureKind
 from .retrieval import RetrievalContractError, RetrievalUnavailable
+from .agent_control import AgentControlError
 
 
 class RuntimeExecutionMixin:
@@ -281,7 +282,43 @@ class RuntimeExecutionMixin:
             ))
 
     def _dispatch_decision(self, decision) -> None:
-        if decision.kind == "propose":
+        if decision.kind == "plan":
+            try:
+                self.state.agent_control.replace_plan(
+                    decision.payload["objective"],
+                    decision.payload["tasks"],
+                )
+            except AgentControlError as exc:
+                self.fail(Failure(
+                    FailureKind.NO_PROGRESS,
+                    f"actor workflow plan rejected: {exc}",
+                    action="agent_plan",
+                    signature_key="integration:agent_control:invalid_plan",
+                ))
+                return
+            self.log("agent.plan.replaced", self.state.agent_control.dump())
+
+        elif decision.kind == "task":
+            try:
+                self.state.agent_control.update(
+                    decision.payload["id"],
+                    status=decision.payload["status"],
+                    note=decision.payload.get("note"),
+                )
+            except AgentControlError as exc:
+                self.fail(Failure(
+                    FailureKind.NO_PROGRESS,
+                    f"actor workflow task update rejected: {exc}",
+                    action="agent_task",
+                    signature_key="integration:agent_control:invalid_task_update",
+                ))
+                return
+            self.log("agent.task.updated", {
+                "task_id": decision.payload["id"],
+                "workflow": self.state.agent_control.dump(),
+            })
+
+        elif decision.kind == "propose":
             key = decision.payload["key"]
             prior = self.state.refuted_hypotheses.get(key)
             new_refs = list(decision.payload.get("evidence_refs", []))
