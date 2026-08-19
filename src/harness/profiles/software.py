@@ -9,11 +9,17 @@ from harness.core.verification import (
 )
 from harness.core.claim_contracts import ClaimContractRegistry, ClaimContractRule
 from harness.core.oracles import CommandCompletionOracle, SealedCommandCompletionOracle, NeverAcceptOracle
-from harness.core.tools import make_shell_tool
+from harness.core.tools import make_shell_tool, make_argv_tool
 from .software_verification import (
     SoftwareBuildResultVerifier,
     SoftwareTestResultVerifier,
     SoftwareBehavioralAcceptanceVerifier,
+)
+from .domain_contracts import (
+    DomainEvaluationContract,
+    DomainPhase,
+    DomainWorkflowContract,
+    SoftCriterion,
 )
 from .base import DomainProfile
 
@@ -47,7 +53,10 @@ class SoftwareProfile(DomainProfile):
         )
 
     def tools(self):
-        return {"shell": make_shell_tool(self.workspace, backend=self.execution_backend)}
+        return {
+            "shell": make_shell_tool(self.workspace, backend=self.execution_backend),
+            "argv": make_argv_tool(self.workspace, backend=self.execution_backend),
+        }
 
     def verifiers(self):
         return [
@@ -110,6 +119,62 @@ class SoftwareProfile(DomainProfile):
                 allowed_verifiers=("exists", "evidence_ref", "software_behavioral_acceptance"),
             ),
         ))
+
+    def workflow_contract(self):
+        return DomainWorkflowContract(
+            name="software-development",
+            phases=(
+                DomainPhase("inspect", "Map the relevant repository structure, constraints, and existing tests."),
+                DomainPhase("reproduce", "Reproduce or otherwise establish the requested behavior/problem before changing code."),
+                DomainPhase("plan", "Choose the smallest change that addresses the goal without weakening tests or constraints."),
+                DomainPhase("implement", "Apply the code/configuration change inside the workspace."),
+                DomainPhase(
+                    "targeted_verify",
+                    "Run the narrowest relevant build/test/behavior checks and promote only verifier-backed results.",
+                    ("software.build_result.*", "software.test_result.*", "software.behavioral_acceptance.*"),
+                ),
+                DomainPhase(
+                    "regression",
+                    "Run broader regression/build checks after the targeted change is stable.",
+                    ("software.build_result.*", "software.test_result.*"),
+                ),
+                DomainPhase("acceptance", "Request completion only after fixed harness-side acceptance criteria are ready to pass."),
+            ),
+            guidance=(
+                "prefer structured read/argv tools over shell when they can express the action",
+                "do not treat a task checkbox or successful command alone as stronger semantic proof than its verifier contract",
+                "retain failing evidence long enough to explain the corrective change",
+            ),
+        )
+
+    def evaluation_contract(self):
+        return DomainEvaluationContract(
+            criteria=(
+                SoftCriterion("scope_minimality", "Change only what is needed for the requested behavior."),
+                SoftCriterion("maintainability", "Keep the implementation understandable and consistent with the repository."),
+                SoftCriterion("regression_risk", "Minimize unverified impact outside the target behavior."),
+            ),
+            guidance=("soft quality assessment is advisory and never substitutes for build/test/oracle evidence",),
+        )
+
+    def task_progress_snapshot(self, *, goal, state):
+        milestones: list[str] = []
+        facts = state.facts
+        if any(key.startswith("artifact_assertion.") for key in facts):
+            milestones.append("verified_artifact_assertion")
+        if any(
+            key.startswith("software.build_result.") and claim.value == {"succeeded": True}
+            for key, claim in facts.items()
+        ):
+            milestones.append("build_passed")
+        if any(
+            key.startswith("software.test_result.") and claim.value == {"succeeded": True}
+            for key, claim in facts.items()
+        ):
+            milestones.append("tests_passed")
+        if any(key.startswith("software.behavioral_acceptance.") for key in facts):
+            milestones.append("behavioral_acceptance_verified")
+        return {"milestones": milestones, "score": float(len(milestones))}
 
     def completion_oracle(self):
         if not self.acceptance_commands:
