@@ -4,12 +4,16 @@ from pathlib import Path
 from harness import __version__
 from harness.config import ConfigError, HarnessConfig, load_harness_config
 from harness.model_gateway import ModelGateway, ModelGatewayError
+from harness.mcp_gateway import MCPError, MCPGateway
+from harness.plugin_gateway import PluginError, PluginGateway
+from harness.profile_composition import ProfileCompositionError, augment_profile_tools
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
 from harness.core.security import SecurityConfig
 from harness.core.sandbox import LocalProcessBackend, LinuxNamespaceSandboxBackend, NetworkPolicy
 from harness.core.workspace import WorkspaceContract
+from harness.core.workspace_tools import make_workspace_read_tools
 from harness.profiles import CTFProfile, HackathonProfile, SoftwareProfile, DemoProfile
 
 
@@ -148,6 +152,39 @@ def main():
             require_oracle_isolation=args.require_oracle_isolation,
         )
 
+    mcp_gateway = None
+    plugin_gateway = None
+    extra_tools = {}
+    if args.profile != "demo":
+        extra_tools.update(make_workspace_read_tools(workspace_contract))
+
+    enabled_mcp = tuple(item for item in config.mcp_servers if item.enabled)
+    enabled_plugins = tuple(item for item in config.plugins if item.enabled)
+    if args.strict_tool_isolation and (enabled_mcp or enabled_plugins):
+        parser.error(
+            "mcp-gateway-v1/plugin-gateway-v1 do not provide host-process isolation; "
+            "disable those extensions or --strict-tool-isolation"
+        )
+    try:
+        if enabled_mcp:
+            mcp_gateway = MCPGateway(enabled_mcp)
+            extra_tools.update(mcp_gateway.discover_tools())
+        if enabled_plugins:
+            plugin_gateway = PluginGateway(enabled_plugins)
+            plugin_tools = plugin_gateway.discover_tools()
+            collisions = sorted(set(extra_tools) & set(plugin_tools))
+            if collisions:
+                raise ProfileCompositionError(
+                    "MCP/plugin tool collision: " + ", ".join(collisions)
+                )
+            extra_tools.update(plugin_tools)
+        if extra_tools:
+            profile = augment_profile_tools(profile, extra_tools)
+    except (ConfigError, MCPError, PluginError, ProfileCompositionError) as exc:
+        if mcp_gateway is not None:
+            mcp_gateway.close()
+        parser.error(str(exc))
+
     goal = profile.default_goal()
     if args.goal:
         from harness.core.contracts import GoalContract
@@ -169,30 +206,37 @@ def main():
                 fallback_models=_configured_fallbacks(config),
             )
     except (ConfigError, ModelGatewayError) as exc:
+        if mcp_gateway is not None:
+            mcp_gateway.close()
         parser.error(str(exc))
 
     controller = LLMController(gateway) if gateway is not None else DirectController()
     effective_model_revision = args.model_revision or (gateway.revision if gateway is not None else None)
 
     runtime_factory = HarnessRuntime.resume if args.resume else HarnessRuntime
-    runtime = runtime_factory(
-        goal=goal,
-        profile=profile,
-        controller=controller,
-        run_dir=Path(args.run_dir),
-        workspace_contract=workspace_contract,
-        budget=Budget(hard_max_steps=args.max_steps),
-        security_config=SecurityConfig(
-            strict_layout=args.strict_layout,
-            strict_tool_isolation=args.strict_tool_isolation,
-            network_policy=args.network_policy,
-            require_sealed_oracle=args.require_sealed_oracle,
-        ),
-        task_revision=args.task_revision,
-        model_revision=effective_model_revision,
-        require_complete_provenance=args.require_complete_provenance,
-    )
-    state = runtime.run()
+    try:
+        runtime = runtime_factory(
+            goal=goal,
+            profile=profile,
+            controller=controller,
+            run_dir=Path(args.run_dir),
+            workspace_contract=workspace_contract,
+            budget=Budget(hard_max_steps=args.max_steps),
+            security_config=SecurityConfig(
+                strict_layout=args.strict_layout,
+                strict_tool_isolation=args.strict_tool_isolation,
+                network_policy=args.network_policy,
+                require_sealed_oracle=args.require_sealed_oracle,
+            ),
+            task_revision=args.task_revision,
+            model_revision=effective_model_revision,
+            require_complete_provenance=args.require_complete_provenance,
+        )
+        state = runtime.run()
+    finally:
+        if mcp_gateway is not None:
+            mcp_gateway.close()
+
     print(f"completed={state.completed} steps={state.step}")
     print(f"run_dir={Path(args.run_dir).resolve()}")
 
