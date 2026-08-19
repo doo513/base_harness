@@ -131,6 +131,22 @@ class RuntimeContextMixin:
             goal=self.goal,
             state=self.state,
         )
+
+        memory_enabled = getattr(self.retrieval_gateway, "provider_id", None) == "project_memory"
+        projected["project_memory"] = {
+            "enabled": memory_enabled,
+            "trust": "untrusted_project_memory",
+            "instruction_authority": "none",
+            "write_protocol": (
+                "propose memory_candidate.<label> with exact kind/content/tags and registered evidence_refs; "
+                "publication occurs post-run"
+                if memory_enabled
+                else None
+            ),
+            "read_protocol": "Stage-08 retrieval only" if memory_enabled else None,
+            "progress_authority": False,
+            "completion_authority": False,
+        }
         return RuntimeContextProjection(
             projected,
             self._legacy_controller_context(),
