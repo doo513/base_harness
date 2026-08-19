@@ -40,6 +40,6 @@ def test_verified_software_milestone_resets_progress(tmp_path):
     decision = Decision("propose", {"key": "irrelevant", "value": True})
     result = runtime._evaluate_actor_progress(decision, baseline, allow_trigger=True)
     assert result["made_progress"] is True
-    assert "profile_task_progress_advanced" in result["reasons"]
+    assert "profile_task_progress_advanced" in result["progress_reasons"]
     assert runtime.state.progress.no_progress_streak == 0
     assert runtime.state.progress.task_events >= 1
