@@ -14,6 +14,11 @@ strict_tool_isolation = false
 network_policy = "allow"
 require_sealed_oracle = false
 
+[memory]
+enabled = false
+root = "../.verified-state-harness-memory"
+# project_id = "my-project"
+
 [models.primary]
 provider = "openai-compatible"
 model = "example-model"
