@@ -9,42 +9,52 @@ class _HackathonExecutionCheckVerifier:
     key_prefix = ""
     covers: tuple[str, ...] = ()
 
+    def _result(self, ok, reason, refs, *, details=None):
+        return VerificationResult(
+            ok,
+            self.level,
+            reason,
+            verifier=self.name,
+            evidence_refs=refs,
+            details=dict(details or {}),
+            coverage=list(self.covers) if ok else [],
+            confidence=1.0 if ok else None,
+        )
+
     def verify(self, candidate, context):
         refs = list(context.get("claim_evidence_refs", []))
         artifact_root = context.get("artifact_root")
         claim_key = context.get("claim_key")
         claim_class = context.get("claim_class")
         if claim_class != self.claim_class:
-            return VerificationResult(False, self.level, f"verifier requires claim class {self.claim_class}", evidence_refs=refs)
+            return self._result(False, f"verifier requires claim class {self.claim_class}", refs)
         if not isinstance(claim_key, str) or not claim_key.startswith(self.key_prefix):
-            return VerificationResult(False, self.level, f"verifier requires claim prefix {self.key_prefix}", evidence_refs=refs)
+            return self._result(False, f"verifier requires claim prefix {self.key_prefix}", refs)
         if len(refs) != 1 or not artifact_root:
-            return VerificationResult(False, self.level, "exactly one integrity-verifiable execution artifact is required", evidence_refs=refs)
+            return self._result(False, "exactly one integrity-verifiable execution artifact is required", refs)
         if not isinstance(candidate, dict) or set(candidate) != {"succeeded"} or not isinstance(candidate.get("succeeded"), bool):
-            return VerificationResult(False, self.level, "hackathon execution-check claim must be exactly {'succeeded': boolean}", evidence_refs=refs)
+            return self._result(False, "hackathon execution-check claim must be exactly {'succeeded': boolean}", refs)
         try:
             raw = _verified_artifact_json(artifact_root, refs[0])
         except Exception as exc:
-            return VerificationResult(False, self.level, f"execution evidence could not be verified: {type(exc).__name__}: {exc}", evidence_refs=refs)
+            return self._result(False, f"execution evidence could not be verified: {type(exc).__name__}: {exc}", refs)
         if not isinstance(raw, dict) or not isinstance(raw.get("ok"), bool):
-            return VerificationResult(False, self.level, "execution artifact must contain boolean ok", evidence_refs=refs)
+            return self._result(False, "execution artifact must contain boolean ok", refs)
         output = raw.get("output")
         if not isinstance(output, dict):
-            return VerificationResult(False, self.level, "execution artifact requires command output", evidence_refs=refs)
+            return self._result(False, "execution artifact requires command output", refs)
         returncode = output.get("returncode")
         timed_out = output.get("timed_out")
         if not isinstance(returncode, int) or isinstance(returncode, bool) or not isinstance(timed_out, bool):
-            return VerificationResult(False, self.level, "execution output requires returncode/timed_out", evidence_refs=refs)
+            return self._result(False, "execution output requires returncode/timed_out", refs)
         actual = raw["ok"] is True and returncode == 0 and timed_out is False
         expected = candidate["succeeded"]
         ok = actual == expected
-        return VerificationResult(
+        return self._result(
             ok,
-            self.level,
             "hackathon execution-check claim matches verified execution evidence" if ok else "hackathon execution-check claim contradicts verified execution evidence",
-            evidence_refs=refs,
+            refs,
             details={"actual_succeeded": actual, "expected_succeeded": expected, "returncode": returncode, "timed_out": timed_out},
-            confidence=1.0,
         )
 
 
