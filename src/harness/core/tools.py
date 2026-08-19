@@ -21,6 +21,96 @@ class SideEffect(str, Enum):
     EXTERNAL = "external"
 
 
+class ToolSchemaError(ValueError):
+    pass
+
+
+def _schema_value_error(value: Any, schema: dict[str, Any], *, path: str = "$") -> str | None:
+    """Validate the small JSON-Schema subset used by harness tool contracts."""
+    if not isinstance(schema, dict):
+        return f"{path}: schema must be an object"
+    if "enum" in schema:
+        enum = schema["enum"]
+        if not isinstance(enum, list) or value not in enum:
+            return f"{path}: value is not in declared enum"
+
+    expected = schema.get("type")
+    type_ok = {
+        "object": isinstance(value, dict),
+        "array": isinstance(value, list),
+        "string": isinstance(value, str),
+        "integer": isinstance(value, int) and not isinstance(value, bool),
+        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+        "boolean": isinstance(value, bool),
+        "null": value is None,
+        None: True,
+    }.get(expected)
+    if type_ok is None:
+        return f"{path}: unsupported schema type {expected!r}"
+    if not type_ok:
+        return f"{path}: expected {expected}"
+
+    if expected == "string":
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            return f"{path}: string shorter than minLength"
+        if isinstance(max_length, int) and len(value) > max_length:
+            return f"{path}: string longer than maxLength"
+
+    if expected == "array":
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if isinstance(min_items, int) and len(value) < min_items:
+            return f"{path}: array shorter than minItems"
+        if isinstance(max_items, int) and len(value) > max_items:
+            return f"{path}: array longer than maxItems"
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                error = _schema_value_error(item, item_schema, path=f"{path}[{index}]")
+                if error:
+                    return error
+
+    if expected == "object":
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        if not isinstance(properties, dict) or not isinstance(required, list):
+            return f"{path}: invalid object schema"
+        for key in required:
+            if key not in value:
+                return f"{path}: missing required property {key!r}"
+        additional = schema.get("additionalProperties", True)
+        if additional is False:
+            extras = sorted(set(value) - set(properties))
+            if extras:
+                return f"{path}: unsupported properties: {', '.join(extras)}"
+        for key, item in value.items():
+            child = properties.get(key)
+            if isinstance(child, dict):
+                error = _schema_value_error(item, child, path=f"{path}.{key}")
+                if error:
+                    return error
+    return None
+
+
+def validate_tool_schema_value(value: Any, schema: dict[str, Any] | None) -> str | None:
+    if schema is None:
+        return None
+    return _schema_value_error(value, schema)
+
+
+def tool_contract_descriptor(spec: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    input_schema = getattr(spec, "input_schema", None)
+    output_schema = getattr(spec, "output_schema", None)
+    if isinstance(input_schema, dict):
+        result["input_schema"] = input_schema
+    if isinstance(output_schema, dict):
+        result["output_schema"] = output_schema
+    return result
+
+
 @dataclass
 class ToolSpec:
     name: str
@@ -33,6 +123,8 @@ class ToolSpec:
     postcondition: Callable[[Any], bool] | None = None
     failure_modes: list[str] = field(default_factory=list)
     provenance: dict[str, str] = field(default_factory=dict)
+    input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     execution_backend: ExecutionBackend | None = None
     execution_workspace: Path | None = None
     execution_kind: str = field(default="trusted_in_process", init=False)
@@ -51,6 +143,8 @@ class SandboxedCommandToolSpec:
     permission: str = "auto"
     failure_modes: list[str] = field(default_factory=list)
     provenance: dict[str, str] = field(default_factory=dict)
+    input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     require_zero_exit: bool = True
     execution_kind: str = field(default="sandboxed_command", init=False)
 
@@ -62,6 +156,25 @@ class SandboxedCommandToolSpec:
         self.timeout_seconds = float(self.timeout_seconds)
         if not isinstance(self.command_arg, str) or not self.command_arg.strip(): raise ValueError("command_arg must be a non-empty string")
         if self.side_effect not in {SideEffect.WRITE, SideEffect.EXTERNAL}: raise ValueError("sandboxed command tools must declare WRITE or EXTERNAL side effects")
+        if self.input_schema is None:
+            self.input_schema = {
+                "type": "object",
+                "properties": {self.command_arg: {"type": "string", "minLength": 1}},
+                "required": [self.command_arg],
+                "additionalProperties": False,
+            }
+        if self.output_schema is None:
+            self.output_schema = {
+                "type": "object",
+                "properties": {
+                    "returncode": {"type": "integer"},
+                    "stdout": {"type": "string"},
+                    "stderr": {"type": "string"},
+                    "timed_out": {"type": "boolean"},
+                },
+                "required": ["returncode", "stdout", "stderr", "timed_out"],
+                "additionalProperties": False,
+            }
         self.provenance = dict(self.provenance)
         self.provenance.update({"execution_kind": self.execution_kind, "timeout_seconds": repr(self.timeout_seconds), "command_arg": self.command_arg, "require_zero_exit": "true" if self.require_zero_exit else "false"})
 
@@ -86,6 +199,8 @@ class SandboxedArgvToolSpec:
     permission: str = "auto"
     failure_modes: list[str] = field(default_factory=list)
     provenance: dict[str, str] = field(default_factory=dict)
+    input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     require_zero_exit: bool = True
     execution_kind: str = field(default="sandboxed_argv", init=False)
 
@@ -97,6 +212,31 @@ class SandboxedArgvToolSpec:
         self.timeout_seconds = float(self.timeout_seconds)
         if not isinstance(self.argv_arg, str) or not self.argv_arg.strip(): raise ValueError("argv_arg must be a non-empty string")
         if self.side_effect not in {SideEffect.WRITE, SideEffect.EXTERNAL}: raise ValueError("sandboxed argv tools must declare WRITE or EXTERNAL side effects")
+        if self.input_schema is None:
+            self.input_schema = {
+                "type": "object",
+                "properties": {
+                    self.argv_arg: {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                    }
+                },
+                "required": [self.argv_arg],
+                "additionalProperties": False,
+            }
+        if self.output_schema is None:
+            self.output_schema = {
+                "type": "object",
+                "properties": {
+                    "returncode": {"type": "integer"},
+                    "stdout": {"type": "string"},
+                    "stderr": {"type": "string"},
+                    "timed_out": {"type": "boolean"},
+                },
+                "required": ["returncode", "stdout", "stderr", "timed_out"],
+                "additionalProperties": False,
+            }
         self.provenance = dict(self.provenance)
         self.provenance.update({"execution_kind": self.execution_kind, "timeout_seconds": repr(self.timeout_seconds), "argv_arg": self.argv_arg, "require_zero_exit": "true" if self.require_zero_exit else "false"})
 
@@ -120,6 +260,8 @@ class SandboxedSessionToolSpec:
     permission: str = "auto"
     failure_modes: list[str] = field(default_factory=list)
     provenance: dict[str, str] = field(default_factory=dict)
+    input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     max_read_bytes: int = 1024 * 1024
     max_wait_seconds: float = 5.0
     execution_kind: str = field(default="sandboxed_session", init=False)
@@ -131,6 +273,20 @@ class SandboxedSessionToolSpec:
         if not isinstance(self.max_read_bytes, int) or isinstance(self.max_read_bytes, bool) or self.max_read_bytes <= 0: raise ValueError("max_read_bytes must be a positive integer")
         if not isinstance(self.max_wait_seconds, (int, float)) or isinstance(self.max_wait_seconds, bool) or self.max_wait_seconds < 0: raise ValueError("max_wait_seconds must be non-negative")
         self.max_wait_seconds = float(self.max_wait_seconds)
+        if self.input_schema is None:
+            self.input_schema = {
+                "type": "object",
+                "properties": {
+                    "op": {"type": "string", "enum": ["create", "send", "read", "interrupt", "status", "close"]},
+                    "session_id": {"type": "string", "minLength": 1},
+                    "argv": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+                    "data_b64": {"type": "string"},
+                    "max_bytes": {"type": "integer"},
+                    "wait_seconds": {"type": "number"},
+                },
+                "required": ["op"],
+                "additionalProperties": False,
+            }
         self.provenance = dict(self.provenance)
         self.provenance.update({"execution_kind": self.execution_kind, "max_read_bytes": str(self.max_read_bytes), "max_wait_seconds": repr(self.max_wait_seconds), "resume_policy": "ephemeral_fail_closed"})
 
@@ -251,6 +407,8 @@ class ActionRuntime:
         except Exception as exc: return ToolResult(False, error=f"{type(exc).__name__}: {exc}", isolation=isolation)
         output = self._result_output(result)
         if spec.require_zero_exit and (result.returncode != 0 or result.timed_out): return ToolResult(False, output=output, error="postcondition failed", isolation=isolation)
+        output_error = validate_tool_schema_value(output, spec.output_schema)
+        if output_error: return ToolResult(False, output=output, error=f"output schema validation failed: {output_error}", isolation=isolation)
         return ToolResult(True, output=output, isolation=isolation)
 
     def _execute_sandboxed_argv(self, spec, call, *, isolation):
@@ -260,6 +418,8 @@ class ActionRuntime:
         except Exception as exc: return ToolResult(False, error=f"{type(exc).__name__}: {exc}", isolation=isolation)
         output = self._result_output(result)
         if spec.require_zero_exit and (result.returncode != 0 or result.timed_out): return ToolResult(False, output=output, error="postcondition failed", isolation=isolation)
+        output_error = validate_tool_schema_value(output, spec.output_schema)
+        if output_error: return ToolResult(False, output=output, error=f"output schema validation failed: {output_error}", isolation=isolation)
         return ToolResult(True, output=output, isolation=isolation)
 
     def _owned_session(self, spec, session_id: Any):
@@ -322,11 +482,13 @@ class ActionRuntime:
     def execute(self, call: ToolCall):
         spec = self.tools.get(call.tool)
         if not spec: return ToolResult(False, error=f"unknown tool: {call.tool}")
+        if not isinstance(call.args, dict): return ToolResult(False, error="tool args must be an object")
+        input_error = validate_tool_schema_value(call.args, getattr(spec, "input_schema", None))
+        if input_error: return ToolResult(False, error=f"input schema validation failed: {input_error}")
         capability_error = self._check_capability(spec)
         if capability_error: return ToolResult(False, error=capability_error, security_violation=True)
         permission_result = self._check_permission(call, spec)
         if permission_result is not None: return permission_result
-        if not isinstance(call.args, dict): return ToolResult(False, error="tool args must be an object")
         isolation_error, isolation = self._check_isolation(spec)
         if isolation_error: return ToolResult(False, error=isolation_error, security_violation=True, isolation=isolation)
         if isinstance(spec, SandboxedCommandToolSpec): return self._execute_sandboxed_command(spec, call, isolation=isolation)
@@ -342,6 +504,8 @@ class ActionRuntime:
             try:
                 if not spec.postcondition(out): return ToolResult(False, output=out, error="postcondition failed", isolation=isolation)
             except Exception as exc: return ToolResult(False, output=out, error=f"postcondition error: {type(exc).__name__}: {exc}", isolation=isolation)
+        output_error = validate_tool_schema_value(out, getattr(spec, "output_schema", None))
+        if output_error: return ToolResult(False, output=out, error=f"output schema validation failed: {output_error}", isolation=isolation)
         return ToolResult(True, output=out, isolation=isolation)
 
 
