@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import MethodType
 from typing import Any, Mapping
 
 
@@ -7,26 +8,25 @@ class ProfileCompositionError(ValueError):
     pass
 
 
-class ToolAugmentedProfile:
-    """Thin profile proxy that adds integration tools without changing domain semantics."""
+def augment_profile_tools(profile: Any, extra_tools: Mapping[str, Any]) -> Any:
+    """Add integration tools while preserving the original profile type/identity.
 
-    def __init__(self, base_profile: Any, extra_tools: Mapping[str, Any]):
-        self._base_profile = base_profile
-        self._extra_tools = dict(extra_tools)
-        base_tools = base_profile.tools()
-        collisions = sorted(set(base_tools) & set(self._extra_tools))
-        if collisions:
-            raise ProfileCompositionError(
-                "tool name collision while composing profile: " + ", ".join(collisions)
-            )
-        self._base_tools = dict(base_tools)
+    Runtime provenance records the concrete profile class/source plus each
+    resulting tool descriptor. Keeping the original instance avoids replacing
+    that profile identity with a generic proxy in resume fingerprints.
+    """
 
-    def __getattr__(self, name: str):
-        return getattr(self._base_profile, name)
-
-    @property
-    def name(self):
-        return self._base_profile.name
+    extras = dict(extra_tools)
+    base_tools = dict(profile.tools())
+    collisions = sorted(set(base_tools) & set(extras))
+    if collisions:
+        raise ProfileCompositionError(
+            "tool name collision while composing profile: " + ", ".join(collisions)
+        )
+    composed = {**base_tools, **extras}
 
     def tools(self):
-        return {**self._base_tools, **self._extra_tools}
+        return dict(composed)
+
+    profile.tools = MethodType(tools, profile)
+    return profile
