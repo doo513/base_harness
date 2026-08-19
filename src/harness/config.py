@@ -118,6 +118,21 @@ class PluginConfig:
 
 
 @dataclass(frozen=True)
+class MemoryConfig:
+    enabled: bool = False
+    root: str | None = None
+    project_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ConfigError("memory.enabled must be boolean")
+        if self.enabled and (not isinstance(self.root, str) or not self.root.strip()):
+            raise ConfigError("enabled project memory requires memory.root")
+        if self.project_id is not None and (not isinstance(self.project_id, str) or not self.project_id.strip()):
+            raise ConfigError("memory.project_id must be a non-empty string when provided")
+
+
+@dataclass(frozen=True)
 class HarnessConfig:
     profile: str = "demo"
     run_dir: str = "./run"
@@ -126,6 +141,7 @@ class HarnessConfig:
     models: dict[str, ModelConfig] = field(default_factory=dict)
     mcp_servers: tuple[MCPServerConfig, ...] = ()
     plugins: tuple[PluginConfig, ...] = ()
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     security: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -183,6 +199,11 @@ class HarnessConfig:
                 }
                 for item in self.plugins
             ],
+            "memory": {
+                "enabled": self.memory.enabled,
+                "root": self.memory.root,
+                "project_id": self.memory.project_id,
+            },
             "security": dict(self.security),
         }
 
@@ -223,7 +244,7 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
     data = dict(raw)
     allowed = {
         "profile", "run_dir", "workspace", "default_model", "models",
-        "mcp", "plugins", "security",
+        "mcp", "plugins", "memory", "security",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -309,6 +330,22 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
             options=_expect_mapping(item.get("options"), f"plugins[{index}].options"),
         ))
 
+    memory_raw = _expect_mapping(data.get("memory"), "memory")
+    memory_unknown = sorted(set(memory_raw) - {"enabled", "root", "project_id"})
+    if memory_unknown:
+        raise ConfigError("unknown memory config keys: " + ", ".join(memory_unknown))
+    memory_root = memory_raw.get("root")
+    project_id = memory_raw.get("project_id")
+    if memory_root is not None and not isinstance(memory_root, str):
+        raise ConfigError("memory.root must be a string")
+    if project_id is not None and not isinstance(project_id, str):
+        raise ConfigError("memory.project_id must be a string")
+    memory = MemoryConfig(
+        enabled=_expect_bool(memory_raw.get("enabled"), "memory.enabled", default=False),
+        root=memory_root,
+        project_id=project_id,
+    )
+
     profile = data.get("profile", "demo")
     run_dir = data.get("run_dir", "./run")
     default_model = data.get("default_model")
@@ -327,6 +364,7 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         models=models,
         mcp_servers=tuple(mcp_items),
         plugins=tuple(plugin_items),
+        memory=memory,
         security=_expect_mapping(data.get("security"), "security"),
     )
 
