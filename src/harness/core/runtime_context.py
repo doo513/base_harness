@@ -91,6 +91,10 @@ class RuntimeContextMixin:
             tools=self.actions.tools,
         )
         projected = self._project_retrieval_context(projected)
+        # Actor planning state is visible through the same governed model
+        # projection boundary, but is explicitly non-authoritative. It is not a
+        # trusted fact namespace and cannot grant progress/completion credit.
+        projected["agent_workflow"] = self.state.agent_control.context_view()
         return RuntimeContextProjection(
             projected,
             self._legacy_controller_context(),
