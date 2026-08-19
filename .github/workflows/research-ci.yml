@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - develop
+      - main
   pull_request:
     branches:
       - develop
+      - main
   workflow_dispatch:
 
 jobs:
@@ -24,6 +26,12 @@ jobs:
           python -m pip check
       - name: Compile
         run: python -m compileall -q src tests scripts
+      - name: CLI and TUI entrypoint smoke
+        run: |
+          python -m harness.cli --help
+          python -m harness.tui --help
+          verified-harness --help
+          verified-harness-tui --help
       - name: Full pytest regression
         run: pytest -q
       - name: Core freeze audit regression probe
