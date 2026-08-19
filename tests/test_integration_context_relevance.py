@@ -25,7 +25,10 @@ def test_active_task_relevance_selects_related_fact_without_changing_authority()
     )
     state.agent_control.activate("auth")
     projector = ActiveContextProjector(ActiveContextPolicy(max_facts=1))
-    result = projector.project(goal=GoalContract(goal="improve application"), state=state)
+    result = projector.project(
+        goal=GoalContract(goal="improve application", acceptance=["application improvement verified"]),
+        state=state,
+    )
 
     assert [item["key"] for item in result["facts"]] == ["auth.root_cause"]
     assert result["facts"][0]["authority"] == Authority.ENVIRONMENT.value
@@ -51,7 +54,8 @@ def test_relevance_never_promotes_untrusted_hypothesis_or_observation():
     ))
 
     result = ActiveContextProjector().project(
-        goal=GoalContract(goal="fix authentication"), state=state
+        goal=GoalContract(goal="fix authentication", acceptance=["authentication fix verified"]),
+        state=state,
     )
     assert result["hypotheses"][0]["trust"] == "untrusted_speculation"
     assert result["hypotheses"][0]["instruction_authority"] == "none"
@@ -65,7 +69,7 @@ def test_relevance_is_deterministic_and_bounded():
         state.facts[f"auth.{index}"] = _verified(f"auth.{index}", f"authentication value {index}")
     policy = ActiveContextPolicy(max_facts=3, max_value_preview_chars=10)
     projector = ActiveContextProjector(policy)
-    goal = GoalContract(goal="authentication")
+    goal = GoalContract(goal="authentication", acceptance=["authentication context selected"])
     first = projector.project(goal=goal, state=state)
     second = projector.project(goal=goal, state=state)
     assert first == second
