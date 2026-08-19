@@ -17,3 +17,4 @@ testpaths = ["tests"]
 
 [project.scripts]
 verified-harness = "harness.cli:main"
+verified-harness-tui = "harness.tui:main"
