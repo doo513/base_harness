@@ -1,6 +1,6 @@
 # Live Gemini API / Harness Status
 
-- Source commit: 54d8a36f1feb73345b2ba0f17058705611aa7cab
+- Source commit: 21a2ba973b960a5d5523c70db712facb4abbc2a5
 - Runner: GitHub Actions ubuntu-latest
 - Model: `gemini-3.6-flash`
 - Provider path: OpenAI-compatible Gemini endpoint
