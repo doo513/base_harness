@@ -12,6 +12,7 @@ from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import Completion
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 
@@ -279,6 +280,40 @@ def _inspect(run_dir: str) -> None:
     _render_final_result(run_dir)
 
 
+def _change_model(state: legacy.AppState, session: PromptSession, argument: str = "") -> None:
+    before_alias, before_model, _ = state.model_status()
+    legacy._models(state, session, argument)
+    alias, model, ready = state.model_status()
+    if not ready:
+        secret_name = legacy._secret_name_for_default(state.config)
+        if secret_name and not (os.environ.get(secret_name) or state.session_env.get(secret_name)):
+            legacy._print_note(f"{alias}:{model} requires {secret_name} for the next run.")
+            key = legacy._prompt_secret(session)
+            if key:
+                state.session_env[secret_name] = key
+                ready = state.model_status()[2]
+    if ready and (alias != before_alias or model != before_model):
+        legacy._print_note(f"Next run model · {alias}:{model}")
+
+
+class _ConversationCompleter(legacy.SlashCompleter):
+    """Add conversational aliases without changing runtime command authority."""
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if text.startswith("/change"):
+            if " " not in text:
+                if "/change".startswith(text):
+                    yield Completion("/change", start_position=-len(text))
+                return
+            _, fragment = text.split(" ", 1)
+            for alias in legacy._configured_models(self.state.config):
+                if alias.startswith(fragment):
+                    yield Completion(alias, start_position=-len(fragment))
+            return
+        yield from super().get_completions(document, complete_event)
+
+
 def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -> bool:
     command, _, argument = text.strip().partition(" ")
     if command == "/resume":
@@ -287,6 +322,15 @@ def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -
         return True
     if command == "/inspect":
         _inspect(argument.strip())
+        print()
+        return True
+    if command == "/change":
+        _change_model(state, session, argument.strip())
+        print()
+        return True
+    if command == "/help":
+        legacy._help()
+        legacy._emit(("class:accent", f"  {'/change [alias]':<24}"), ("class:muted", "friendly alias for /model [alias]"))
         print()
         return True
     return legacy._handle_command(state, session, text)
@@ -305,7 +349,7 @@ def _ensure_model_ready(state: legacy.AppState, session: PromptSession) -> bool:
 
 def _banner(state: legacy.AppState) -> None:
     legacy._banner(state)
-    legacy._emit(("class:muted", "  Type the task normally. /skills and /mode are advanced controls when you want to inspect or override defaults."))
+    legacy._emit(("class:muted", "  Type the task normally. Use /model or /change to switch models; /skills and /mode are advanced controls."))
     print()
 
 
@@ -323,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
     session: PromptSession = PromptSession(
         history=InMemoryHistory(),
         auto_suggest=AutoSuggestFromHistory(),
-        completer=legacy.SlashCompleter(state),
+        completer=_ConversationCompleter(state),
         complete_while_typing=True,
         style=legacy.STYLE,
         bottom_toolbar=lambda: legacy._bottom_toolbar(state),
