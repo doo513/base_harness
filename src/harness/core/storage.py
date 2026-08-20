@@ -301,8 +301,52 @@ class ArtifactStore:
         return path
 
     @classmethod
+    def _portable_verified_read_bytes_from_root(cls, root: str | Path, ref: str) -> bytes:
+        """Portable verified read for platforms without POSIX directory-fd semantics.
+
+        The path is still constrained to the content-addressed artifact root and
+        the exact bytes returned are hashed against the digest encoded in `ref`.
+        Windows does not expose the same descriptor-relative/no-follow primitive
+        used by the POSIX path, so explicit resolve/lstat/regular-file checks are
+        performed before opening the artifact.
+        """
+        root = Path(root).resolve()
+        expected = cls.digest_from_ref(ref)
+        path = cls.resolve_ref_path(root, ref)
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(root)
+            info = path.lstat()
+        except FileNotFoundError as exc:
+            raise IntegrityError("artifact file is missing") from exc
+        except (OSError, ValueError) as exc:
+            raise IntegrityError(f"artifact file cannot be resolved safely: {exc}") from exc
+        if stat.S_ISLNK(info.st_mode):
+            raise IntegrityError("artifact file must not be a symlink")
+        if not stat.S_ISREG(info.st_mode):
+            raise IntegrityError("artifact is not a regular file")
+
+        try:
+            with resolved.open("rb") as handle:
+                opened_info = os.fstat(handle.fileno())
+                if not stat.S_ISREG(opened_info.st_mode):
+                    raise IntegrityError("artifact is not a regular file")
+                raw = handle.read()
+        except IntegrityError:
+            raise
+        except OSError as exc:
+            raise IntegrityError(f"artifact file cannot be opened safely: {exc}") from exc
+
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise IntegrityError("artifact content hash mismatch")
+        return raw
+
+    @classmethod
     def verified_read_bytes_from_root(cls, root: str | Path, ref: str) -> bytes:
         """Open once, hash the exact read buffer, and return that same buffer."""
+        if os.name == "nt":
+            return cls._portable_verified_read_bytes_from_root(root, ref)
+
         root = Path(root).resolve()
         token = cls._token_from_ref(ref)
         expected = cls.digest_from_ref(ref)
