@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 
-from harness.tui import RunLaunchSpec, RunView
+from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir, _run_dir_is_nonempty
 
 
 def test_tui_launch_spec_builds_cli_command_without_shell_interpolation(tmp_path):
@@ -26,6 +27,21 @@ def test_tui_launch_spec_builds_cli_command_without_shell_interpolation(tmp_path
     assert "--strict-tool-isolation" in command
     assert command[command.index("--network-policy") + 1] == "deny"
     assert command[command.index("--accept-command") + 1] == "python -m pytest tests/test_auth.py"
+
+
+def test_tui_fresh_run_directory_default_is_unused(tmp_path):
+    run_dir = Path(_default_new_run_dir(tmp_path))
+    assert run_dir.parent == tmp_path
+    assert not run_dir.exists()
+
+
+def test_tui_detects_nonempty_run_directory(tmp_path):
+    run_dir = tmp_path / "run"
+    assert _run_dir_is_nonempty(run_dir) is False
+    run_dir.mkdir()
+    assert _run_dir_is_nonempty(run_dir) is False
+    (run_dir / "state.json").write_text("{}", encoding="utf-8")
+    assert _run_dir_is_nonempty(run_dir) is True
 
 
 def test_tui_run_view_reads_persisted_runtime_artifacts(tmp_path):
