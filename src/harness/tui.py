@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -215,6 +216,40 @@ def _positive_int(label: str, default: str) -> int:
         raise SystemExit(f"{label} must be a positive integer.") from exc
 
 
+def _default_new_run_dir(root: str | Path = "./runs") -> str:
+    """Return a fresh, human-readable run directory without creating it."""
+    base = Path(root)
+    stem = datetime.now().strftime("%Y%m%d-%H%M%S")
+    candidate = base / stem
+    suffix = 2
+    while candidate.exists():
+        candidate = base / f"{stem}-{suffix}"
+        suffix += 1
+    return str(candidate)
+
+
+def _run_dir_is_nonempty(path: str | Path) -> bool:
+    candidate = Path(path).expanduser()
+    if not candidate.exists():
+        return False
+    if not candidate.is_dir():
+        return True
+    try:
+        return next(candidate.iterdir(), None) is not None
+    except OSError:
+        return True
+
+
+def _prompt_fresh_run_dir() -> str:
+    default = _default_new_run_dir()
+    while True:
+        value = _prompt("Run directory", default, required=True)
+        if not _run_dir_is_nonempty(value):
+            return value
+        print("Run directory is not empty. Choose a fresh directory, or use Resume for an existing run.")
+        default = _default_new_run_dir()
+
+
 def _run_connect_provider(config_path: str) -> int:
     print("\nSkill: connect-provider")
     choices = tuple(PROVIDER_PRESETS)
@@ -385,7 +420,7 @@ def interactive_spec(*, resume: bool) -> RunLaunchSpec:
         profile = _prompt_choice("Mode", ("software", "hackathon", "ctf", "demo"), "software")
         config = _prompt("Config TOML", "harness.toml")
         _maybe_bootstrap_config(config)
-        run_dir = _prompt("Run directory", "./run", required=True)
+        run_dir = _prompt_fresh_run_dir()
 
     acceptance = () if profile in {"ctf", "demo"} else _prompt_acceptance_commands()
     advanced = _prompt_bool("Advanced execution settings", False)
