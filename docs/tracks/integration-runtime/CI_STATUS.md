@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 46dff71dc47a527683f9ac4350a5a3b3d2ec781c
+- Source commit: 5398f4b6f17fb028e8eb0f3ac5f2ab5cd87130ba
 - Branch: main
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -58,6 +58,22 @@ stage02-binding-cost                             PASS
 ....ssss..s.................................................ss.......... [ 47%]
 ........................................................................ [ 71%]
 ........................................................................ [ 95%]
-..............                                                           [100%]
-295 passed, 7 skipped in 28.16s
+...........F..                                                           [100%]
+=================================== FAILURES ===================================
+__________ test_visual_tui_synthesizes_acceptance_for_report_request ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_visual_tui_synthesizes_ac0')
+
+    def test_visual_tui_synthesizes_acceptance_for_report_request(tmp_path):
+        state = AppState(workspace=str(tmp_path), mode="software")
+        spec = _task_spec(state, "이 프로젝트를 분석해서 보고서를 작성해줘")
+>       assert spec.acceptance_commands
+E       AssertionError: assert ()
+E        +  where () = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_synthesizes_ac0', run_dir='runs/2...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).acceptance_commands
+
+tests/test_tui_visual.py:81: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_tui_visual.py::test_visual_tui_synthesizes_acceptance_for_report_request - AssertionError: assert ()
+ +  where () = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_synthesizes_ac0', run_dir='runs/2...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).acceptance_commands
+1 failed, 294 passed, 7 skipped in 25.64s
 ```
