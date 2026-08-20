@@ -1,8 +1,10 @@
 # Verified-State Harness CI dependency lock
 # Linux CPython 3.11 release-validation environment.
-# Exact versions observed in the v0.8.3 release CI and frozen for reproducible evidence runs.
+# Exact versions pinned for reproducible evidence runs.
 pytest==9.1.1
 iniconfig==2.3.0
 packaging==26.3
 pluggy==1.6.0
 pygments==2.20.0
+prompt-toolkit==3.0.52
+wcwidth==0.2.13
