@@ -3,65 +3,52 @@
 A verified-state agent harness for model-driven software, hackathon, CTF, and controlled tool-use workflows.
 
 ```text
+Task / Workspace
+      ↓
 Model / Agent
-    ↓ proposes / acts
+      ↓ proposes / acts
 Verified-State Kernel
-    ├─ Context Governance
-    ├─ Capability / Tool Runtime
-    ├─ Verification
-    ├─ Progress Control
-    ├─ Recovery
-    └─ Completion Oracle
-         ↓
-trusted state / accepted completion
+  ├─ Context Governance
+  ├─ Capability / Tool Runtime
+  ├─ Verification
+  ├─ Progress Control
+  ├─ Recovery
+  └─ Completion Oracle
+      ↓
+verified run state / accepted completion
 ```
 
-The core invariant is:
+Core invariant:
 
-> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success. Recovery, progress control, context projection, and retrieval admission are kernel-governed and may not bypass those gates.**
+> **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success.**
 
 Current package version: **v0.9.1**.
 
 ## Branches
 
 ```text
-main
-  └─ current integrated user-facing line
-
-develop
-  └─ active development / next changes
-
-preprocessing
-  └─ frozen pre-integration snapshot
-
-legacy-main-pre-integration
-  └─ archived former main tip before integration promotion
+main           validated user-facing line
+develop        active development
+preprocessing  frozen pre-integration snapshot
 ```
 
-## What is currently available
+## Current runtime surface
 
-```text
-Workspace contract
-Config + environment secret references
-Model Gateway
-  ├─ command/local provider
-  └─ OpenAI-compatible HTTP provider
-Agent plan/task control
-Tool contracts + shell/argv execution + bounded workspace reads
-MCP stdio tools
-Explicit installed Python plugins
-Context governance + lexical relevance
-Cross-run project/episodic memory
-Software profile
-Hackathon profile
-CTF profile
-Verification / completion oracle
-Progress / recovery
-Persistence / resume
-Evaluation / ablation records
-CLI
-TUI launcher / monitor / inspect
-```
+- Workspace contract
+- typed TOML config + environment secret references
+- Model Gateway: command/local + OpenAI-compatible HTTP
+- LLMController / agent control
+- tool contracts, shell/argv execution, bounded workspace reads
+- MCP stdio tool discovery/calls
+- explicit Python plugins
+- context governance + lexical relevance
+- cross-run project memory
+- software / hackathon / CTF / demo profiles
+- verification, completion oracle, progress control, recovery
+- persistence / resume / evaluation records
+- CLI
+- **task-first TUI**
+- **SKILL.md catalog for connection/discovery workflows**
 
 ## Install
 
@@ -81,179 +68,233 @@ PowerShell:
 python -m pip install -e .
 ```
 
-Linux/macOS shell:
+Linux/macOS:
 
 ```bash
 source .venv/bin/activate
 python -m pip install -e .
 ```
 
-Installed commands:
+Commands:
 
 ```text
 verified-harness
 verified-harness-tui
 ```
 
-The equivalent module commands are:
+## Recommended use: task-first TUI
+
+Run without arguments:
+
+```powershell
+verified-harness-tui
+```
+
+Home:
 
 ```text
-python -m harness.cli
-python -m harness.tui
+Verified-State Harness
+  1. New task
+  2. Skills / connections
+  3. Resume run
+  4. Inspect run
+  q. Quit
 ```
 
-## Configure a model API
+A normal development run starts with the task, not provider settings:
 
-The harness does **not** currently expose its own REST server API. In this repository, "API usage" means configuring the Model Gateway to call an LLM provider API.
+```text
+Workspace [.]: C:\work\my-project
+Task / problem: Add rate limiting to the login API and add regression tests.
+Mode (software/hackathon/ctf/demo) [software]: software
+Config TOML [harness.toml]: harness.toml
+Run directory [./run]: .\run\login-rate-limit
+Acceptance commands:
+accept> pytest -q
+accept>
+Advanced execution settings [y/N]: n
+```
 
-Start from the example:
+Hackathon example:
 
-PowerShell:
+```text
+Workspace [.]: C:\hackathon\prototype
+Task / problem: Implement the demo API from the requirements, wire the frontend, and verify the demo path.
+Mode [software]: hackathon
+```
+
+The TUI translates this into the normal CLI/runtime boundary. It does not bypass Kernel verification, tool permissions, recovery, or completion rules.
+
+Direct subcommands remain available:
+
+```text
+verified-harness-tui new
+verified-harness-tui resume
+verified-harness-tui inspect <run-dir>
+```
+
+## Skills: connections and discovery
+
+Connection/discovery UX is intentionally separated from the main task flow.
+
+Bundled skills use an Agent-Skills-style `SKILL.md` structure. The catalog loads lightweight metadata first and reads the full skill only when selected.
+
+List skills:
 
 ```powershell
-Copy-Item harness.example.toml harness.toml
+verified-harness-tui skills
 ```
 
-Bash:
-
-```bash
-cp harness.example.toml harness.toml
-```
-
-Secrets should be environment references, not literal keys committed to TOML.
-
-### Gemini through the OpenAI-compatible endpoint
-
-Set the key:
-
-PowerShell:
+Search skills:
 
 ```powershell
-$env:GEMINI_API_KEY="YOUR_KEY"
+verified-harness-tui skills mcp
 ```
 
-Bash:
+Current built-ins:
 
-```bash
-export GEMINI_API_KEY="YOUR_KEY"
+```text
+connect-provider  configure an LLM route
+mcp-search        search the official MCP Registry
+configure-mcp     add an explicit reviewed MCP connection
 ```
 
-Example `harness.toml`:
+### Connect a model provider
+
+```powershell
+verified-harness-tui skill connect-provider --config harness.toml
+```
+
+Example:
+
+```text
+Provider (gemini/openai/openai-compatible/ollama) [gemini]: gemini
+Model alias [gemini]: gemini
+Model [gemini-3.5-flash]:
+Endpoint [...]:
+API-key environment variable [GEMINI_API_KEY]:
+Use this as default model [Y/n]: y
+```
+
+The skill writes only configuration and a secret reference:
 
 ```toml
-profile = "software"
-run_dir = "./run"
 default_model = "gemini"
-
-[workspace]
-root = "."
-temp_dir = ".harness-tmp"
-build_dir = "build"
-cache_dir = ".cache/harness"
-
-[security]
-strict_layout = false
-strict_tool_isolation = false
-network_policy = "allow"
-require_sealed_oracle = false
-
-[memory]
-enabled = false
-root = "../.verified-state-harness-memory"
 
 [models.gemini]
 provider = "openai-compatible"
-model = "gemini-3.6-flash"
+model = "gemini-3.5-flash"
 endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/"
 api_key = "env:GEMINI_API_KEY"
 timeout_seconds = 120
 ```
 
-Any provider exposing a compatible `/chat/completions` interface can use the same provider type with its own endpoint/model/key.
+**Raw API keys are not written to `harness.toml`.** Secret values stay in the OS/shell/CI/external secret system; the Harness only resolves `env:NAME` at runtime.
 
-## TUI: quickest interactive use
+This is deliberate: the Harness does not implement its own persistent SecretStore.
 
-Start a new run:
-
-```powershell
-verified-harness-tui new
-```
-
-or:
+### Search MCP servers
 
 ```powershell
-python -m harness.tui new
+verified-harness-tui skill mcp-search
 ```
 
-For a software task, a typical prompt session is:
+`mcp-search` queries the **official MCP Registry** and displays metadata such as name, version, description, repository and package/remote hints.
+
+Discovery is read-only:
 
 ```text
-Config TOML [harness.toml]: harness.toml
-Workspace [.]: C:\work\realtime_ocr
-Run directory [./run]: C:\work\harness-runs\ocr-copy-01
-Profile (software/hackathon/ctf/demo) [software]: software
-Goal: Add a Copy button for each OCR translation result and add tests.
-Acceptance commands: enter one per line; blank line finishes.
-accept> dotnet test GameOcrTranslator.sln
-accept>
-Max steps [30]: 30
-Execution backend (local/linux-namespace) [local]: local
-Network policy (allow/deny) [allow]: allow
-Strict workspace/run layout [y/N]: n
-Strict tool isolation [y/N]: n
-Require sealed completion oracle [y/N]: n
+search ≠ install
+search ≠ enable
+search ≠ trust
 ```
 
-During execution the TUI monitors persisted runtime metrics, recent events, recent tool calls, and model/CLI stdout/stderr. Execution still goes through `harness.cli` and the normal Kernel; the TUI does not bypass verification or tool policy.
-
-Resume an existing run:
+After reviewing a server, configure it explicitly:
 
 ```powershell
-verified-harness-tui resume
+verified-harness-tui skill configure-mcp --config harness.toml
 ```
 
-Inspect a persisted run without executing it:
+For stdio MCP servers, the skill stores argv as an array rather than a shell string. MCP credentials are also stored only as environment references.
 
-```powershell
-verified-harness-tui inspect C:\work\harness-runs\ocr-copy-01
-```
+### Skill security boundary
 
-Equivalent module commands:
+`SKILL.md` does **not** get arbitrary execution authority.
 
 ```text
-python -m harness.tui resume
-python -m harness.tui inspect <run-dir>
+Bundled Skill metadata
+      ↓
+whitelisted Harness action
+      ↓
+config/discovery operation
+
+Custom Skill
+      ↓
+search / display only
 ```
 
-## CLI: direct/non-interactive use
+A custom skill cannot become an executable plugin merely by placing commands in Markdown. Tool authority remains with the existing Harness runtime.
 
-Example software run:
+Additional user skills can be placed under:
+
+```text
+<workspace>/.harness/skills/<skill-name>/SKILL.md
+```
+
+or referenced with `HARNESS_SKILLS_DIR`.
+
+## Orchestration path
+
+The current connected path is:
+
+```text
+Workspace + Task + Mode
+        ↓
+TUI
+        ↓
+Config / selected model / explicit MCP & plugins
+        ↓
+CLI composition
+        ↓
+Model Gateway → LLMController
+        ↓
+Tool Runtime / MCP / Plugin tools
+        ↓
+Evidence → Verification → Progress / Recovery
+        ↓
+Completion Oracle
+        ↓
+run_dir artifacts + result state
+```
+
+This means **development and hackathon folder-based workflows are connected end-to-end**.
+
+Not implemented yet:
+
+```text
+problem-site URL
+      ↓
+automatic authenticated site/file intake
+      ↓
+automatic workspace construction
+```
+
+A site URL can currently be included in the task/context only if the required access/tooling already exists; there is not yet a general site-intake adapter.
+
+## CLI: non-interactive use
+
+Example:
 
 ```powershell
 verified-harness `
   --config harness.toml `
   --profile software `
-  --workspace "C:\work\realtime_ocr" `
-  --run-dir "C:\work\harness-runs\ocr-copy-01" `
-  --goal "Add a Copy button for each OCR translation result and add tests." `
-  --accept-command "dotnet test GameOcrTranslator.sln" `
+  --workspace "C:\work\my-project" `
+  --run-dir ".\run\rate-limit" `
+  --goal "Add rate limiting to the login API and add regression tests." `
+  --accept-command "pytest -q" `
   --max-steps 30
 ```
-
-The same entrypoint is available as:
-
-```powershell
-python -m harness.cli `
-  --config harness.toml `
-  --profile software `
-  --workspace "C:\work\realtime_ocr" `
-  --run-dir "C:\work\harness-runs\ocr-copy-01" `
-  --goal "Add a Copy button for each OCR translation result and add tests." `
-  --accept-command "dotnet test GameOcrTranslator.sln" `
-  --max-steps 30
-```
-
-Resume uses the same runtime composition plus `--resume` and the same run directory/configuration identity.
 
 ## Memory
 
@@ -266,46 +307,44 @@ root = "../.verified-state-harness-memory"
 project_id = "my-project"
 ```
 
-The actor can stage evidence-linked memory candidates. Publication occurs only after the run returns. A later run retrieves them as **untrusted project memory**; memory never directly grants trusted truth, progress, or completion.
+Retrieved project memory is treated as untrusted context; it cannot directly grant trusted truth, progress, or completion.
 
 ## MCP and plugins
 
-MCP v1 currently supports **stdio tool discovery/calls**. Example configuration is in `harness.example.toml`.
+Current MCP runtime support is primarily **stdio tools/list + tools/call**.
 
-Important current boundary:
+Important boundary:
 
 ```text
 MCP default permission = confirm
-TUI interactive persisted approval broker = not implemented yet
+interactive persisted MCP approval broker = not implemented yet
 ```
 
-Python plugins are explicit already-installed trusted host extensions. They are not an isolation mechanism.
+Python plugins are explicit already-installed host extensions and are not an isolation mechanism.
 
 ## Execution security
 
-For ordinary local development on Windows, use:
+For ordinary local development:
 
 ```text
 execution_backend = local
 strict_tool_isolation = false
 ```
 
-`local` is a convenience execution backend, **not a strong sandbox boundary**.
+`local` is a convenience backend, not a strong sandbox boundary.
 
-On a supported Linux host, stronger execution isolation can be requested with:
+On a supported Linux host:
 
 ```text
 --execution-backend linux-namespace
 --strict-tool-isolation
 ```
 
-Strict tool isolation fails closed when a selected tool path cannot prove the required isolation. Current host-process MCP/plugin v1 therefore cannot be combined with strict tool isolation.
+Strict tool isolation fails closed when a selected tool path cannot prove the required isolation. Current host-process MCP/plugin v1 cannot be combined with strict tool isolation.
 
-## Verification / run artifacts
+## Verification and run artifacts
 
-A run persists state and operational evidence under its run directory. Depending on the path exercised, this includes persisted metrics/events/tool-call records and checkpoint/provenance data used for resume and verification.
-
-The model cannot accept its own completion. The normal path remains:
+Runs persist operational state under `run_dir`, including the relevant metrics/events/tool records and checkpoint/provenance artifacts used by the active path.
 
 ```text
 Actor work
@@ -323,20 +362,19 @@ Harness-side completion oracle
 accepted / rejected
 ```
 
+The model cannot accept its own completion.
+
 ## Current limitations
 
-The basic CLI/TUI Software/Hackathon runtime is implemented, but the following are still genuine follow-up areas:
-
-- interactive persisted MCP approval workflow;
-- native Anthropic/Gemini adapters and harness-level streaming;
-- MCP HTTP/resources/prompts/sampling/elicitation/tasks;
-- isolated untrusted plugin runtime;
-- semantic/embedding context ranking beyond current lexical relevance;
-- memory decay/expiry/global GC and richer multi-writer coordination;
-- richer domain semantics and benchmark-tuned progress thresholds;
-- repeated real-provider matched benchmarks before any harness-performance claim.
-
-See `docs/tracks/integration-runtime/POST_IMPLEMENTATION_AUDIT.md` for the post-integration gap review.
+- no general problem-site / authenticated intake orchestrator yet;
+- no persistent interactive MCP approval broker;
+- no native Anthropic/Gemini adapter or harness-level streaming;
+- MCP HTTP/resources/prompts/sampling/elicitation/tasks are not fully integrated;
+- no isolated untrusted plugin runtime;
+- context relevance is still primarily lexical;
+- project memory lacks richer decay/GC/multi-writer coordination;
+- progress thresholds still need representative-corpus tuning;
+- repeated matched real-provider benchmarks are still required before claiming general performance gains.
 
 ## Core stage status
 
@@ -344,12 +382,12 @@ See `docs/tracks/integration-runtime/POST_IMPLEMENTATION_AUDIT.md` for the post-
 |---|---|---|
 | 00 | Research / contracts | HISTORICAL COMPLETE |
 | 01 | Truth + execution integrity | HISTORICAL COMPLETE |
-| 02 | Capability isolation + sealed oracle | PASS / EXITED + remediation hardening |
-| 03 | Persistence + resume + reproducibility | PASS / EXITED (`v0.4.0`) + provenance hardening |
-| 04 | Semantic verification | PASS / EXITED (`v0.5.0`) + claim-class hardening |
-| 05 | Failure recovery | PASS / EXITED (`v0.6.0`) + controlled effectiveness evidence |
-| 06 | Loop / deterministic progress control | PASS / EXITED (`v0.7.0`) + semantic-progress hardening |
-| 07 | Context Governance | PASS / EXITED (`v0.8.0`) + trusted-context bounds |
-| 08 | Retrieval / Memory Gateway | PASS / EXITED (`v0.9.0`) |
+| 02 | Capability isolation + sealed oracle | PASS / EXITED |
+| 03 | Persistence + resume + reproducibility | PASS / EXITED |
+| 04 | Semantic verification | PASS / EXITED |
+| 05 | Failure recovery | PASS / EXITED |
+| 06 | Deterministic progress control | PASS / EXITED |
+| 07 | Context Governance | PASS / EXITED |
+| 08 | Retrieval / Memory Gateway | PASS / EXITED |
 
-Core Stage 00-08 remains frozen except for confirmed defects. Post-Stage08 product/integration work is tracked under `docs/tracks/` rather than creating Stage 09+.
+Core Stage 00-08 remains frozen except for confirmed defects. Product/integration work is layered above the Kernel rather than creating Stage 09+.
