@@ -292,9 +292,20 @@ def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -
     return legacy._handle_command(state, session, text)
 
 
+def _ensure_model_ready(state: legacy.AppState, session: PromptSession) -> bool:
+    alias, _, ready = state.model_status()
+    if ready:
+        return True
+    if alias != "not connected":
+        legacy._print_note(f"Configured route {alias} needs its credential before the run can start.")
+        legacy._connect(state, session)
+        return state.model_status()[2]
+    return legacy._ensure_model_ready(state, session)
+
+
 def _banner(state: legacy.AppState) -> None:
     legacy._banner(state)
-    legacy._emit(("class:muted", "  Natural-language tasks are the default. Skills and profiles stay behind the workflow unless you need to inspect them."))
+    legacy._emit(("class:muted", "  Type the task normally. /skills and /mode are advanced controls when you want to inspect or override defaults."))
     print()
 
 
@@ -347,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         if intake.artifact_target:
             legacy._print_note(f"Deliverable · {intake.artifact_target} · evidence-backed artifact contract")
 
-        if not legacy._ensure_model_ready(state, session):
+        if not _ensure_model_ready(state, session):
             print()
             continue
 
