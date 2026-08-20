@@ -1,7 +1,14 @@
 import tomllib
 
 from harness.skill_actions import configure_provider
-from harness.tui_visual import _detect_acceptance, _model_status, _set_default_model
+from harness.tui_visual import (
+    AppState,
+    COMMANDS,
+    _detect_acceptance,
+    _model_status,
+    _set_default_model,
+    _task_spec,
+)
 
 
 def test_visual_tui_detects_python_acceptance_with_python3_on_posix(tmp_path, monkeypatch):
@@ -30,3 +37,28 @@ def test_visual_tui_model_status_reports_missing_environment_credential(tmp_path
     assert alias == "gemini"
     assert model == "gemini-test"
     assert ready is False
+
+
+def test_visual_tui_session_credential_makes_configured_model_ready(tmp_path, monkeypatch):
+    path = tmp_path / "harness.toml"
+    configure_provider(path, alias="gemini", preset="gemini", model="gemini-test", secret_env="SESSION_ONLY_KEY")
+    monkeypatch.delenv("SESSION_ONLY_KEY", raising=False)
+    state = AppState(workspace=str(tmp_path), config=str(path))
+    assert state.model_status()[2] is False
+    state.session_env["SESSION_ONLY_KEY"] = "not-persisted"
+    assert state.model_status()[2] is True
+    assert "not-persisted" not in path.read_text(encoding="utf-8")
+
+
+def test_visual_tui_exposes_expected_agent_cli_commands():
+    assert {"/connect", "/model", "/mcp", "/skills", "/permissions", "/resume", "/status"} <= set(COMMANDS)
+
+
+def test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run(tmp_path):
+    (tmp_path / "tests").mkdir()
+    state = AppState(workspace=str(tmp_path), mode="software")
+    spec = _task_spec(state, "fix the project")
+    assert spec.goal == "fix the project"
+    assert spec.acceptance_commands
+    assert spec.acceptance_commands[0].endswith("-m pytest -q")
+    assert spec.run_dir.startswith("runs") or spec.run_dir.startswith("./runs")
