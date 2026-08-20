@@ -1,6 +1,8 @@
 import tomllib
+from pathlib import Path
 
 from harness.skill_actions import configure_provider
+from harness.tui import _default_run_root
 from harness.tui_visual import (
     AppState,
     COMMANDS,
@@ -62,7 +64,7 @@ def test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run(tmp_path):
     assert spec.goal == "fix the project"
     assert spec.acceptance_commands
     assert spec.acceptance_commands[0].endswith("-m pytest -q")
-    assert spec.run_dir.startswith("runs") or spec.run_dir.startswith("./runs")
+    assert Path(spec.run_dir).parent == _default_run_root()
 
 
 def test_visual_tui_extracts_target_workspace_from_shared_task_intake(tmp_path):
