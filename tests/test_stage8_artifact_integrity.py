@@ -54,7 +54,10 @@ def test_symlink_substitution_is_rejected(tmp_path):
 
 
 def test_swap_after_first_read_cannot_substitute_returned_bytes(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("POSIX directory-fd atomic swap test")
     store = ArtifactStore(tmp_path / "artifacts")
+
     original = (b"A" * (1024 * 1024)) + (b"B" * 64)
     # put_text uses UTF-8 and this payload is ASCII, so encoded bytes are exact.
     ref = store.put_text("large.txt", original.decode("ascii"))
