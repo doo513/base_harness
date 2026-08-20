@@ -41,28 +41,28 @@ def _friendly_event(row: dict[str, Any]) -> None:
 
     if kind == "agent.plan.replaced":
         objective = str(payload.get("objective") or "work plan updated")
-        legacy._emit(("class:accent", "  ◇ Plan  "), ("class:assistant", objective))
+        legacy._emit(("class:accent", "  Plan    "), ("class:assistant", objective))
         return
     if kind == "agent.task.updated":
         task_id = str(payload.get("task_id") or "task")
-        legacy._emit(("class:muted", "  · Check "), ("class:assistant", task_id))
+        legacy._emit(("class:muted", "  Check   "), ("class:assistant", task_id))
         return
     if kind == "tool.result":
-        return  # tool_calls.jsonl is rendered separately with clearer labels.
+        return
     if kind == "verification":
         claim = str(payload.get("claim") or "claim")
         assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
         accepted = bool(assessment.get("accepted"))
         cls = "class:good" if accepted else "class:warn"
-        icon = "✓" if accepted else "!"
-        legacy._emit((cls, f"  {icon} Verify "), ("class:assistant", claim))
+        marker = "✓" if accepted else "!"
+        legacy._emit((cls, f"  {marker} Verify "), ("class:assistant", claim))
         return
     if kind == "completion.oracle":
         accepted = bool(payload.get("accepted"))
         reason = str(payload.get("reason") or "completion check")
         cls = "class:good" if accepted else "class:warn"
-        icon = "✓" if accepted else "!"
-        legacy._emit((cls, f"  {icon} Final  "), ("class:assistant", reason))
+        marker = "✓" if accepted else "!"
+        legacy._emit((cls, f"  {marker} Final  "), ("class:assistant", reason))
         return
     if kind == "completion.accepted":
         legacy._emit(("class:good", "  ✓ Done   "), ("class:assistant", str(payload.get("reason") or "accepted")))
@@ -78,16 +78,31 @@ def _friendly_event(row: dict[str, Any]) -> None:
         return
     if kind.startswith("strategy"):
         legacy._emit(("class:warn", "  ↻ Adjust "), ("class:assistant", kind))
-        return
+
+
+def _tool_preview(row: dict[str, Any]) -> str:
+    args = row.get("args")
+    if not isinstance(args, dict):
+        return ""
+    for key in ("path", "query", "command"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().replace("\n", " ")[:72]
+    argv = args.get("argv")
+    if isinstance(argv, list) and argv:
+        return " ".join(str(item) for item in argv)[:72]
+    return ""
 
 
 def _friendly_tool(row: dict[str, Any]) -> None:
     tool = str(row.get("tool") or "tool")
     ok = row.get("ok")
+    preview = _tool_preview(row)
+    tail = f" · {preview}" if preview else ""
     if ok is False:
-        legacy._emit(("class:bad", "  ✕ Tool   "), ("class:assistant", tool), ("class:muted", " · failed"))
+        legacy._emit(("class:bad", "  ✕ Tool   "), ("class:assistant", tool), ("class:muted", f"{tail} · failed"))
     else:
-        legacy._emit(("class:tool", "  ● Tool   "), ("class:assistant", tool))
+        legacy._emit(("class:tool", "  ● Tool   "), ("class:assistant", tool), ("class:muted", tail))
 
 
 def _drain(stream, sink: deque[str]) -> None:
@@ -122,37 +137,40 @@ def _report_preview(artifact: dict[str, Any]) -> list[str]:
 
 
 def _render_final_result(run_dir: str | Path) -> None:
+    """Render the CLI-owned final_result.json without rewriting or reinterpreting authority."""
     result = _read_final_result(run_dir)
     if not result:
+        legacy._print_note(f"Run saved · {Path(run_dir).resolve()}")
+        print()
         return
+
     evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
     facts = result.get("verified_facts") if isinstance(result.get("verified_facts"), dict) else {}
     artifact = result.get("artifact") if isinstance(result.get("artifact"), dict) else None
 
     if result.get("completed"):
-        legacy._emit(("class:good", "\n  ✓ Finished"))
+        legacy._emit(("class:good", "\n  ✓ Completed"))
     else:
         legacy._emit(("class:warn", "\n  ◇ Stopped before verified completion"))
 
     legacy._emit(
-        ("class:muted", "  Evidence  "),
-        ("class:assistant", f"{evidence.get('workspace_observations', 0)} workspace observations · {facts.get('count', 0)} verified facts"),
+        ("class:muted", "    evidence  "),
+        ("class:assistant", f"{evidence.get('workspace_observations', 0)} observations · {facts.get('count', 0)} verified facts"),
     )
     if artifact and artifact.get("exists"):
         path = str(artifact.get("absolute_path") or artifact.get("path") or "")
-        legacy._emit(("class:muted", "  Output    "), ("class:good", path))
+        legacy._emit(("class:muted", "    output    "), ("class:good", path))
         preview = _report_preview(artifact)
         if preview:
-            legacy._emit(("class:muted", "  Preview"))
             for line in preview:
-                legacy._emit(("class:muted", "    │ "), ("class:assistant", line[:140]))
+                legacy._emit(("class:muted", "      │ "), ("class:assistant", line[:140]))
 
     failures = result.get("last_failures") if isinstance(result.get("last_failures"), list) else []
     if not result.get("completed") and failures:
         last = failures[-1] if isinstance(failures[-1], dict) else {}
         message = str(last.get("message") or last.get("kind") or "run did not complete")
-        legacy._emit(("class:muted", "  Last issue "), ("class:warn", message))
-    legacy._emit(("class:muted", "  Run files  "), ("class:assistant", str(Path(run_dir).resolve())))
+        legacy._emit(("class:muted", "    issue     "), ("class:warn", message))
+    legacy._emit(("class:muted", "    run       "), ("class:assistant", str(Path(run_dir).resolve())))
     print()
 
 
@@ -178,7 +196,7 @@ def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
     for thread in threads:
         thread.start()
 
-    legacy._emit(("class:accent", "  ✻ Working "), ("class:muted", f"· {Path(state.workspace).name or state.workspace}"))
+    legacy._emit(("class:accent", "\n  Working "), ("class:muted", f"· {Path(spec.workspace).resolve().name or spec.workspace} · {spec.profile}"))
     try:
         while process.poll() is None:
             for row in event_tail.read():
@@ -193,7 +211,7 @@ def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-        legacy._print_note("Stopped by user. The run state is still saved for inspection/resume.")
+        legacy._print_note("Stopped by user. Run state is preserved for /inspect or /resume.")
     finally:
         for thread in threads:
             thread.join(timeout=1)
@@ -228,15 +246,60 @@ def _task_spec(state: legacy.AppState, task: str, *, artifact_target: str | None
     )
 
 
+def _resume(state: legacy.AppState, run_dir: str) -> None:
+    if not run_dir:
+        legacy._print_error("Usage: /resume <run-dir>")
+        return
+    spec = RunLaunchSpec(
+        config=state.config if Path(state.config).expanduser().exists() else None,
+        workspace=state.workspace,
+        run_dir=run_dir,
+        profile=state.mode,
+        resume=True,
+    )
+    _run_spec(state, spec)
+
+
+def _inspect(run_dir: str) -> None:
+    if not run_dir:
+        legacy._print_error("Usage: /inspect <run-dir>")
+        return
+    view = RunView(run_dir).refresh()
+    legacy._emit(("class:assistant", f"Run · {Path(run_dir).resolve()}"))
+    if view.metrics:
+        metrics = view.metrics
+        legacy._emit(
+            ("class:muted", "  metrics   "),
+            ("class:assistant", f"steps {metrics.get('steps', 0)} · tools {metrics.get('tool_calls', 0)} · completed {bool(metrics.get('completed'))}"),
+        )
+    for row in view.last_events[-6:]:
+        _friendly_event(row)
+    for row in view.last_tool_calls[-4:]:
+        _friendly_tool(row)
+    _render_final_result(run_dir)
+
+
+def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -> bool:
+    command, _, argument = text.strip().partition(" ")
+    if command == "/resume":
+        _resume(state, argument.strip())
+        print()
+        return True
+    if command == "/inspect":
+        _inspect(argument.strip())
+        print()
+        return True
+    return legacy._handle_command(state, session, text)
+
+
 def _banner(state: legacy.AppState) -> None:
     legacy._banner(state)
-    legacy._emit(("class:muted", "  Tell me what you want done. I’ll plan the work, use the available tools, and verify the result."))
-    legacy._emit(("class:muted", "  You normally do not need to choose a skill or task mode manually."))
+    legacy._emit(("class:muted", "  Natural-language tasks are the default. Skills and profiles stay behind the workflow unless you need to inspect them."))
     print()
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verified-State Harness friendly conversational terminal UI")
+    parser = argparse.ArgumentParser(description="base_harness conversational terminal UI")
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--config", default="harness.toml")
     parser.add_argument("--mode", choices=["software", "hackathon", "ctf", "demo"], default="software")
@@ -266,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         if not text:
             continue
         if text.startswith("/"):
-            if not legacy._handle_command(state, session, text):
+            if not _handle_command(state, session, text):
                 return 0
             continue
 
@@ -277,14 +340,12 @@ def main(argv: list[str] | None = None) -> int:
             current = Path(state.workspace).expanduser().resolve()
             if requested != current:
                 state.workspace = str(requested)
-                legacy._print_good(f"Using the project you requested · {requested}")
+                legacy._print_good(f"Workspace · {requested}")
         elif intake.workspace_ambiguous:
-            legacy._print_note("I found more than one project path in the request, so I kept the current workspace. Use /workspace <path> if one should be the write target.")
+            legacy._print_note("Multiple project paths detected, so the current workspace was kept. Use /workspace <path> to choose a write target.")
 
         if intake.artifact_target:
-            legacy._print_note(
-                f"Deliverable detected · {intake.artifact_target}. I’ll inspect project evidence first, then write and recheck the artifact."
-            )
+            legacy._print_note(f"Deliverable · {intake.artifact_target} · evidence-backed artifact contract")
 
         if not legacy._ensure_model_ready(state, session):
             print()
@@ -298,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             spec = _task_spec(state, text, artifact_target=intake.artifact_target)
             if state.mode in {"software", "hackathon"} and not intake.artifact_target and not spec.acceptance_commands:
-                legacy._emit(("class:warn", "  ! "), ("class:muted", "No deterministic completion check was detected. Use /accept <command> if this task has one."))
+                legacy._emit(("class:warn", "  ! Check  "), ("class:muted", "No fixed acceptance command detected. The profile contract still applies; use /accept <command> when a deterministic check exists."))
             _run_spec(state, spec)
         finally:
             if previous_artifact is None:
