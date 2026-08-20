@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 from harness.config import ConfigError, ModelConfig, SecretResolver
 
@@ -145,6 +146,12 @@ class OpenAICompatibleProvider:
         self.api_key = secret_resolver.resolve(config.api_key)
         self.timeout_seconds = float(config.timeout_seconds)
         self.options = dict(config.options)
+        try:
+            parsed = urlparse(self.endpoint)
+            endpoint_port = parsed.port
+        except ValueError:
+            endpoint_port = None
+        self.ollama_compat = bool(self.options.get("ollama_compat")) or endpoint_port == 11434
 
     @staticmethod
     def _usage(raw: Any) -> ModelUsage:
@@ -168,9 +175,25 @@ class OpenAICompatibleProvider:
             ],
             "stream": False,
         }
-        for key in ("temperature", "max_tokens", "top_p"):
+        for key in ("temperature", "max_tokens", "top_p", "reasoning_effort"):
             if key in self.options:
                 body[key] = self.options[key]
+        response_format = self.options.get("response_format")
+        if isinstance(response_format, dict):
+            body["response_format"] = dict(response_format)
+        elif self.options.get("json_mode") is True:
+            body["response_format"] = {"type": "json_object"}
+
+        # The Harness actor wire protocol is one JSON decision per turn. Modern
+        # Ollama thinking models may otherwise spend the response budget in the
+        # non-authoritative `reasoning` field and leave final `content` empty.
+        # The standard Ollama OpenAI-compatible port is therefore treated as a
+        # protocol-compatibility route, while explicit options can still override it.
+        if self.ollama_compat:
+            body.setdefault("reasoning_effort", "none")
+            if self.options.get("json_mode") is not False:
+                body.setdefault("response_format", {"type": "json_object"})
+
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key is not None:
@@ -213,8 +236,15 @@ class OpenAICompatibleProvider:
             content = msg_dict["reasoning_content"]
         if not content and isinstance(msg_dict.get("text"), str):
             content = msg_dict["text"]
-        if content is None:
-            content = ""
+
+        if not isinstance(content, str) or not content.strip():
+            reasoning_present = isinstance(msg_dict.get("reasoning"), str) and bool(msg_dict.get("reasoning", "").strip())
+            detail = "; reasoning was present but final content was empty" if reasoning_present else ""
+            raise ProviderError(
+                "provider returned empty assistant content" + detail,
+                kind="empty_response",
+                retryable=True,
+            )
 
         return ModelResponse(
             content=content,
@@ -223,7 +253,10 @@ class OpenAICompatibleProvider:
             request_id=request_id or (payload.get("id") if isinstance(payload.get("id"), str) else None),
             usage=self._usage(payload.get("usage")),
             latency_seconds=latency,
-            raw_metadata={"finish_reason": first.get("finish_reason")},
+            raw_metadata={
+                "finish_reason": first.get("finish_reason"),
+                "reasoning_present": isinstance(msg_dict.get("reasoning"), str) and bool(msg_dict.get("reasoning", "").strip()),
+            },
         )
 
 
