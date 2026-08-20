@@ -144,7 +144,7 @@ class ModelAdapter(Protocol):
 def _extract_json_object(raw: str) -> dict[str, Any]:
     """Robustly extract a JSON object from local model outputs that may contain markdown fences or commentary."""
     text = raw.strip()
-    
+
     # 1. Direct JSON parse
     try:
         val = json.loads(text)
@@ -219,30 +219,32 @@ Never claim that a task status, plan status, memory candidate, or completion req
     def decide(self, goal, state, context):
         user = json.dumps({"goal": goal, "context": context}, ensure_ascii=False, default=str)
         raw = self.model.complete(system=self.SYSTEM, user=user)
-        
-        # Retry once if raw response is completely empty
+
+        # Retry once if raw response is completely empty. Provider-level retries
+        # happen first; this remains a final actor-protocol repair guard.
         if not raw or not raw.strip():
             retry_prompt = user + "\n\nCRITICAL: You must return a non-empty JSON object decision, starting with `plan` or `tool`."
             raw = self.model.complete(system=self.SYSTEM, user=retry_prompt)
-            
+
         obj = _extract_json_object(raw)
         kind = str(obj.get("kind", ""))
         payload = obj.get("payload", {})
-        
-        # Guard: If model emits `task` decision before any tasks exist in workflow, auto-promote to `plan`
+
+        # A small model may skip the initial plan and immediately emit a task
+        # update. Only an actually empty workflow is auto-promoted. Once a plan
+        # exists, unknown task IDs remain errors so recovery can repair the typo
+        # instead of silently replacing the current plan.
         if kind == "task" and state is not None:
             agent_tasks = getattr(state, "agent_control", None)
             tasks_map = getattr(agent_tasks, "tasks", {}) if agent_tasks else {}
-            task_id = str(payload.get("id") or "t1")
-            if task_id not in tasks_map:
+            if not tasks_map:
+                task_id = str(payload.get("id") or "t1")
                 title = str(payload.get("note") or payload.get("title") or f"Task {task_id}")
                 return Decision("plan", {
                     "objective": str(goal)[:120],
                     "tasks": [{"id": task_id, "title": title, "depends_on": []}],
                 })
-                
+
         decision = Decision(kind, payload)
         decision.validate()
         return decision
-
-
