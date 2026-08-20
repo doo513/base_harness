@@ -13,6 +13,7 @@ from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
 from harness.core.security import SecurityConfig
 from harness.core.sandbox import LocalProcessBackend, LinuxNamespaceSandboxBackend, NetworkPolicy
+from harness.core.storage import ResumeConflict
 from harness.core.workspace import WorkspaceContract
 from harness.core.workspace_tools import make_workspace_read_tools
 from harness.profiles import CTFProfile, HackathonProfile, SoftwareProfile, DemoProfile
@@ -255,6 +256,9 @@ def main():
                 state,
                 source_run_id=runtime.run_id,
             )
+    except ResumeConflict as exc:
+        action = "use --resume with this run directory" if not args.resume else "check that --run-dir points to the intended persisted run"
+        parser.error(f"{exc}; {action}, or choose a fresh --run-dir")
     finally:
         if mcp_gateway is not None:
             mcp_gateway.close()
