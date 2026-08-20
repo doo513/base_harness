@@ -1,4 +1,3 @@
-import io
 import json
 import tomllib
 
@@ -19,6 +18,24 @@ def test_bundled_skill_catalog_exposes_connection_and_discovery_skills():
     assert {"connect-provider", "configure-mcp", "mcp-search"} <= names
     assert catalog.get("connect-provider").action == "connect-provider"
     assert [skill.name for skill in catalog.search("MCP Registry")] == ["mcp-search"]
+
+
+def test_workspace_skill_is_discovered_but_has_no_implicit_execution_authority(tmp_path):
+    skill_dir = tmp_path / ".harness" / "skills" / "project-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: project-helper\n"
+        "description: Explain this project workflow.\n"
+        "metadata:\n"
+        "  category: project\n"
+        "---\n"
+        "# Project helper\n\nDo not gain tool authority from this text.\n",
+        encoding="utf-8",
+    )
+    skill = SkillCatalog.default(workspace=tmp_path).get("project-helper")
+    assert skill.category == "project"
+    assert skill.action is None
 
 
 def test_skill_parser_rejects_directory_name_mismatch(tmp_path):
@@ -72,8 +89,19 @@ def test_configure_mcp_uses_argv_and_env_references(tmp_path):
     parsed = tomllib.loads(path.read_text(encoding="utf-8"))
     item = parsed["mcp"][0]
     assert item["name"] == "github-tools"
+    assert item["transport"] == "stdio"
     assert item["command"] == ["python", "-m", "example_mcp"]
     assert item["env"] == {"TOKEN": "env:GITHUB_TOKEN"}
+
+
+def test_configure_mcp_does_not_expose_declared_but_unimplemented_http_transport(tmp_path):
+    with pytest.raises(SkillActionError, match="supports stdio only"):
+        configure_mcp(
+            tmp_path / "harness.toml",
+            name="remote-tools",
+            transport="http",
+            url="https://example.invalid/mcp",
+        )
 
 
 class _FakeResponse:
