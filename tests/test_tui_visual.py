@@ -5,6 +5,7 @@ from harness.tui_visual import (
     AppState,
     COMMANDS,
     _detect_acceptance,
+    _ensure_local_ollama_route,
     _model_status,
     _set_default_model,
     _task_spec,
@@ -64,22 +65,21 @@ def test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run(tmp_path):
     assert spec.run_dir.startswith("runs") or spec.run_dir.startswith("./runs")
 
 
-def test_visual_tui_extracts_target_workspace_from_prompt(tmp_path):
+def test_visual_tui_extracts_target_workspace_from_shared_task_intake(tmp_path):
     sub_dir = tmp_path / "target_project"
     sub_dir.mkdir()
     state = AppState(workspace=str(tmp_path), mode="software")
-    
-    # Prompt containing directory path
+
     prompt = f'analyze "{sub_dir}" and write report'
     spec = _task_spec(state, prompt)
-    assert str(sub_dir.resolve()) in spec.workspace
+    assert str(sub_dir.resolve()) == spec.workspace
 
 
-def test_visual_tui_synthesizes_acceptance_for_report_request(tmp_path):
+def test_visual_tui_report_request_does_not_synthesize_dummy_acceptance(tmp_path):
     state = AppState(workspace=str(tmp_path), mode="software")
     spec = _task_spec(state, "이 프로젝트를 분석해서 보고서를 작성해줘")
-    assert spec.acceptance_commands
-    assert "Analysis goal completed" in spec.acceptance_commands[0]
+    assert spec.acceptance_commands == ()
+    assert all("Analysis goal completed" not in item for item in spec.acceptance_commands)
 
 
 def test_visual_tui_local_endpoint_ready_without_secret(tmp_path):
@@ -90,3 +90,16 @@ def test_visual_tui_local_endpoint_ready_without_secret(tmp_path):
     assert model == "gemma-4"
     assert ready is True
 
+
+def test_visual_tui_ollama_route_is_real_secretless_config_and_idempotent(tmp_path):
+    path = tmp_path / "harness.toml"
+    first_alias = _ensure_local_ollama_route(path, "gemma-4:latest")
+    second_alias = _ensure_local_ollama_route(path, "gemma-4:latest")
+    parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+
+    assert first_alias == second_alias
+    assert parsed["default_model"] == first_alias
+    route = parsed["models"][first_alias]
+    assert route["model"] == "gemma-4:latest"
+    assert route["endpoint"] == "http://127.0.0.1:11434/v1/"
+    assert "api_key" not in route
