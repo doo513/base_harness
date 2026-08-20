@@ -194,23 +194,24 @@ def configure_mcp(
     config_path: str | Path,
     *,
     name: str,
-    transport: str,
+    transport: str = "stdio",
     command: Iterable[str] = (),
     url: str | None = None,
     env_refs: dict[str, str] | None = None,
     enabled: bool = True,
 ) -> Path:
-    """Append an MCP connection using commands/URLs and env references only."""
+    """Append a runtime-supported MCP stdio connection using argv and env references only."""
     name = _validate_alias(name, field="MCP name")
     transport = transport.strip().lower()
-    if transport not in {"stdio", "http"}:
-        raise SkillActionError("MCP transport must be stdio or http")
+    if transport != "stdio":
+        raise SkillActionError(
+            "current mcp-gateway-v1 supports stdio only; HTTP MCP configuration is not exposed by this skill"
+        )
     argv = tuple(item.strip() for item in command if item.strip())
-    if transport == "stdio" and not argv:
+    if not argv:
         raise SkillActionError("stdio MCP requires command argv")
-    final_url = (url or "").strip()
-    if transport == "http" and not final_url:
-        raise SkillActionError("http MCP requires a URL")
+    if url:
+        raise SkillActionError("URL is not used by the current stdio MCP runtime")
 
     refs = env_refs or {}
     normalized_refs: dict[str, str] = {}
@@ -232,13 +233,10 @@ def configure_mcp(
         "",
         "[[mcp]]",
         f"name = {_toml_string(name)}",
-        f"transport = {_toml_string(transport)}",
+        'transport = "stdio"',
         f"enabled = {'true' if enabled else 'false'}",
+        f"command = {_toml_array(argv)}",
     ]
-    if transport == "stdio":
-        block.append(f"command = {_toml_array(argv)}")
-    else:
-        block.append(f"url = {_toml_string(final_url)}")
     if normalized_refs:
         block.append("")
         block.append("[mcp.env]")
