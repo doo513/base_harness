@@ -70,7 +70,7 @@ Example:
   ✓ Completed
     evidence  12 observations · 3 verified facts
     output    C:\work\project\PROJECT_ANALYSIS_REPORT.md
-    run       ...\runs\...
+    run       <user-local-state>\base_harness\runs\...
 ```
 
 ## 3. Main modules
@@ -107,6 +107,7 @@ Responsibilities:
 - MCP/skill/status/permission command helpers
 - local Ollama route creation
 - slash completion primitives
+- isolated secret input session for API keys
 
 It remains a UI/config helper layer. Task semantics come from shared task intake and runtime contracts.
 
@@ -140,6 +141,8 @@ Persists the runtime/CLI-owned final result. The TUI only reads this record for 
 ```
 
 API keys entered in the TUI are kept in the process/session environment. Raw secret values are not written to `harness.toml`; only environment references are persisted when required.
+
+Secret input uses a dedicated short-lived `PromptSession` in password mode. The long-lived conversation `PromptSession` is never switched into password mode, so later `❯` prompts remain visible and the API key does not share the normal conversation input session/history.
 
 ### Show or select models
 
@@ -177,6 +180,8 @@ Model [ollama]: gemini
   │ GEMINI_API_KEY is required for the next run.
 API key: ********
   │ Next run model · gemini:gemini-3.5-flash
+
+❯ this input is visible normally
 ```
 
 The change modifies `default_model` in the Harness configuration. It does not grant new tool or verification authority.
@@ -225,7 +230,7 @@ The TUI maps durable runtime events into short labels:
 
 No hidden chain-of-thought is rendered. The transcript shows operational state and durable evidence-related events only.
 
-## 7. Workspace behavior
+## 7. Workspace and run-state behavior
 
 Normal explicit-path request:
 
@@ -246,6 +251,19 @@ user-supplied path
 The actor does not dynamically escape the workspace during a run.
 
 If two real directories are supplied, automatic selection is refused and the TUI keeps the existing workspace until `/workspace <path>` is used.
+
+TUI-created run state is kept outside the project by default:
+
+```text
+Windows
+  %LOCALAPPDATA%\base_harness\runs\<run-id>
+
+POSIX
+  $XDG_STATE_HOME/base_harness/runs/<run-id>
+  or ~/.local/state/base_harness/runs/<run-id>
+```
+
+`HARNESS_RUN_ROOT` may explicitly override this default. Separating run/evidence state from the actor workspace is a safer default topology and is compatible with later strict-layout enforcement.
 
 ## 8. Evidence-backed report behavior
 
@@ -322,7 +340,48 @@ Verifier / Completion Oracle
 
 This boundary is the primary design constraint for future TUI features.
 
-## 11. Known limitations
+## 11. Windows TUI / artifact incident and remediation
+
+A Windows run on 2026-08-20 exposed three distinct issues. They are recorded in detail in `WINDOWS_TUI_ARTIFACT_INCIDENT_2026-08-20.md`.
+
+### A. Conversation input stayed masked after API-key entry
+
+**Cause:** the same long-lived `PromptSession` was used for ordinary conversation and a prompt call with `is_password=True`.
+
+**Result:** later normal prompts rendered as `********` even though their values were ordinary task text.
+
+**Fix:** API-key input now uses a dedicated short-lived password `PromptSession`; the normal conversation session is never mutated into secret mode.
+
+### B. Successful Windows tool evidence failed during progress verification
+
+Observed sequence:
+
+```text
+Plan
+-> directory.list succeeds
+-> observation artifact is persisted
+-> progress controller verifies the content-addressed observation
+-> artifact directory open fails on Windows with Errno 13
+-> fail-closed checkpoint_stop
+```
+
+**Cause:** the verified-read path used POSIX descriptor-relative directory opening (`dir_fd`, `O_DIRECTORY`, `O_NOFOLLOW`-style semantics). That hardening path is not portable to Windows.
+
+**Result:** tool execution itself had succeeded, but deterministic Stage-06 progress evidence verification could not re-open the artifact and correctly stopped the run.
+
+**Fix:** POSIX keeps the descriptor-relative path. Windows uses a separate portable verified-read path that confines the opaque artifact basename to the artifact root, rejects symlink/non-regular artifacts, reads the resolved regular file, and verifies the exact returned bytes against the SHA-256 digest encoded in the artifact reference.
+
+This preserves content-integrity validation. The Windows fallback cannot provide the exact same descriptor-relative no-follow primitive as the POSIX path, so the platform distinction is explicit rather than hidden.
+
+### C. Kernel run state was created inside the actor workspace
+
+**Cause:** TUI defaults historically used `./runs/<timestamp>`.
+
+**Result:** actor workspace and kernel/evidence state could overlap whenever the TUI was launched from the project directory. This was not the cause of the Windows `PermissionError`, but it weakened the intended topology.
+
+**Fix:** default TUI run state now uses the user-local Harness state directory described in section 7.
+
+## 12. Known limitations
 
 - Ollama automatic discovery currently probes the local standard endpoint; WSL-to-Windows endpoint self-healing is not a general runtime resolver yet.
 - Native Anthropic/Gemini provider protocols are not implemented; Gemini currently uses its OpenAI-compatible endpoint.
@@ -330,8 +389,9 @@ This boundary is the primary design constraint for future TUI features.
 - MCP TUI configuration currently exposes the runtime-supported stdio path.
 - The TUI is transcript-oriented rather than a full-screen Textual/OpenTUI application.
 - Small local models can still violate the actor schema semantically even when JSON syntax is valid; recovery cannot guarantee that a weak model solves the task.
+- Windows artifact verification retains content-address/root-confinement/regular-file checks, but the exact POSIX descriptor-relative no-follow primitive is platform-specific and therefore not claimed on Windows.
 
-## 12. Verification targets
+## 13. Verification targets
 
 Relevant regression coverage includes:
 
@@ -341,6 +401,9 @@ tests/test_tui_model_change.py
 tests/test_local_model_protocol_compat.py
 tests/test_task_intake_artifact_contract.py
 tests/test_integration_model_gateway.py
+tests/test_windows_tui_artifact_compat.py
 ```
+
+`test_windows_tui_artifact_compat.py` specifically covers the portable artifact verified-read path, tamper rejection, external default run-state root, and isolated secret prompt session.
 
 The release gate remains the repository's full CI plus core/stage audits; TUI tests alone are not sufficient evidence of Harness correctness.
