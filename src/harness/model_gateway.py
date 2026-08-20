@@ -207,9 +207,15 @@ class OpenAICompatibleProvider:
         first = choices[0]
         if not isinstance(first, dict) or not isinstance(first.get("message"), dict):
             raise ProviderError("provider choice has no message", kind="invalid_response")
-        content = first["message"].get("content")
-        if not isinstance(content, str):
-            raise ProviderError("provider message content must be a string", kind="invalid_response")
+        msg_dict = first["message"]
+        content = msg_dict.get("content")
+        if not content and isinstance(msg_dict.get("reasoning_content"), str):
+            content = msg_dict["reasoning_content"]
+        if not content and isinstance(msg_dict.get("text"), str):
+            content = msg_dict["text"]
+        if content is None:
+            content = ""
+
         return ModelResponse(
             content=content,
             provider_id=self.provider_id,
