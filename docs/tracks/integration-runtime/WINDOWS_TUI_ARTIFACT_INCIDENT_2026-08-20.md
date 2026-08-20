@@ -1,6 +1,6 @@
 # Windows TUI / Artifact Integrity Incident Report — 2026-08-20
 
-Status: remediation in progress
+Status: remediation implemented; repository CI PASS; native Windows replay recommended
 
 ## Summary
 
@@ -39,7 +39,9 @@ The conversational TUI reused the same `prompt_toolkit.PromptSession` for both n
 
 ### Remediation
 
-Use a dedicated secret-only `PromptSession` with no conversation history. Normal conversation prompts never switch into password mode.
+`_prompt_secret()` now creates a dedicated short-lived password `PromptSession` and deliberately does not use the caller's long-lived conversation session. Normal conversation prompts therefore never switch into password mode.
+
+Regression coverage verifies that the supplied conversation session is not invoked by secret input and that the isolated session uses `is_password=True`.
 
 ### Security property retained
 
@@ -75,18 +77,31 @@ Opening a directory as a file descriptor and using `dir_fd` is not portable to W
 
 The actual tool call succeeded and produced one observation, but Stage-06 progress accounting could not verify the content-addressed evidence and correctly failed closed. The run therefore stopped before verified completion.
 
+The important classification is:
+
+```text
+tool execution             succeeded
+observation persistence    succeeded
+progress evidence re-read  failed on platform compatibility
+```
+
+This was not an Ollama/tool-access failure.
+
 ### Remediation
 
-Keep the existing descriptor-relative verified-read implementation on platforms that support it. Add a Windows/path-based verified-read implementation that:
+The POSIX descriptor-relative implementation remains unchanged for non-Windows platforms. Windows selects a portable verified-read implementation that:
 
 1. resolves the opaque content-addressed artifact basename under the already-resolved artifact root;
 2. rejects paths escaping the root;
 3. rejects missing files, non-regular files, and symlink artifacts;
-4. opens the resolved artifact directly in binary mode;
-5. hashes the exact bytes returned;
-6. compares the digest with the digest encoded in the artifact reference.
+4. opens the resolved regular artifact directly in binary mode;
+5. validates the opened handle as a regular file;
+6. hashes the exact bytes returned;
+7. compares the digest with the SHA-256 digest encoded in the artifact reference.
 
-This restores cross-platform operation without weakening the content-address integrity check.
+This restores the content-address integrity property on Windows. It does **not** claim that Windows provides the exact same descriptor-relative `O_NOFOLLOW` primitive used by the POSIX implementation; that platform difference is explicit in code and documentation.
+
+Regression coverage directly exercises the portable verified-read helper and verifies both valid content and tamper rejection.
 
 ## Incident C — default TUI run state overlapped the actor workspace
 
@@ -110,16 +125,19 @@ The TUI historically used `./runs/<timestamp>` as its default state location. Wi
 
 ### Impact
 
-This does not directly cause the Windows `PermissionError`, but it weakens the intended separation between actor-controlled workspace content and kernel-owned run/evidence state. It also makes later strict-layout adoption harder.
+This did not directly cause the Windows `PermissionError`, but it weakened the intended separation between actor-controlled workspace content and kernel-owned run/evidence state. It also made later strict-layout adoption harder.
 
 ### Remediation
 
-The default TUI run root is moved outside the current project:
+The default TUI run root is now outside the current project:
 
-- Windows: `%LOCALAPPDATA%\\base_harness\\runs` (fallback: user-local state directory)
-- POSIX: `$XDG_STATE_HOME/base_harness/runs` or `~/.local/state/base_harness/runs`
+- Windows: `%LOCALAPPDATA%\\base_harness\\runs` with a user-local fallback;
+- POSIX: `$XDG_STATE_HOME/base_harness/runs` or `~/.local/state/base_harness/runs`;
+- explicit override: `HARNESS_RUN_ROOT`.
 
-An explicitly supplied run directory remains supported. Security policy remains kernel-owned; this change only makes the safe topology the default UX.
+An explicitly supplied run directory remains supported. Security policy remains kernel-owned; this change only makes the safer topology the default UX.
+
+Regression coverage verifies that `_default_new_run_dir()` is rooted in the external user-state directory rather than the project workspace.
 
 ## Causal interpretation of the observed run
 
@@ -136,17 +154,61 @@ LLM produced plan
   -> run stopped before completion
 ```
 
-The important distinction is that the model/tool path had already advanced beyond planning. This incident therefore must not be classified as an Ollama/model inability to access the local workspace.
+The model/tool path had already advanced beyond planning. This incident therefore must not be classified as a model inability to access the local workspace.
 
-## Expected verification
+## Remediation commits
 
-Remediation is considered complete only when all of the following pass:
+The remediation was split so each causal change remains auditable:
 
-- ordinary prompt is visible after a secret prompt;
-- secret prompt remains masked and is not placed in conversation history;
-- Windows/path-based artifact verified-read accepts a valid content-addressed artifact;
-- tampered artifact bytes are rejected;
-- symlink/non-regular artifact paths are rejected where the platform exposes those concepts;
-- default TUI run directory does not overlap a project workspace;
-- existing POSIX descriptor-relative artifact verification tests continue to pass;
-- full integration/runtime CI remains green.
+- `ad884738` — Windows portable artifact verified-read path
+- `6ba2da2` — external default TUI run-state root
+- `e23637a` — isolated secret prompt session
+- `586e227` — portable artifact/secret-session regression coverage
+- `9b0461e` — update the pre-existing run-dir regression expectation
+- `fad9274` — update the TUI implementation document with causes and resulting behavior
+
+## Verification result
+
+Repository integration CI for source commit `fad92741e94e39600d3b916e0cdb173c7e56f0a1`:
+
+```text
+Result: PASS
+306 passed, 7 skipped
+
+compile                    PASS
+cli/tui module + console   PASS
+core-freeze-audit          PASS
+Stage 02                   PASS
+Stage 03                   PASS
+Stage 04                   PASS
+Stage 05                   PASS
+Stage 06                   PASS
+Stage 07                   PASS
+Stage 08                   PASS
+```
+
+This is important because the artifact change touches shared core persistence/integrity code rather than only presentation code. Stage-03 resume, Stage-06 progress, and Stage-08 artifact-integrity gates remained green.
+
+### Verification boundary
+
+The repository CI runner for this result is `ubuntu-latest`. Therefore the evidence proves:
+
+- the POSIX hardened path did not regress;
+- the portable Windows-compatible helper is covered directly;
+- content tampering is still rejected;
+- TUI run-root behavior and secret-session isolation are covered;
+- all existing core/stage regression gates remain green.
+
+It does **not** substitute for one real Windows replay of the original failing scenario. A native Windows rerun is recommended to close the incident operationally:
+
+```text
+1. git pull origin main
+2. reinstall editable package if needed
+3. start verified-harness-tui
+4. enter/switch an API-key model and confirm the next normal prompt is not masked
+5. run a task that causes directory.list/file.read
+6. confirm progress accounting continues past the first evidence artifact
+7. confirm the run directory is under the user-local base_harness state root, not the project
+```
+
+If that replay succeeds, the original incident can be considered closed on the affected host.
