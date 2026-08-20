@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from typing import Any, Protocol, Iterable
 import json
+import re
 
 VALID_DECISIONS = {
+
     "plan", "task", "propose", "verify_claim", "tool", "retrieve", "complete", "refute"
 }
 
@@ -139,6 +141,44 @@ class ModelAdapter(Protocol):
     def complete(self, *, system: str, user: str) -> str: ...
 
 
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    """Robustly extract a JSON object from local model outputs that may contain markdown fences or commentary."""
+    text = raw.strip()
+    
+    # 1. Direct JSON parse
+    try:
+        val = json.loads(text)
+        if isinstance(val, dict):
+            return val
+    except Exception:
+        pass
+
+    # 2. Markdown code fence extraction (```json ... ``` or ``` ... ```)
+    fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
+    if fence_match:
+        fenced_text = fence_match.group(1).strip()
+        try:
+            val = json.loads(fenced_text)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+
+    # 3. First '{' to last '}' bracket extraction
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        candidate = text[first_brace:last_brace + 1]
+        try:
+            val = json.loads(candidate)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+
+    raise ValueError(f"model did not return valid JSON object: {raw[:150]!r}")
+
+
 class LLMController:
     SYSTEM = """You are the actor inside a verified-state agent harness.
 You may plan work, manage actor workflow tasks, propose hypotheses, use tools, and request retrieval,
@@ -173,17 +213,10 @@ Never claim that a task status, plan status, memory candidate, or completion req
         self.model = model
 
     def decide(self, goal, state, context):
-        # The copied HarnessState is available to the trusted adapter API for
-        # compatibility/deterministic controllers, but the built-in model path
-        # serializes only the governed projection below.
         user = json.dumps({"goal": goal, "context": context}, ensure_ascii=False, default=str)
         raw = self.model.complete(system=self.SYSTEM, user=user)
-        try:
-            obj = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"model did not return valid JSON: {exc}") from exc
-        if not isinstance(obj, dict):
-            raise ValueError("model output must be a JSON object")
+        obj = _extract_json_object(raw)
         decision = Decision(str(obj.get("kind", "")), obj.get("payload", {}))
         decision.validate()
         return decision
+
