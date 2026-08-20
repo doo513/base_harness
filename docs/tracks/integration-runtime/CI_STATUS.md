@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: 6ba2da201ec8a8531f399f6947f371565c44cf93
+- Source commit: 586e227e4b3b21985fc7ecc68fcd1c5a75dc5abc
 - Branch: main
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -54,164 +54,40 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
-INTERNALERROR>     raise exception
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/logging.py", line 816, in pytest_runtestloop
-INTERNALERROR>     return (yield)  # Run all the tests.
-INTERNALERROR>             ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/terminal.py", line 708, in pytest_runtestloop
-INTERNALERROR>     result = yield
-INTERNALERROR>              ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
-INTERNALERROR>     res = hook_impl.function(*args)
-INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 408, in pytest_runtestloop
-INTERNALERROR>     item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
-INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
-INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
-INTERNALERROR>     raise exception
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/warnings.py", line 90, in pytest_runtest_protocol
-INTERNALERROR>     return (yield)
-INTERNALERROR>             ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/assertion/__init__.py", line 205, in pytest_runtest_protocol
-INTERNALERROR>     return (yield)
-INTERNALERROR>             ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/unittest.py", line 612, in pytest_runtest_protocol
-INTERNALERROR>     return (yield)
-INTERNALERROR>             ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/faulthandler.py", line 102, in pytest_runtest_protocol
-INTERNALERROR>     return (yield)
-INTERNALERROR>             ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
-INTERNALERROR>     res = hook_impl.function(*args)
-INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
-INTERNALERROR>     runtestprotocol(item, nextitem=nextitem)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/runner.py", line 139, in runtestprotocol
-INTERNALERROR>     reports.append(call_and_report(item, "call", log))
-INTERNALERROR>                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/runner.py", line 254, in call_and_report
-INTERNALERROR>     report: TestReport = ihook.pytest_runtest_makereport(item=item, call=call)
-INTERNALERROR>                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
-INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
-INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
-INTERNALERROR>     raise exception
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/tmpdir.py", line 347, in pytest_runtest_makereport
-INTERNALERROR>     rep = yield
-INTERNALERROR>           ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-INTERNALERROR>     teardown.throw(exception)
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/skipping.py", line 280, in pytest_runtest_makereport
-INTERNALERROR>     rep = yield
-INTERNALERROR>           ^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
-INTERNALERROR>     res = hook_impl.function(*args)
-INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/runner.py", line 385, in pytest_runtest_makereport
-INTERNALERROR>     return TestReport.from_item_and_call(item, call)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/reports.py", line 438, in from_item_and_call
-INTERNALERROR>     longrepr = _format_failed_longrepr(item, call, excinfo)
-INTERNALERROR>                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/reports.py", line 263, in _format_failed_longrepr
-INTERNALERROR>     longrepr = item.repr_failure(excinfo)
-INTERNALERROR>                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/python.py", line 1749, in repr_failure
-INTERNALERROR>     return self._repr_failure_py(excinfo, style=style)
-INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/nodes.py", line 444, in _repr_failure_py
-INTERNALERROR>     abspath = Path(os.getcwd()) != self.config.invocation_params.dir
-INTERNALERROR>               ^^^^^^^^^^^^^^^^^
-INTERNALERROR>   File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/pathlib.py", line 873, in __new__
-INTERNALERROR>     raise NotImplementedError("cannot instantiate %r on your system"
-INTERNALERROR> NotImplementedError: cannot instantiate 'WindowsPath' on your system
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/bin/pytest", line 6, in <module>
-    sys.exit(_console_main())
-             ^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/config/__init__.py", line 253, in _console_main
-    code = _main(prog=_get_prog_name(sys.argv))
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/config/__init__.py", line 229, in _main
-    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
-    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
-    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
-    raise exception
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
-    res = hook_impl.function(*args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 377, in pytest_cmdline_main
-    return wrap_session(config, _main)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 365, in wrap_session
-    config.hook.pytest_sessionfinish(
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
-    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
-    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
-    raise exception
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-    teardown.throw(exception)
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/logging.py", line 888, in pytest_sessionfinish
-    return (yield)
-            ^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-    teardown.throw(exception)
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/terminal.py", line 961, in pytest_sessionfinish
-    result = yield
-             ^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
-    teardown.throw(exception)
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/warnings.py", line 119, in pytest_sessionfinish
-    return (yield)
-            ^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
-    res = hook_impl.function(*args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/cacheprovider.py", line 469, in pytest_sessionfinish
-    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/cacheprovider.py", line 216, in set
-    path = self._getvaluepath(key)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/cacheprovider.py", line 185, in _getvaluepath
-    return self._cachedir.joinpath(self._CACHE_PREFIX_VALUES, Path(key))
-                                                              ^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/pathlib.py", line 873, in __new__
-    raise NotImplementedError("cannot instantiate %r on your system"
-NotImplementedError: cannot instantiate 'WindowsPath' on your system
+........................................................................ [ 23%]
+....ssss..s.....................................................ss...... [ 46%]
+........................................................................ [ 69%]
+........................................................................ [ 92%]
+...............F.........                                                [100%]
+=================================== FAILURES ===================================
+_______ test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run ________
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_visual_tui_task_spec_auto0')
+
+    def test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run(tmp_path):
+        (tmp_path / "tests").mkdir()
+        state = AppState(workspace=str(tmp_path), mode="software")
+        spec = _task_spec(state, "fix the project")
+        assert spec.goal == "fix the project"
+        assert spec.acceptance_commands
+        assert spec.acceptance_commands[0].endswith("-m pytest -q")
+>       assert spec.run_dir.startswith("runs") or spec.run_dir.startswith("./runs")
+E       AssertionError: assert (False or False)
+E        +  where False = <built-in method startswith of str object at 0x7fd1c09409d0>('runs')
+E        +    where <built-in method startswith of str object at 0x7fd1c09409d0> = '/home/runner/.local/state/base_harness/runs/20260820-144055'.startswith
+E        +      where '/home/runner/.local/state/base_harness/runs/20260820-144055' = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_task_spec_auto0', run_dir='/home/...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).run_dir
+E        +  and   False = <built-in method startswith of str object at 0x7fd1c09409d0>('./runs')
+E        +    where <built-in method startswith of str object at 0x7fd1c09409d0> = '/home/runner/.local/state/base_harness/runs/20260820-144055'.startswith
+E        +      where '/home/runner/.local/state/base_harness/runs/20260820-144055' = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_task_spec_auto0', run_dir='/home/...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).run_dir
+
+tests/test_tui_visual.py:65: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_tui_visual.py::test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run - AssertionError: assert (False or False)
+ +  where False = <built-in method startswith of str object at 0x7fd1c09409d0>('runs')
+ +    where <built-in method startswith of str object at 0x7fd1c09409d0> = '/home/runner/.local/state/base_harness/runs/20260820-144055'.startswith
+ +      where '/home/runner/.local/state/base_harness/runs/20260820-144055' = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_task_spec_auto0', run_dir='/home/...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).run_dir
+ +  and   False = <built-in method startswith of str object at 0x7fd1c09409d0>('./runs')
+ +    where <built-in method startswith of str object at 0x7fd1c09409d0> = '/home/runner/.local/state/base_harness/runs/20260820-144055'.startswith
+ +      where '/home/runner/.local/state/base_harness/runs/20260820-144055' = RunLaunchSpec(config=None, workspace='/tmp/pytest-of-runner/pytest-0/test_visual_tui_task_spec_auto0', run_dir='/home/...oracle=False, sealed_oracle_root=None, require_oracle_isolation=False, require_complete_provenance=False, resume=False).run_dir
+1 failed, 305 passed, 7 skipped in 30.02s
 ```
