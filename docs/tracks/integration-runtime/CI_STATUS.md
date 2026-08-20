@@ -1,11 +1,11 @@
 # Integration Runtime CI Status
 
-- Source commit: 8e0b090b0093fefa976cffe02ffa689d20bb48bd
+- Source commit: 221fa0f7fdc52c2eb7b3fc9e6cba1e135c288459
 - Branch: main
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
-- Install gate: success
+- Install gate: failure
 
 ## Gate ledger
 
@@ -14,8 +14,8 @@ compile                                          PASS
 cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
-tui-console                                      PASS
-full-pytest                                      PASS
+tui-console                                      FAIL
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,10 +54,22 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-........................................................................ [ 24%]
-...ssss..s.................................................ss........... [ 49%]
-........................................................................ [ 74%]
-........................................................................ [ 99%]
-.                                                                        [100%]
-282 passed, 7 skipped in 26.13s
+
+==================================== ERRORS ====================================
+__________________ ERROR collecting tests/test_tui_visual.py ___________________
+ImportError while importing test module '/home/runner/work/base_harness/base_harness/tests/test_tui_visual.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_tui_visual.py:4: in <module>
+    from harness.tui_visual import (
+src/harness/tui_visual.py:17: in <module>
+    from prompt_toolkit import PromptSession
+E   ModuleNotFoundError: No module named 'prompt_toolkit'
+=========================== short test summary info ============================
+ERROR tests/test_tui_visual.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.76s
 ```
