@@ -20,7 +20,7 @@ from harness.skill_actions import (
     configure_provider,
     search_mcp_registry,
 )
-from harness.skill_catalog import SkillCatalog, SkillDefinition, SkillError
+from harness.skill_catalog import SkillCatalog, SkillError
 
 
 @dataclass(frozen=True)
@@ -272,27 +272,21 @@ def _prompt_env_refs() -> dict[str, str]:
 
 def _run_configure_mcp(config_path: str) -> int:
     print("\nSkill: configure-mcp")
+    print("Transport: stdio (current mcp-gateway-v1 runtime)")
     name = _prompt("MCP name", required=True)
-    transport = _prompt_choice("Transport", ("stdio", "http"), "stdio")
-    argv: tuple[str, ...] = ()
-    url: str | None = None
-    if transport == "stdio":
-        command_line = _prompt("Command argv", required=True)
-        try:
-            argv = tuple(shlex.split(command_line, posix=os.name != "nt"))
-        except ValueError as exc:
-            print(f"Invalid command argv: {exc}")
-            return 2
-    else:
-        url = _prompt("MCP URL", required=True)
+    command_line = _prompt("Command argv", required=True)
+    try:
+        argv = tuple(shlex.split(command_line, posix=os.name != "nt"))
+    except ValueError as exc:
+        print(f"Invalid command argv: {exc}")
+        return 2
     env_refs = _prompt_env_refs()
     try:
         path = configure_mcp(
             config_path,
             name=name,
-            transport=transport,
+            transport="stdio",
             command=argv,
-            url=url,
             env_refs=env_refs,
         )
     except SkillActionError as exc:
@@ -328,7 +322,7 @@ def _run_mcp_search() -> int:
 
 
 def _skill_catalog(workspace: str | Path | None = None) -> SkillCatalog:
-    return SkillCatalog.default(workspace=workspace)
+    return SkillCatalog.default(workspace="." if workspace is None else workspace)
 
 
 def _render_skill_list(query: str = "", *, workspace: str | Path | None = None) -> int:
