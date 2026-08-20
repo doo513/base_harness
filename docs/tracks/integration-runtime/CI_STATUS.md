@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: 54c2451ca437f1bb20480a316f7ef18aa5d0f0bf
+- Source commit: 276acfaccec4d751ddf366f224424bd6f1e5ee5a
 - Branch: main
 - Result: **PASS**
 - Runner: ubuntu-latest
@@ -59,5 +59,5 @@ stage02-binding-cost                             PASS
 ........................................................................ [ 69%]
 ........................................................................ [ 93%]
 .....................                                                    [100%]
-302 passed, 7 skipped in 29.26s
+302 passed, 7 skipped in 28.17s
 ```
