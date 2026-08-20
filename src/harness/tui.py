@@ -216,9 +216,25 @@ def _positive_int(label: str, default: str) -> int:
         raise SystemExit(f"{label} must be a positive integer.") from exc
 
 
-def _default_new_run_dir(root: str | Path = "./runs") -> str:
-    """Return a fresh, human-readable run directory without creating it."""
-    base = Path(root)
+def _default_run_root() -> Path:
+    """Return the user-local Harness state root used by TUI-created runs."""
+    explicit = os.environ.get("HARNESS_RUN_ROOT")
+    if explicit:
+        return Path(explicit).expanduser()
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "base_harness" / "runs"
+        return Path.home() / "AppData" / "Local" / "base_harness" / "runs"
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+    if xdg_state_home:
+        return Path(xdg_state_home).expanduser() / "base_harness" / "runs"
+    return Path.home() / ".local" / "state" / "base_harness" / "runs"
+
+
+def _default_new_run_dir(root: str | Path | None = None) -> str:
+    """Return a fresh run directory outside the project by default."""
+    base = Path(root).expanduser() if root is not None else _default_run_root()
     stem = datetime.now().strftime("%Y%m%d-%H%M%S")
     candidate = base / stem
     suffix = 2
