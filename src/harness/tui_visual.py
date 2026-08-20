@@ -363,7 +363,14 @@ def _prompt_text(session: PromptSession, label: str, default: str = "") -> str:
 
 
 def _prompt_secret(session: PromptSession, label: str = "API key") -> str:
-    return session.prompt(FormattedText([("class:muted", f"{label}: ")]), is_password=True, style=STYLE).strip()
+    """Read a secret without mutating the long-lived conversation PromptSession."""
+    del session  # The caller's conversation session must never enter password mode.
+    secret_session: PromptSession = PromptSession()
+    return secret_session.prompt(
+        FormattedText([("class:muted", f"{label}: ")]),
+        is_password=True,
+        style=STYLE,
+    ).strip()
 
 
 def _connect(state: AppState, session: PromptSession, argument: str = "") -> None:
