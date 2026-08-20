@@ -68,7 +68,7 @@ PowerShell:
 python -m pip install -e .
 ```
 
-Linux/macOS:
+Linux/macOS/WSL:
 
 ```bash
 source .venv/bin/activate
@@ -81,6 +81,23 @@ Commands:
 verified-harness
 verified-harness-tui
 ```
+
+### Updating an existing editable install
+
+After pulling a newer `main`, refresh the editable install so new or changed console entry points are regenerated:
+
+```bash
+git pull
+python -m pip install -e .
+```
+
+If `verified-harness-tui` is missing or appears stale, verify the module directly:
+
+```bash
+python -m harness.tui
+```
+
+Then reinstall with `python -m pip install -e .`.
 
 ## Recommended use: task-first TUI
 
@@ -108,12 +125,14 @@ Workspace [.]: C:\work\my-project
 Task / problem: Add rate limiting to the login API and add regression tests.
 Mode (software/hackathon/ctf/demo) [software]: software
 Config TOML [harness.toml]: harness.toml
-Run directory [./run]: .\run\login-rate-limit
+Run directory [runs\20260820-105300]:
 Acceptance commands:
 accept> pytest -q
 accept>
 Advanced execution settings [y/N]: n
 ```
+
+For **New task**, the TUI proposes a fresh timestamped directory under `./runs/`. It will not reuse a non-empty run directory. Use **Resume run** when you want to continue an existing persisted run.
 
 Hackathon example:
 
@@ -290,11 +309,19 @@ verified-harness `
   --config harness.toml `
   --profile software `
   --workspace "C:\work\my-project" `
-  --run-dir ".\run\rate-limit" `
+  --run-dir ".\runs\rate-limit-01" `
   --goal "Add rate limiting to the login API and add regression tests." `
   --accept-command "pytest -q" `
   --max-steps 30
 ```
+
+A **new** CLI run requires an empty/new `--run-dir`. To continue an existing run instead:
+
+```powershell
+verified-harness --config harness.toml --run-dir ".\runs\rate-limit-01" --resume
+```
+
+If a new run points at a non-empty directory, the CLI exits with an actionable message instead of a Python traceback.
 
 ## Memory
 
