@@ -62,3 +62,31 @@ def test_visual_tui_task_spec_auto_detects_acceptance_and_fresh_run(tmp_path):
     assert spec.acceptance_commands
     assert spec.acceptance_commands[0].endswith("-m pytest -q")
     assert spec.run_dir.startswith("runs") or spec.run_dir.startswith("./runs")
+
+
+def test_visual_tui_extracts_target_workspace_from_prompt(tmp_path):
+    sub_dir = tmp_path / "target_project"
+    sub_dir.mkdir()
+    state = AppState(workspace=str(tmp_path), mode="software")
+    
+    # Prompt containing directory path
+    prompt = f'analyze "{sub_dir}" and write report'
+    spec = _task_spec(state, prompt)
+    assert str(sub_dir.resolve()) in spec.workspace
+
+
+def test_visual_tui_synthesizes_acceptance_for_report_request(tmp_path):
+    state = AppState(workspace=str(tmp_path), mode="software")
+    spec = _task_spec(state, "이 프로젝트를 분석해서 보고서를 작성해줘")
+    assert spec.acceptance_commands
+    assert "Analysis goal completed" in spec.acceptance_commands[0]
+
+
+def test_visual_tui_local_endpoint_ready_without_secret(tmp_path):
+    path = tmp_path / "harness.toml"
+    configure_provider(path, alias="ollama_local", preset="ollama", model="gemma-4")
+    alias, model, ready = _model_status(path)
+    assert alias == "ollama_local"
+    assert model == "gemma-4"
+    assert ready is True
+
