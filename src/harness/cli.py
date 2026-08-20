@@ -1,13 +1,16 @@
 import argparse
+import os
 from pathlib import Path
 
 from harness import __version__
 from harness.config import ConfigError, HarnessConfig, load_harness_config
+from harness.final_result import persist_final_result
 from harness.model_gateway import ModelGateway, ModelGatewayError
 from harness.mcp_gateway import MCPError, MCPGateway
 from harness.plugin_gateway import PluginError, PluginGateway
 from harness.profile_composition import ProfileCompositionError, augment_profile_tools
 from harness.project_memory import ProjectMemoryError, ProjectMemoryStore
+from harness.task_contracts import EvidenceArtifactTaskProfile
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
 from harness.core.budget import Budget
@@ -55,6 +58,11 @@ def main():
     parser.add_argument("--goal")
     parser.add_argument("--accept-command", action="append", default=[],
                         help="Fixed harness-side acceptance command (software/hackathon). Repeatable.")
+    parser.add_argument(
+        "--artifact-target",
+        default=os.environ.get("HARNESS_TASK_ARTIFACT_TARGET"),
+        help="Relative evidence-backed deliverable path. Normally supplied by the conversational task intake layer.",
+    )
     parser.add_argument("--model-command",
                         help="Legacy local model command. Overrides configured default_model.")
     parser.add_argument("--max-steps", type=int, default=30)
@@ -201,6 +209,14 @@ def main():
             mcp_gateway.close()
         parser.error(str(exc))
 
+    if args.artifact_target:
+        if args.profile == "demo":
+            parser.error("--artifact-target requires a workspace-enabled profile")
+        try:
+            profile = EvidenceArtifactTaskProfile(profile, artifact_target=args.artifact_target)
+        except ValueError as exc:
+            parser.error(str(exc))
+
     goal = profile.default_goal()
     if args.goal:
         from harness.core.contracts import GoalContract
@@ -263,8 +279,16 @@ def main():
         if mcp_gateway is not None:
             mcp_gateway.close()
 
+    final_result_path = persist_final_result(
+        args.run_dir,
+        state=state,
+        workspace=workspace_contract.root,
+        artifact_target=args.artifact_target,
+    )
+
     print(f"completed={state.completed} steps={state.step}")
     print(f"run_dir={Path(args.run_dir).resolve()}")
+    print(f"final_result={final_result_path}")
     if memory_publish_report is not None:
         print(
             "memory="
