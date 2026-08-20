@@ -22,6 +22,8 @@ Core invariant:
 
 > **Actor output may propose and act; only harness-side verification/oracles may promote trusted truth or success.**
 
+Current package version: **v0.10.0**.
+
 ## Branches
 
 ```text
@@ -82,82 +84,83 @@ git pull
 python -m pip install -e .
 ```
 
-## Visual TUI
+## Conversational TUI
 
-Start it from the project you want the Harness to work on:
+The default TUI is intentionally closer to Claude Code / Antigravity CLI than to a settings dashboard: the terminal transcript is preserved, tasks are typed directly at the prompt, tool/verification/recovery events appear inline, and configuration is opened only through slash commands.
+
+Start inside the project you want to work on:
 
 ```bash
+cd /path/to/project
 verified-harness-tui
 ```
 
-or point it at another workspace:
+Or specify the workspace explicitly:
 
 ```bash
-verified-harness-tui /path/to/project
+verified-harness-tui --workspace /path/to/project
 ```
 
-The default interaction is prompt-first rather than a setup wizard:
+Example:
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ base_harness  /home/user/project                                    │
-│ software · gemini/gemini-3.5-flash · ready                         │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   What do you want to build or solve?                                │
-│   Type a task and press Enter.                                       │
-│                                                                      │
-│   /connect  /models  /mcp  /skills  /mode  /accept  /help           │
-│                                                                      │
-├──────────────────────────────────────────────────────────────────────┤
-│ acceptance: auto-detect                                              │
-└──────────────────────────────────────────────────────────────────────┘
-› Add rate limiting to the login API and add regression tests.
+╭─ base_harness 0.10.0
+│  /home/user/project
+│  software · gemini/gemini-3.5-flash · ready
+╰─ /help for commands · Ctrl+C interrupts a running task
+
+❯ Add rate limiting to the login API and add regression tests.
+  ✻ Working · runs/20260820-151700
+  ◇ agent.plan.replaced
+  ● workspace.read · ok
+  ● argv · ok
+  ◆ verification.accepted
+  ✓ Completed · steps 9 · tools 4 · runs/20260820-151700
+
+❯
+ software │ gemini/gemini-3.5-flash │ ready │ project │ python3 -m pytest -q
 ```
 
-The TUI uses the same CLI/Kernel runtime underneath; it does not bypass verification, tool permissions, progress control, recovery, or the completion oracle.
+The bottom status line shows the active mode, model, credential readiness, workspace, and acceptance command. Slash commands are autocompleted while typing.
 
-### Slash commands
+The TUI displays **operational Harness events only**: plans/status, tool calls, verification, recovery and completion. It does not expose hidden model chain-of-thought.
+
+## Slash commands
 
 ```text
-/connect            connect or re-use a model provider
-/models             choose a configured model
-/mcp                search/configure MCP
-/skills [query]     list SKILL.md capabilities
-/mode               software / hackathon / ctf / demo
-/accept <command>   set the fixed completion command
-/workspace <path>   change workspace
-/resume <run-dir>   resume a persisted run
-/inspect <run-dir>  inspect run state
-/new                clear the UI session
-/help               show commands
-/exit               quit
+/help                    show commands
+/status                  current workspace/model/run state
+/connect [provider]      connect provider or load a session credential
+/model [alias]           show/switch configured model
+/mcp list|search|add     MCP discovery/configuration
+/skills [query]          search SKILL.md capabilities
+/mode [name]             software / hackathon / ctf / demo
+/accept [command]        set/reset fixed completion command
+/workspace [path]        change project directory
+/resume <run-dir>        resume persisted run
+/inspect <run-dir>       inspect persisted run
+/permissions             show execution/security boundary
+/new                     start a fresh conversation marker
+/clear                   clear the terminal
+/exit                    quit
 ```
 
 ## Provider connection
 
-Run `/connect` inside the TUI.
+Connection is deliberately short.
 
 ```text
-┌ Connect provider ───────────────────────┐
-│ 1. gemini                              │
-│ 2. openai                              │
-│ 3. openai-compatible                   │
-│ 4. ollama                              │
-└─────────────────────────────────────────┘
+❯ /connect gemini
+Model [gemini-3.5-flash]:
+API key: ********
+  ✓ Connected gemini · gemini-3.5-flash
 ```
 
-For providers that require a key, the TUI offers:
+For an already configured provider whose credential is missing, `/connect` asks only for the key. Typing a normal task also detects this condition and asks for the key before the first model call.
 
-```text
-1. use an already exported environment variable
-2. paste a key for this TUI session only
-3. reference another environment variable
-```
+A pasted API key is held **only in the current TUI process** and passed to child Harness runs through their process environment. The raw key is not written to `harness.toml`, run artifacts, or a Harness-owned SecretStore.
 
-Option 2 is the convenient interactive path. The raw key stays only in the current TUI process and is passed to child runs through the process environment; **it is not written to `harness.toml` and is not persisted by a Harness SecretStore**.
-
-The config stores only the reference:
+The config keeps only an environment reference:
 
 ```toml
 [models.gemini]
@@ -167,33 +170,43 @@ endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/"
 api_key = "env:GEMINI_API_KEY"
 ```
 
-If you prefer persistent shell/OS/CI credential management, export the variable outside the Harness and choose option 1.
+If `GEMINI_API_KEY` already exists in the shell/OS/CI environment, no interactive key entry is required.
 
-Local Ollama requires no API key:
+Local Ollama does not need an API key:
 
 ```text
-/connect → ollama
+❯ /connect ollama
+Model [qwen2.5-coder:3b]:
 ```
 
 ## Models
 
-Use `/models` to choose among configured model aliases. The selected alias becomes `default_model` in `harness.toml`.
+```text
+❯ /model
+Configured models
+  ● gemini            gemini-3.5-flash
+  ○ local             qwen2.5-coder:3b
+Model [gemini]: local
+  ✓ Model switched to local · qwen2.5-coder:3b
+```
+
+`/models` is retained as an alias for `/model`.
 
 ## Task execution
 
-For a normal software project, type the task directly:
+Type the request directly:
 
 ```text
-› Add a Copy button for each OCR translation result and add tests.
+❯ Add a Copy button for each OCR translation result and add tests.
 ```
 
-The TUI automatically creates a fresh run directory such as:
+Every new task receives a fresh run directory such as:
 
 ```text
-./runs/20260820-110500
+./runs/20260820-151700
 ```
 
-For common project layouts it also detects a basic fixed acceptance command:
+For common project layouts the TUI detects a basic fixed acceptance command:
 
 ```text
 Python     python3 -m pytest -q   (Linux/WSL/macOS)
@@ -202,20 +215,30 @@ Rust       cargo test
 Node       npm test
 ```
 
-If no safe default is detected in `software` or `hackathon` mode, the TUI asks for one completion command before the run starts. Use `/accept` to set it in advance.
+Use `/accept <command>` when the project needs a different completion oracle. If no safe command is detected in software/hackathon mode, the TUI warns that completion may remain unaccepted rather than silently pretending the task succeeded.
 
-During execution the screen shows the current run, step count, tool calls, failures, recovery transitions, recent events, and recent stdout/stderr.
+During the run the transcript receives compact events:
+
+```text
+◇ plan/task event
+● tool call
+◆ verification event
+↻ recovery/strategy event
+✕ failure/rejection
+✓ accepted completion
+```
 
 ## MCP and Skills
 
-Use:
+MCP is available from the same prompt:
 
 ```text
-/mcp
-/skills
+/mcp list
+/mcp search filesystem
+/mcp add
 ```
 
-`/mcp` can search the official MCP Registry and configure a reviewed **stdio** MCP server. Search is discovery-only:
+Registry search is discovery-only:
 
 ```text
 search ≠ install
@@ -223,12 +246,13 @@ search ≠ enable
 search ≠ trust
 ```
 
-Bundled Skill actions include:
+The current runtime integration supports reviewed **stdio MCP** tool discovery/calls. Runtime permission policy still applies after configuration.
+
+Skills are searchable without leaving the session:
 
 ```text
-connect-provider
-mcp-search
-configure-mcp
+/skills
+/skills mcp
 ```
 
 Workspace-local skills can be placed under:
@@ -279,7 +303,7 @@ A new run must use a new/empty run directory; a conflict is reported as an actio
 - verification + completion oracle
 - deterministic progress control + recovery
 - persistence / resume / evaluation records
-- CLI + visual task-first TUI
+- CLI + conversational TUI
 - SKILL.md connection/discovery catalog
 
 ## Security boundaries
@@ -296,7 +320,7 @@ evidence
 Verifier / Completion Oracle
 ```
 
-The visual TUI does not weaken these boundaries. A session-pasted API key is process-memory-only and is never placed in run artifacts or TOML by the TUI.
+The TUI does not weaken these boundaries. A session-pasted API key is process-memory-only and is not persisted by the Harness.
 
 For ordinary local development, `execution_backend=local` is a convenience backend, not a strong sandbox. On supported Linux systems, stronger execution isolation can be requested with `linux-namespace` and strict tool isolation.
 
