@@ -320,7 +320,7 @@ def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -
         print()
         return True
     if command == "/inspect":
-        _inspect(state, argument.strip()) if False else _inspect(argument.strip())
+        _inspect(argument.strip())
         print()
         return True
     if command == "/change":
