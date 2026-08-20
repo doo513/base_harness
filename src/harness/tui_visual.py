@@ -189,17 +189,27 @@ def _secret_name_for_default(config_path: str | Path) -> str | None:
 
 
 def _extract_target_workspace(raw_prompt: str, current_workspace: str) -> tuple[str, str]:
-
     """Smart Task Intake: Detect explicit workspace directory paths in prompt."""
     prompt = raw_prompt.strip()
-    win_match = re.search(r'["\']?([A-Za-z]:\\[^"\'\n\r\t]+)["\']?', prompt)
+    
+    # 1. Quoted paths: "C:\path\to\dir" or 'C:\path\to\dir'
+    quoted_match = re.search(r'["\']([A-Za-z]:\\[^"\']+|/(?:mnt/[a-z]/)?[^"\']+)["\']', prompt)
+    if quoted_match:
+        candidate = Path(quoted_match.group(1).rstrip("\\/")).expanduser()
+        if candidate.exists() and candidate.is_dir():
+            clean_prompt = prompt.replace(quoted_match.group(0), "").strip()
+            return str(candidate.resolve()), clean_prompt or prompt
+
+    # 2. Non-quoted Windows drive path: C:\path\to\dir
+    win_match = re.search(r'([A-Za-z]:\\[^\s"\'\n\r\t]+)', prompt)
     if win_match:
         candidate = Path(win_match.group(1).rstrip("\\/")).expanduser()
         if candidate.exists() and candidate.is_dir():
             clean_prompt = prompt.replace(win_match.group(0), "").strip()
             return str(candidate.resolve()), clean_prompt or prompt
 
-    posix_match = re.search(r'["\']?((?:/mnt/[a-z]/|/)[^"\'\n\r\t\s]+)["\']?', prompt)
+    # 3. Non-quoted POSIX / WSL path: /mnt/c/... or /home/...
+    posix_match = re.search(r'((?:/mnt/[a-z]/|/)[^\s"\'\n\r\t]+)', prompt)
     if posix_match:
         candidate = Path(posix_match.group(1).rstrip("/")).expanduser()
         if candidate.exists() and candidate.is_dir():
@@ -207,6 +217,7 @@ def _extract_target_workspace(raw_prompt: str, current_workspace: str) -> tuple[
             return str(candidate.resolve()), clean_prompt or prompt
 
     return current_workspace, prompt
+
 
 
 
