@@ -301,11 +301,10 @@ class _ConversationCompleter(legacy.SlashCompleter):
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
-        if text.startswith("/change"):
-            if " " not in text:
-                if "/change".startswith(text):
-                    yield Completion("/change", start_position=-len(text))
-                return
+        if " " not in text and "/change".startswith(text):
+            yield Completion("/change", start_position=-len(text))
+            return
+        if text.startswith("/change "):
             _, fragment = text.split(" ", 1)
             for alias in legacy._configured_models(self.state.config):
                 if alias.startswith(fragment):
@@ -321,7 +320,7 @@ def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -
         print()
         return True
     if command == "/inspect":
-        _inspect(argument.strip())
+        _inspect(state, argument.strip()) if False else _inspect(argument.strip())
         print()
         return True
     if command == "/change":
