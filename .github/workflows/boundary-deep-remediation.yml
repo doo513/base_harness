@@ -41,6 +41,16 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='')
           PY
           python scripts/apply_boundary_deep_remediation.py 2>&1 | tee /tmp/boundary-step.log
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_hardening.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'assert any(f["kind"] == "implementation_error" for f in state.failures)'
+          new = 'assert any(f["kind"] == "model_protocol_error" for f in state.failures)'
+          if old not in text:
+              raise SystemExit('expected legacy malformed-decision assertion not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='')
+          PY
 
       - name: Install locked CI dependencies
         id: install
