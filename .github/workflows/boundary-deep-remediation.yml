@@ -7,9 +7,6 @@ on:
     paths:
       - scripts/apply_boundary_deep_remediation.py
       - .github/workflows/boundary-deep-remediation.yml
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -26,24 +23,95 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Apply evidence-based boundary remediation
-        run: python scripts/apply_boundary_deep_remediation.py
-      - name: Install locked CI dependencies
-        run: |
-          python -m pip install -r requirements-ci.lock
-          python -m pip install -e . --no-deps
-          python -m pip check
-      - name: Focused boundary validation
-        run: |
-          python -m compileall -q src tests scripts
-          pytest -q tests/test_integration_tui.py tests/test_tui_conversation_v2.py tests/test_task_intake_artifact_contract.py tests/test_integration_model_gateway.py tests/test_integration_mcp_plugin.py tests/test_boundary_remediation.py tests/test_windows_portable_contract.py
-      - name: Full regression
-        run: pytest -q
-      - name: Commit validated remediation and remove one-shot applicator
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        id: apply
+        continue-on-error: true
         shell: bash
         run: |
-          rm -f scripts/apply_boundary_deep_remediation.py .github/workflows/boundary-deep-remediation.yml
+          set -o pipefail
+          python scripts/apply_boundary_deep_remediation.py 2>&1 | tee /tmp/boundary-step.log
+
+      - name: Install locked CI dependencies
+        id: install
+        if: steps.apply.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            python -m pip install -r requirements-ci.lock
+            python -m pip install -e . --no-deps
+            python -m pip check
+          } 2>&1 | tee /tmp/boundary-step.log
+
+      - name: Focused boundary validation
+        id: focused
+        if: steps.apply.outcome == 'success' && steps.install.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            python -m compileall -q src tests scripts
+            pytest -q tests/test_integration_tui.py tests/test_tui_conversation_v2.py tests/test_task_intake_artifact_contract.py tests/test_integration_model_gateway.py tests/test_integration_mcp_plugin.py tests/test_boundary_remediation.py tests/test_windows_portable_contract.py
+          } 2>&1 | tee /tmp/boundary-step.log
+
+      - name: Full regression
+        id: full
+        if: steps.apply.outcome == 'success' && steps.install.outcome == 'success' && steps.focused.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee /tmp/boundary-step.log
+
+      - name: Persist failed-stage diagnostics
+        if: steps.apply.outcome != 'success' || steps.install.outcome != 'success' || steps.focused.outcome != 'success' || steps.full.outcome != 'success'
+        shell: bash
+        run: |
+          apply='${{ steps.apply.outcome }}'
+          install='${{ steps.install.outcome }}'
+          focused='${{ steps.focused.outcome }}'
+          full='${{ steps.full.outcome }}'
+          cp /tmp/boundary-step.log /tmp/last.log 2>/dev/null || true
+          git diff --stat > /tmp/diff-stat.log || true
+          git reset --hard HEAD
+          mkdir -p docs/tracks/integration-runtime
+          {
+            echo '# Boundary Remediation Diagnostic'
+            echo
+            echo "- apply: $apply"
+            echo "- install: $install"
+            echo "- focused: $focused"
+            echo "- full: $full"
+            echo
+            echo '## Proposed diff stat before reset'
+            echo '```text'
+            cat /tmp/diff-stat.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Last failing step log'
+            echo '```text'
+            tail -n 240 /tmp/last.log 2>/dev/null || true
+            echo '```'
+          } > docs/tracks/integration-runtime/BOUNDARY_REMEDIATION_DIAGNOSTIC.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/tracks/integration-runtime/BOUNDARY_REMEDIATION_DIAGNOSTIC.md
+          git commit -m 'ci: record boundary remediation diagnostic [skip ci]'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin develop || exit 1
+            if git push origin HEAD:develop; then exit 1; fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - name: Commit validated remediation and remove one-shot applicator
+        if: steps.apply.outcome == 'success' && steps.install.outcome == 'success' && steps.focused.outcome == 'success' && steps.full.outcome == 'success'
+        shell: bash
+        run: |
+          rm -f scripts/apply_boundary_deep_remediation.py .github/workflows/boundary-deep-remediation.yml docs/tracks/integration-runtime/.boundary-review-trigger docs/tracks/integration-runtime/BOUNDARY_REMEDIATION_DIAGNOSTIC.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
