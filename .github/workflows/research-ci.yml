@@ -57,7 +57,7 @@ jobs:
           run_gate tui-module python -m harness.tui --help
           run_gate cli-console verified-harness --help
           run_gate tui-console verified-harness-tui --help
-          run_gate full-pytest bash -c 'pytest -q > full-pytest.log 2>&1'
+          run_gate full-pytest bash -c 'pytest -q > full-pytest.log 2>&1; code=$?; if [ "$code" -ne 0 ]; then tail -n 200 full-pytest.log; fi; exit "$code"'
           run_gate core-freeze-audit python scripts/core_freeze_audit_probe.py
           run_gate stage03-resume python scripts/stage3_resume_probe.py
           run_gate stage04-semantic python scripts/stage4_semantic_probe.py
@@ -116,7 +116,7 @@ jobs:
             -d "{\"state\":\"$state\",\"context\":\"harness/full-regression\",\"description\":\"$description\"}"
 
       - name: Persist regression evidence
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         shell: bash
         env:
           JOB_STATUS: ${{ job.status }}
