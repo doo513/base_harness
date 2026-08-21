@@ -126,3 +126,5 @@ if "test_tui_v2_resume_spec_reconstructs_artifact_overlay_and_budget" not in tex
     write(test_path, text)
 
 print("boundary finalizer patches applied")
+
+# trigger: verified rerun 2026-08-21
