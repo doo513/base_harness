@@ -30,6 +30,16 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_boundary_deep_remediation.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    def _stderr_loop(self) -> None:\\n        process = self.process\\n        if process is None or process.stderr is None:\\n            return\\n        for line in process.stderr:\\n            self._stderr_tail.append(line.rstrip()[:2000])\\n\\n    def stderr_tail(self) -> tuple[str, ...]:\\n'''
+          new = '''    def _stderr_loop(self) -> None:\\n        process = self.process\\n        if process is None or process.stderr is None:\\n            return\\n        while True:\\n            chunk = process.stderr.read(4096)\\n            if not chunk:\\n                break\\n            lines = chunk.splitlines() or [chunk]\\n            for line in lines:\\n                if line:\\n                    self._stderr_tail.append(line[:2000])\\n\\n    def stderr_tail(self) -> tuple[str, ...]:\\n'''
+          if old not in text:
+              raise SystemExit('expected MCP stderr applicator fragment not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='')
+          PY
           python scripts/apply_boundary_deep_remediation.py 2>&1 | tee /tmp/boundary-step.log
 
       - name: Install locked CI dependencies
@@ -99,7 +109,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/tracks/integration-runtime/BOUNDARY_REMEDIATION_DIAGNOSTIC.md
-          git commit -m 'ci: record boundary remediation diagnostic [skip ci]'
+          git commit -m 'ci: record boundary remediation diagnostic [skip ci]' || true
           for attempt in 1 2 3 4; do
             git pull --rebase origin develop || exit 1
             if git push origin HEAD:develop; then exit 1; fi
