@@ -7,6 +7,7 @@ from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
 from harness import __version__
+from harness import tui_visual as legacy
 from harness.tui_conversation import (
     _COMMAND_DESCRIPTIONS,
     _ConversationCompleter,
@@ -61,12 +62,17 @@ def test_tui_v2_session_status_prefers_cli_owned_final_result(tmp_path):
     assert _session_status(run_dir) == "completed"
 
 
-def test_tui_v2_banner_omits_package_version(tmp_path, capsys):
+def test_tui_v2_banner_omits_package_version(tmp_path, monkeypatch):
     state = AppState(workspace=str(tmp_path), config=str(tmp_path / "missing.toml"))
+    emitted: list[str] = []
 
+    def capture(*parts, **kwargs):
+        emitted.append("".join(text for _, text in parts))
+
+    monkeypatch.setattr(legacy, "_emit", capture)
     _banner(state)
 
-    rendered = capsys.readouterr().out
+    rendered = "\n".join(emitted)
     assert "base_harness" in rendered
     assert __version__ not in rendered
 
