@@ -5,7 +5,9 @@ from collections import deque
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 from threading import Thread
 from time import sleep
 from typing import Any
@@ -15,9 +17,10 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completion
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
 
 from harness.task_intake import analyze_task_input
-from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir
+from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir, _default_run_root
 from harness import tui_visual as legacy
 
 
@@ -26,6 +29,30 @@ _HIDDEN_EVENTS = {
     "run.start",
     "run.end",
     "step.transition",
+}
+
+_COMMAND_DESCRIPTIONS = {
+    "/connect": "Connect provider",
+    "/model": "Switch model",
+    "/sessions": "Browse or resume sessions",
+    "/skills": "Browse skills",
+    "/mcp": "Manage MCPs",
+    "/status": "Show session status",
+    "/permissions": "Show execution boundary",
+    "/workspace": "Change workspace",
+    "/inspect": "Inspect a persisted run",
+    "/mode": "Override domain profile",
+    "/accept": "Set fixed acceptance command",
+    "/new": "Start fresh conversation state",
+    "/clear": "Clear terminal",
+    "/help": "Help",
+    "/exit": "Exit the app",
+}
+
+_COMPAT_COMMAND_DESCRIPTIONS = {
+    "/change": "Alias for /model",
+    "/models": "Alias for /model",
+    "/resume": "Resume by explicit run path",
 }
 
 
@@ -42,11 +69,11 @@ def _friendly_event(row: dict[str, Any]) -> None:
 
     if kind == "agent.plan.replaced":
         objective = str(payload.get("objective") or "work plan updated")
-        legacy._emit(("class:accent", "  Plan    "), ("class:assistant", objective))
+        legacy._emit(("class:accent", "  ◇ Plan   "), ("class:assistant", objective))
         return
     if kind == "agent.task.updated":
         task_id = str(payload.get("task_id") or "task")
-        legacy._emit(("class:muted", "  Check   "), ("class:assistant", task_id))
+        legacy._emit(("class:muted", "  Check    "), ("class:assistant", task_id))
         return
     if kind == "tool.result":
         return
@@ -175,12 +202,114 @@ def _render_final_result(run_dir: str | Path) -> None:
     print()
 
 
+class _EscapePoller:
+    """Cross-platform, best-effort Esc detector used only while the child CLI owns the run."""
+
+    def __init__(self) -> None:
+        self.enabled = False
+        self.fd: int | None = None
+        self._termios = None
+        self._previous_terminal = None
+
+    def __enter__(self) -> "_EscapePoller":
+        if not sys.stdin.isatty():
+            return self
+        if os.name == "nt":
+            self.enabled = True
+            return self
+        try:
+            import termios
+            import tty
+
+            self.fd = sys.stdin.fileno()
+            self._termios = termios
+            self._previous_terminal = termios.tcgetattr(self.fd)
+            tty.setcbreak(self.fd)
+            self.enabled = True
+        except (OSError, ValueError):
+            self.enabled = False
+        return self
+
+    def poll(self) -> bool:
+        if not self.enabled:
+            return False
+        if os.name == "nt":
+            import msvcrt
+
+            while msvcrt.kbhit():
+                if msvcrt.getwch() == "\x1b":
+                    return True
+            return False
+
+        import select
+
+        if self.fd is None:
+            return False
+        ready, _, _ = select.select([self.fd], [], [], 0)
+        if not ready:
+            return False
+        char = os.read(self.fd, 1)
+        if char != b"\x1b":
+            return False
+
+        # Arrow/function keys also begin with ESC. Ignore a short CSI/SS3 sequence.
+        sleep(0.015)
+        ready, _, _ = select.select([self.fd], [], [], 0)
+        if ready:
+            prefix = os.read(self.fd, 1)
+            if prefix in {b"[", b"O"}:
+                ready, _, _ = select.select([self.fd], [], [], 0)
+                if ready:
+                    os.read(self.fd, 1)
+                return False
+        return True
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._termios is not None and self.fd is not None and self._previous_terminal is not None:
+            try:
+                self._termios.tcsetattr(self.fd, self._termios.TCSADRAIN, self._previous_terminal)
+            except OSError:
+                pass
+
+
+def _interrupt_process(process: subprocess.Popen, *, platform_name: str | None = None) -> None:
+    """Request a graceful interrupt without moving completion authority into the TUI."""
+    if process.poll() is not None:
+        return
+    platform = platform_name or os.name
+    try:
+        if platform == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGINT)
+    except (AttributeError, OSError, ProcessLookupError):
+        process.terminate()
+
+
+def _wait_for_stop(process: subprocess.Popen, *, graceful_timeout: float = 5.0) -> None:
+    try:
+        process.wait(timeout=graceful_timeout)
+        return
+    except subprocess.TimeoutExpired:
+        process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
 def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
     run_dir = Path(spec.run_dir)
     event_tail = legacy.JsonlTail(run_dir / "events.jsonl")
     tool_tail = legacy.JsonlTail(run_dir / "tool_calls.jsonl")
     stdout: deque[str] = deque(maxlen=8)
     stderr: deque[str] = deque(maxlen=8)
+    popen_options: dict[str, Any] = {}
+    if os.name == "nt":
+        popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_options["start_new_session"] = True
     process = subprocess.Popen(
         spec.command(),
         stdout=subprocess.PIPE,
@@ -189,6 +318,7 @@ def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
         bufsize=1,
         shell=False,
         env=legacy._process_env(state),
+        **popen_options,
     )
     threads = [
         Thread(target=_drain, args=(process.stdout, stdout), daemon=True),
@@ -197,22 +327,28 @@ def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
     for thread in threads:
         thread.start()
 
+    interrupted = False
     legacy._emit(("class:accent", "\n  Working "), ("class:muted", f"· {Path(spec.workspace).resolve().name or spec.workspace} · {spec.profile}"))
+    legacy._emit(("class:muted", "  esc interrupt · ctrl+c fallback"))
     try:
-        while process.poll() is None:
-            for row in event_tail.read():
-                _friendly_event(row)
-            for row in tool_tail.read():
-                _friendly_tool(row)
-            sleep(0.15)
+        with _EscapePoller() as escape:
+            while process.poll() is None:
+                for row in event_tail.read():
+                    _friendly_event(row)
+                for row in tool_tail.read():
+                    _friendly_tool(row)
+                if escape.poll():
+                    interrupted = True
+                    legacy._emit(("class:warn", "  ■ Stop   "), ("class:assistant", "interrupt requested"))
+                    _interrupt_process(process)
+                    _wait_for_stop(process)
+                    break
+                sleep(0.15)
     except KeyboardInterrupt:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-        legacy._print_note("Stopped by user. Run state is preserved for /inspect or /resume.")
+        interrupted = True
+        legacy._emit(("class:warn", "  ■ Stop   "), ("class:assistant", "interrupt requested"))
+        _interrupt_process(process)
+        _wait_for_stop(process)
     finally:
         for thread in threads:
             thread.join(timeout=1)
@@ -222,7 +358,9 @@ def _run_spec(state: legacy.AppState, spec: RunLaunchSpec) -> int:
             _friendly_tool(row)
 
     state.last_run = spec.run_dir
-    if process.returncode not in {0, None}:
+    if interrupted:
+        legacy._print_note("Run interrupted. Persisted state remains available for /inspect or /sessions.")
+    elif process.returncode not in {0, None}:
         message = next((line for line in reversed(stderr) if line.strip()), "runtime failed")
         legacy._print_error(message)
     _render_final_result(spec.run_dir)
@@ -280,6 +418,65 @@ def _inspect(run_dir: str) -> None:
     _render_final_result(run_dir)
 
 
+def _recent_sessions(*, limit: int = 12) -> list[Path]:
+    root = _default_run_root()
+    try:
+        candidates = [item for item in root.iterdir() if item.is_dir()]
+    except OSError:
+        return []
+
+    def sort_key(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    candidates.sort(key=sort_key, reverse=True)
+    return candidates[: max(1, limit)]
+
+
+def _session_status(run_dir: Path) -> str:
+    result = _read_final_result(run_dir)
+    if result:
+        return "completed" if result.get("completed") else "stopped"
+    view = RunView(run_dir).refresh()
+    if view.metrics:
+        return "completed" if view.metrics.get("completed") else "stopped"
+    return "saved"
+
+
+def _resolve_session(value: str) -> Path | None:
+    candidate = Path(value).expanduser()
+    if candidate.exists() and candidate.is_dir():
+        return candidate.resolve()
+    under_root = _default_run_root() / value
+    if under_root.exists() and under_root.is_dir():
+        return under_root.resolve()
+    return None
+
+
+def _sessions(state: legacy.AppState, argument: str = "") -> None:
+    requested = argument.strip()
+    if requested:
+        resolved = _resolve_session(requested)
+        if resolved is None:
+            legacy._print_error(f"Unknown session: {requested}")
+            return
+        _resume(state, str(resolved))
+        return
+
+    sessions = _recent_sessions()
+    if not sessions:
+        legacy._print_note("No saved sessions yet.")
+        return
+    legacy._emit(("class:assistant", "Sessions"))
+    for path in sessions:
+        status = _session_status(path)
+        cls = "class:good" if status == "completed" else "class:warn" if status == "stopped" else "class:muted"
+        legacy._emit((cls, f"  {'✓' if status == 'completed' else '◇'} {path.name:<22}"), ("class:muted", status))
+    legacy._print_note("Resume with /sessions <run-id>. /resume <path> remains available as a compatibility command.")
+
+
 def _change_model(state: legacy.AppState, session: PromptSession, argument: str = "") -> None:
     before_alias, before_model, _ = state.model_status()
     legacy._models(state, session, argument)
@@ -297,12 +494,21 @@ def _change_model(state: legacy.AppState, session: PromptSession, argument: str 
 
 
 class _ConversationCompleter(legacy.SlashCompleter):
-    """Add conversational aliases without changing runtime command authority."""
+    """Command palette with descriptions plus compatibility aliases."""
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
-        if " " not in text and "/change".startswith(text):
-            yield Completion("/change", start_position=-len(text))
+        if text.startswith("/") and " " not in text:
+            commands = {**_COMMAND_DESCRIPTIONS, **_COMPAT_COMMAND_DESCRIPTIONS}
+            for command, description in commands.items():
+                if command.startswith(text):
+                    yield Completion(command, start_position=-len(text), display_meta=description)
+            return
+        if text.startswith("/sessions "):
+            _, fragment = text.split(" ", 1)
+            for run_dir in _recent_sessions():
+                if run_dir.name.startswith(fragment):
+                    yield Completion(run_dir.name, start_position=-len(fragment), display_meta=_session_status(run_dir))
             return
         if text.startswith("/change "):
             _, fragment = text.split(" ", 1)
@@ -313,8 +519,25 @@ class _ConversationCompleter(legacy.SlashCompleter):
         yield from super().get_completions(document, complete_event)
 
 
+def _conversation_key_bindings() -> KeyBindings:
+    bindings = KeyBindings()
+
+    @bindings.add("c-p")
+    def _open_commands(event) -> None:
+        buffer = event.current_buffer
+        if not buffer.text.startswith("/"):
+            buffer.insert_text("/")
+        buffer.start_completion(select_first=False)
+
+    return bindings
+
+
 def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -> bool:
     command, _, argument = text.strip().partition(" ")
+    if command == "/sessions":
+        _sessions(state, argument.strip())
+        print()
+        return True
     if command == "/resume":
         _resume(state, argument.strip())
         print()
@@ -329,7 +552,8 @@ def _handle_command(state: legacy.AppState, session: PromptSession, text: str) -
         return True
     if command == "/help":
         legacy._help()
-        legacy._emit(("class:accent", f"  {'/change [alias]':<24}"), ("class:muted", "friendly alias for /model [alias]"))
+        legacy._emit(("class:accent", f"  {'/sessions [run-id]':<24}"), ("class:muted", "browse or resume saved runs"))
+        legacy._emit(("class:muted", f"  {'/change [alias]':<24}"), ("class:muted", "compatibility alias for /model [alias]"))
         print()
         return True
     return legacy._handle_command(state, session, text)
@@ -346,9 +570,24 @@ def _ensure_model_ready(state: legacy.AppState, session: PromptSession) -> bool:
     return legacy._ensure_model_ready(state, session)
 
 
+def _bottom_toolbar(state: legacy.AppState) -> FormattedText:
+    alias, model, ready = state.model_status()
+    route = model if model != "-" else alias
+    status = "ready" if ready else "setup needed"
+    return FormattedText([
+        ("class:toolbar", f" {state.mode} · {route} · {status}   "),
+        ("class:toolbar", "tab complete · / commands · ctrl+p palette · esc close "),
+    ])
+
+
 def _banner(state: legacy.AppState) -> None:
-    legacy._banner(state)
-    legacy._emit(("class:muted", "  Type the task normally. Use /model or /change to switch models; /skills and /mode are advanced controls."))
+    alias, model, ready = state.model_status()
+    status = "ready" if ready else "model setup needed"
+    root = Path(state.workspace).expanduser().resolve()
+    legacy._emit(("class:accent", "╭─ "), ("class:assistant", "base_harness"))
+    legacy._emit(("class:accent", "│  "), ("class:muted", str(root)))
+    legacy._emit(("class:accent", "│  "), ("class:assistant", f"{alias}:{model}"), ("class:muted", f" · {state.mode} · {status}"))
+    legacy._emit(("class:accent", "╰─ "), ("class:muted", "type a task · / commands · ctrl+p palette"))
     print()
 
 
@@ -369,7 +608,8 @@ def main(argv: list[str] | None = None) -> int:
         completer=_ConversationCompleter(state),
         complete_while_typing=True,
         style=legacy.STYLE,
-        bottom_toolbar=lambda: legacy._bottom_toolbar(state),
+        bottom_toolbar=lambda: _bottom_toolbar(state),
+        key_bindings=_conversation_key_bindings(),
     )
 
     _banner(state)
