@@ -7,6 +7,9 @@ on:
     paths:
       - scripts/apply_boundary_deep_remediation.py
       - .github/workflows/boundary-deep-remediation.yml
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -37,6 +40,7 @@ jobs:
       - name: Full regression
         run: pytest -q
       - name: Commit validated remediation and remove one-shot applicator
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           rm -f scripts/apply_boundary_deep_remediation.py .github/workflows/boundary-deep-remediation.yml
