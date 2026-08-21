@@ -28,18 +28,24 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Apply one-shot reviewed remediation when present
+      - name: Detect one-shot reviewed remediation
+        id: remediation_detect
+        shell: bash
+        run: |
+          active=false
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "develop" ] && \
+             [ -f scripts/apply_boundary_deep_remediation.py ] && \
+             [ -f scripts/finalize_boundary_remediation.py ]; then
+            active=true
+          fi
+          echo "active=$active" >> "$GITHUB_OUTPUT"
+
+      - name: Apply one-shot reviewed remediation
         id: remediation
+        if: steps.remediation_detect.outputs.active == 'true'
         continue-on-error: true
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" != "push" ] || [ "${{ github.ref_name }}" != "develop" ] || \
-             [ ! -f scripts/apply_boundary_deep_remediation.py ] || \
-             [ ! -f scripts/finalize_boundary_remediation.py ]; then
-            echo 'active=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo 'active=true' >> "$GITHUB_OUTPUT"
           set -o pipefail
           {
             python scripts/apply_boundary_deep_remediation.py
@@ -47,7 +53,7 @@ jobs:
           } 2>&1 | tee /tmp/boundary-remediation.log
 
       - name: Persist remediation apply failure
-        if: steps.remediation.outputs.active == 'true' && steps.remediation.outcome != 'success'
+        if: steps.remediation_detect.outputs.active == 'true' && steps.remediation.outcome != 'success'
         shell: bash
         run: |
           git diff --stat > /tmp/boundary-diff-stat.txt || true
@@ -78,7 +84,7 @@ jobs:
           git push origin HEAD:develop
 
       - name: Stop after remediation apply failure
-        if: steps.remediation.outputs.active == 'true' && steps.remediation.outcome != 'success'
+        if: steps.remediation_detect.outputs.active == 'true' && steps.remediation.outcome != 'success'
         run: exit 1
 
       - name: Install locked CI dependencies
@@ -90,7 +96,7 @@ jobs:
 
       - name: Full validation ledger
         id: ledger
-        if: always() && steps.remediation.outcome == 'success' && steps.install.outcome == 'success'
+        if: always() && (steps.remediation_detect.outputs.active != 'true' || steps.remediation.outcome == 'success') && steps.install.outcome == 'success'
         shell: bash
         run: |
           failures=0
@@ -108,7 +114,7 @@ jobs:
           }
 
           run_gate compile python -m compileall -q src tests scripts
-          if [ "${{ steps.remediation.outputs.active }}" = 'true' ]; then
+          if [ "${{ steps.remediation_detect.outputs.active }}" = 'true' ]; then
             run_gate boundary-focused pytest -q \
               tests/test_hardening.py \
               tests/test_integration_tui.py \
@@ -161,7 +167,7 @@ jobs:
           exit "$failures"
 
       - name: Persist remediation validation failure
-        if: steps.remediation.outputs.active == 'true' && steps.remediation.outcome == 'success' && steps.ledger.outcome != 'success'
+        if: steps.remediation_detect.outputs.active == 'true' && steps.remediation.outcome == 'success' && steps.ledger.outcome != 'success'
         shell: bash
         run: |
           git diff --stat > /tmp/boundary-diff-stat.txt || true
@@ -199,7 +205,7 @@ jobs:
           git push origin HEAD:develop
 
       - name: Commit validated remediation
-        if: steps.remediation.outputs.active == 'true' && steps.remediation.outcome == 'success' && steps.ledger.outcome == 'success'
+        if: steps.remediation_detect.outputs.active == 'true' && steps.remediation.outcome == 'success' && steps.ledger.outcome == 'success'
         shell: bash
         run: |
           rm -f \
@@ -237,7 +243,7 @@ jobs:
             -d "{\"state\":\"$state\",\"context\":\"harness/full-regression\",\"description\":\"$description\"}"
 
       - name: Persist regression evidence
-        if: always() && github.event_name != 'pull_request' && steps.remediation.outputs.active != 'true'
+        if: always() && github.event_name != 'pull_request' && steps.remediation_detect.outputs.active != 'true'
         shell: bash
         env:
           JOB_STATUS: ${{ job.status }}
