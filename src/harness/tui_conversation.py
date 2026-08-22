@@ -21,6 +21,13 @@ from prompt_toolkit.key_binding import KeyBindings
 
 from harness.task_intake import analyze_task_input
 from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir, _default_run_root
+from harness.tui_config import (
+    TUIConfigError,
+    default_config_path,
+    initial_workspace,
+    load_tui_settings,
+    persist_tui_settings,
+)
 from harness import tui_visual as legacy
 
 
@@ -41,7 +48,7 @@ _COMMAND_DESCRIPTIONS = {
     "/permissions": "Show execution boundary",
     "/workspace": "Change workspace",
     "/inspect": "Inspect a persisted run",
-    "/mode": "Override domain profile",
+    "/domain": "Select domain",
     "/accept": "Set fixed acceptance command",
     "/new": "Start fresh conversation state",
     "/clear": "Clear terminal",
@@ -53,6 +60,7 @@ _COMPAT_COMMAND_DESCRIPTIONS = {
     "/change": "Alias for /model",
     "/models": "Alias for /model",
     "/resume": "Resume by explicit run path",
+    "/mode": "Alias for /domain",
 }
 
 
@@ -379,8 +387,6 @@ def _task_spec(state: legacy.AppState, task: str, *, artifact_target: str | None
         goal=task,
         acceptance_commands=tuple(acceptance),
         max_steps=30,
-        execution_backend="local",
-        network_policy="allow",
         resume=False,
     )
 
@@ -593,15 +599,45 @@ def _banner(state: legacy.AppState) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="base_harness conversational terminal UI")
-    parser.add_argument("--workspace", default=".")
-    parser.add_argument("--config", default="harness.toml")
-    parser.add_argument("--mode", choices=["software", "hackathon", "ctf", "demo"], default="software")
+    parser.add_argument("--workspace", help="Initial workspace; defaults to invocation cwd, then user home.")
+    parser.add_argument("--config", help="Shared TOML; defaults to local harness.toml or the user config directory.")
+    parser.add_argument("--domain", dest="mode", choices=["software", "hackathon", "ctf", "demo"])
+    parser.add_argument("--mode", dest="mode", choices=["software", "hackathon", "ctf", "demo"], help=argparse.SUPPRESS)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    state = legacy.AppState(workspace=args.workspace, config=args.config, mode=args.mode)
+    invocation_dir = Path.cwd()
+    try:
+        workspace = initial_workspace(args.workspace, invocation_dir=invocation_dir)
+        config_path = default_config_path(args.config, invocation_dir=invocation_dir)
+        settings = load_tui_settings(config_path)
+        mode = args.mode or settings.profile
+        persist_tui_settings(
+            config_path,
+            workspace=workspace,
+            profile=mode,
+            acceptance_commands=settings.acceptance_commands,
+            security=settings.security_mapping(),
+        )
+        settings = load_tui_settings(config_path)
+    except (OSError, TUIConfigError) as exc:
+        print(f"TUI configuration error: {exc}", file=sys.stderr)
+        return 2
+
+    state = legacy.AppState(
+        workspace=str(workspace),
+        config=str(config_path),
+        mode=mode,
+        acceptance=settings.acceptance_commands,
+        execution_backend=settings.execution_backend,
+        strict_layout=settings.strict_layout,
+        strict_tool_isolation=settings.strict_tool_isolation,
+        network_policy=settings.network_policy,
+        require_sealed_oracle=settings.require_sealed_oracle,
+        require_oracle_isolation=settings.require_oracle_isolation,
+    )
     session: PromptSession = PromptSession(
         history=InMemoryHistory(),
         auto_suggest=AutoSuggestFromHistory(),
@@ -633,8 +669,14 @@ def main(argv: list[str] | None = None) -> int:
             requested = Path(intake.requested_workspace).resolve()
             current = Path(state.workspace).expanduser().resolve()
             if requested != current:
+                try:
+                    persist_tui_settings(state.config, workspace=requested)
+                except (OSError, TUIConfigError) as exc:
+                    legacy._print_error(f"Workspace was not saved: {exc}")
+                    print()
+                    continue
                 state.workspace = str(requested)
-                legacy._print_good(f"Workspace · {requested}")
+                legacy._print_good(f"Workspace · {requested} · saved to TOML")
         elif intake.workspace_ambiguous:
             legacy._print_note("Multiple project paths detected, so the current workspace was kept. Use /workspace <path> to choose a write target.")
 

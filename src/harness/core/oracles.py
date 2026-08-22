@@ -72,17 +72,28 @@ class PredicateCompletionOracle:
 
 
 class CommandCompletionOracle:
-    """Harness-side deterministic oracle for software/demo tasks.
+    """Operator-fixed command oracle executed through an explicit backend.
 
-    This is operator-fixed but not sealed: acceptance assets may still live in
-    the actor workspace.  Use SealedCommandCompletionOracle when acceptance
-    assets must be integrity protected from actor mutation.
+    The backend is supplied by CLI/runtime composition. Completion checks can no
+    longer instantiate a fresh host-local process and silently bypass the Actor
+    sandbox selection.
     """
     name = "command_oracle"
 
-    def __init__(self, commands: list[str], timeout_seconds: float = 120):
+    def __init__(
+        self,
+        commands: list[str],
+        timeout_seconds: float = 120,
+        *,
+        backend: ExecutionBackend | None = None,
+        require_filesystem_isolation: bool = False,
+        allow_test_attestation: bool = False,
+    ):
         self.commands = list(commands)
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = float(timeout_seconds)
+        self.backend = backend or LocalProcessBackend(inherit_env=False)
+        self.require_filesystem_isolation = bool(require_filesystem_isolation)
+        self.allow_test_attestation = bool(allow_test_attestation)
 
     def evaluate(self, *, goal, state, workspace):
         if not self.commands:
@@ -92,11 +103,38 @@ class CommandCompletionOracle:
                 oracle_id=self.name,
                 independence_level="operator_fixed_unsealed",
             )
-        backend = LocalProcessBackend(inherit_env=False)
+        workspace = Path(workspace).expanduser().resolve()
+        att = self.backend.isolation_attestation(workspace=workspace)
+        trusted_source = (
+            att.source == "runtime_probe"
+            or (att.source == "test_fixture" and self.allow_test_attestation)
+        )
+        strong_boundary = att.strong_filesystem_boundary and trusted_source
+        independence = (
+            "operator_fixed_unsealed_and_filesystem_isolation"
+            if strong_boundary
+            else "operator_fixed_unsealed"
+        )
+        attestation = {
+            "backend": getattr(self.backend, "name", type(self.backend).__name__),
+            "source": att.source,
+            "filesystem_isolated": att.filesystem_isolated,
+            "network_isolated": att.network_isolated,
+            "environment_sanitized": att.environment_sanitized,
+        }
+        if self.require_filesystem_isolation and not strong_boundary:
+            return _finalize_completion_result(
+                accepted=False,
+                reason="command oracle requires filesystem-isolated backend",
+                evidence=[{"sandbox": attestation}],
+                oracle_id=self.name,
+                independence_level=independence,
+            )
+
         evidence = []
         for command in self.commands:
-            result = backend.run_shell(
-                workspace=Path(workspace),
+            result = self.backend.run_shell(
+                workspace=workspace,
                 command=command,
                 timeout_seconds=self.timeout_seconds,
                 env=None,
@@ -107,6 +145,7 @@ class CommandCompletionOracle:
                 "stdout": result.stdout[-4000:],
                 "stderr": result.stderr[-4000:],
                 "timed_out": result.timed_out,
+                "sandbox": attestation,
             }
             evidence.append(record)
             if result.returncode != 0 or result.timed_out:
@@ -115,14 +154,14 @@ class CommandCompletionOracle:
                     reason="acceptance command failed",
                     evidence=evidence,
                     oracle_id=self.name,
-                    independence_level="operator_fixed_unsealed",
+                    independence_level=independence,
                 )
         return _finalize_completion_result(
             accepted=True,
             reason="all acceptance commands passed",
             evidence=evidence,
             oracle_id=self.name,
-            independence_level="operator_fixed_unsealed",
+            independence_level=independence,
         )
 
 

@@ -26,7 +26,7 @@ from harness.skill_catalog import SkillCatalog, SkillError
 
 @dataclass(frozen=True)
 class RunLaunchSpec:
-    """Declarative TUI launch request translated to the existing CLI boundary."""
+    """Declarative TUI request translated to the shared CLI boundary."""
 
     config: str | None = None
     workspace: str = "."
@@ -37,13 +37,13 @@ class RunLaunchSpec:
     max_steps: int = 30
     task_revision: str | None = None
     model_revision: str | None = None
-    execution_backend: str = "local"
-    strict_layout: bool = False
-    strict_tool_isolation: bool = False
-    network_policy: str = "allow"
-    require_sealed_oracle: bool = False
+    execution_backend: str | None = None
+    strict_layout: bool | None = None
+    strict_tool_isolation: bool | None = None
+    network_policy: str | None = None
+    require_sealed_oracle: bool | None = None
     sealed_oracle_root: str | None = None
-    require_oracle_isolation: bool = False
+    require_oracle_isolation: bool | None = None
     require_complete_provenance: bool = False
     resume: bool = False
 
@@ -57,9 +57,11 @@ class RunLaunchSpec:
             "--workspace", self.workspace,
             "--run-dir", self.run_dir,
             "--max-steps", str(self.max_steps),
-            "--execution-backend", self.execution_backend,
-            "--network-policy", self.network_policy,
         ]
+        if self.execution_backend is not None:
+            argv += ["--execution-backend", self.execution_backend]
+        if self.network_policy is not None:
+            argv += ["--network-policy", self.network_policy]
         if self.goal:
             argv += ["--goal", self.goal]
         for command in self.acceptance_commands:
@@ -71,11 +73,14 @@ class RunLaunchSpec:
             argv += ["--model-revision", self.model_revision]
         if self.sealed_oracle_root:
             argv += ["--sealed-oracle-root", self.sealed_oracle_root]
-        argv.append("--strict-layout" if self.strict_layout else "--no-strict-layout")
-        argv.append("--strict-tool-isolation" if self.strict_tool_isolation else "--no-strict-tool-isolation")
-        argv.append("--require-sealed-oracle" if self.require_sealed_oracle else "--no-require-sealed-oracle")
-        if self.require_oracle_isolation:
-            argv.append("--require-oracle-isolation")
+        for value, positive, negative in (
+            (self.strict_layout, "--strict-layout", "--no-strict-layout"),
+            (self.strict_tool_isolation, "--strict-tool-isolation", "--no-strict-tool-isolation"),
+            (self.require_sealed_oracle, "--require-sealed-oracle", "--no-require-sealed-oracle"),
+            (self.require_oracle_isolation, "--require-oracle-isolation", "--no-require-oracle-isolation"),
+        ):
+            if value is not None:
+                argv.append(positive if value else negative)
         if self.require_complete_provenance:
             argv.append("--require-complete-provenance")
         if self.resume:

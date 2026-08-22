@@ -66,14 +66,17 @@ def _toml_string(value: str) -> str:
 def _base_config_text() -> str:
     return (
         'profile = "software"\n'
-        'run_dir = "./run"\n\n'
+        'run_dir = "./run"\n'
+        'acceptance_commands = []\n\n'
         '[workspace]\n'
         'root = "."\n\n'
         '[security]\n'
+        'execution_backend = "local"\n'
         'strict_layout = false\n'
         'strict_tool_isolation = false\n'
         'network_policy = "allow"\n'
         'require_sealed_oracle = false\n'
+        'require_oracle_isolation = false\n'
     )
 
 

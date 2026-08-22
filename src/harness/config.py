@@ -143,8 +143,11 @@ class HarnessConfig:
     plugins: tuple[PluginConfig, ...] = ()
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     security: dict[str, Any] = field(default_factory=dict)
+    acceptance_commands: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if any(not isinstance(item, str) or not item for item in self.acceptance_commands):
+            raise ConfigError("acceptance_commands must contain non-empty strings")
         if self.default_model is not None and self.default_model not in self.models:
             raise ConfigError(f"default_model is not declared: {self.default_model}")
         names = [item.name for item in self.mcp_servers]
@@ -159,6 +162,7 @@ class HarnessConfig:
             "schema_version": "harness-config-v1",
             "profile": self.profile,
             "run_dir": self.run_dir,
+            "acceptance_commands": list(self.acceptance_commands),
             "workspace": {
                 "root": self.workspace.root,
                 "temp_dir": self.workspace.temp_dir,
@@ -243,7 +247,7 @@ def _parse_secret(value: Any, path: str) -> SecretRef | None:
 def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
     data = dict(raw)
     allowed = {
-        "profile", "run_dir", "workspace", "default_model", "models",
+        "profile", "run_dir", "acceptance_commands", "workspace", "default_model", "models",
         "mcp", "plugins", "memory", "security",
     }
     unknown = sorted(set(data) - allowed)
@@ -349,6 +353,9 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
     profile = data.get("profile", "demo")
     run_dir = data.get("run_dir", "./run")
     default_model = data.get("default_model")
+    acceptance_raw = _expect_list(data.get("acceptance_commands"), "acceptance_commands")
+    if any(not isinstance(item, str) or not item for item in acceptance_raw):
+        raise ConfigError("acceptance_commands must be an array of non-empty strings")
     if not isinstance(profile, str) or not profile:
         raise ConfigError("profile must be a non-empty string")
     if not isinstance(run_dir, str) or not run_dir:
@@ -366,6 +373,7 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         plugins=tuple(plugin_items),
         memory=memory,
         security=_expect_mapping(data.get("security"), "security"),
+        acceptance_commands=tuple(acceptance_raw),
     )
 
 

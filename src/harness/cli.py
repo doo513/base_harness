@@ -79,7 +79,7 @@ def main():
     parser.add_argument(
         "--execution-backend",
         choices=["local", "linux-namespace"],
-        default="local",
+        default=str(security_defaults.get("execution_backend", "local")),
         help="Shell execution backend. linux-namespace provides the Stage-02 production sandbox on supported Linux hosts.",
     )
     parser.add_argument(
@@ -105,9 +105,14 @@ def main():
         default=bool(security_defaults.get("require_sealed_oracle", False)),
         help="Reject runtime construction unless the profile uses a sealed completion oracle.",
     )
-    parser.add_argument("--require-oracle-isolation", action="store_true",
-                        help="Require the sealed oracle backend to report strong filesystem isolation.")
+    parser.add_argument(
+        "--require-oracle-isolation",
+        action=argparse.BooleanOptionalAction,
+        default=bool(security_defaults.get("require_oracle_isolation", False)),
+        help="Require every command-based completion oracle to report strong filesystem isolation.",
+    )
     args = parser.parse_args()
+    acceptance_commands = list(args.accept_command or config.acceptance_commands)
 
     try:
         workspace_contract = WorkspaceContract.build(
@@ -143,11 +148,11 @@ def main():
                 read_only_paths=[Path(args.sealed_oracle_root).resolve()],
             )
             if args.sealed_oracle_root
-            else None
+            else LinuxNamespaceSandboxBackend(network_policy=NetworkPolicy.DENY)
         )
     else:
         execution_backend = LocalProcessBackend(inherit_env=False)
-        oracle_backend = execution_backend
+        oracle_backend = LocalProcessBackend(inherit_env=False)
 
     if args.profile == "demo":
         if args.sealed_oracle_root:
@@ -160,7 +165,7 @@ def main():
     elif args.profile == "hackathon":
         profile = HackathonProfile(
             workspace=args.workspace,
-            acceptance_commands=args.accept_command,
+            acceptance_commands=acceptance_commands,
             execution_backend=execution_backend,
             oracle_backend=oracle_backend,
             sealed_oracle_root=args.sealed_oracle_root,
@@ -169,7 +174,7 @@ def main():
     else:
         profile = SoftwareProfile(
             workspace=args.workspace,
-            acceptance_commands=args.accept_command,
+            acceptance_commands=acceptance_commands,
             execution_backend=execution_backend,
             oracle_backend=oracle_backend,
             sealed_oracle_root=args.sealed_oracle_root,

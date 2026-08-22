@@ -1,48 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-import re
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
-
-
-def _write(path: str, text: str) -> None:
-    target = ROOT / path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8", newline="")
-
-
-def replace_once(path: str, old: str, new: str) -> None:
-    text = _read(path)
-    count = text.count(old)
-    if count != 1:
-        raise RuntimeError(f"{path}: expected one literal match, found {count}: {old[:100]!r}")
-    _write(path, text.replace(old, new, 1))
-
-
-def replace_exact_count(path: str, old: str, new: str, expected: int) -> None:
-    text = _read(path)
-    count = text.count(old)
-    if count != expected:
-        raise RuntimeError(f"{path}: expected {expected} literal matches, found {count}: {old[:100]!r}")
-    _write(path, text.replace(old, new, expected))
-
-
-def regex_once(path: str, pattern: str, replacement: str) -> None:
-    text = _read(path)
-    compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
-    updated, count = compiled.subn(lambda _match: replacement, text, count=1)
-    if count != 1:
-        raise RuntimeError(f"{path}: expected one regex match, found {count}: {pattern[:120]!r}")
-    _write(path, updated)
-
-
-TUI_CONFIG = r'''from __future__ import annotations
-
 from dataclasses import dataclass
 import json
 import os
@@ -178,3 +135,132 @@ def load_tui_settings(path: str | Path) -> TUISettings:
 
     return TUISettings(
         profile=profile,
+        acceptance_commands=tuple(acceptance),
+        execution_backend=execution_backend,
+        strict_layout=optional_bool("strict_layout"),
+        strict_tool_isolation=optional_bool("strict_tool_isolation"),
+        network_policy=network_policy,
+        require_sealed_oracle=optional_bool("require_sealed_oracle"),
+        require_oracle_isolation=optional_bool("require_oracle_isolation"),
+    )
+
+
+def _literal(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+        return "[" + ", ".join(json.dumps(item, ensure_ascii=False) for item in value) + "]"
+    raise TUIConfigError(f"unsupported TOML value: {value!r}")
+
+
+def _section_bounds(lines: list[str], section: str | None) -> tuple[int, int] | None:
+    headers: list[tuple[int, str]] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*\[([^\[\]]+)\]\s*(?:#.*)?$", line)
+        if match:
+            headers.append((index, match.group(1).strip()))
+    if section is None:
+        return 0, headers[0][0] if headers else len(lines)
+    for position, (index, name) in enumerate(headers):
+        if name == section:
+            end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
+            return index + 1, end
+    return None
+
+
+def _set_value(text: str, *, section: str | None, key: str, value: Any) -> str:
+    lines = text.splitlines()
+    rendered = f"{key} = {_literal(value)}"
+    bounds = _section_bounds(lines, section)
+    if bounds is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend([f"[{section}]", rendered])
+        return "\n".join(lines).rstrip() + "\n"
+
+    start, end = bounds
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    for index in range(start, end):
+        if pattern.match(lines[index]):
+            lines[index] = rendered
+            return "\n".join(lines).rstrip() + "\n"
+
+    insert_at = end
+    while insert_at > start and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    lines.insert(insert_at, rendered)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _base_text() -> str:
+    return (
+        'profile = "software"\n'
+        'run_dir = "./run"\n'
+        'acceptance_commands = []\n\n'
+        '[workspace]\n'
+        f'root = {json.dumps(str(Path.home()), ensure_ascii=False)}\n\n'
+        '[security]\n'
+        'execution_backend = "local"\n'
+        'strict_layout = false\n'
+        'strict_tool_isolation = false\n'
+        'network_policy = "allow"\n'
+        'require_sealed_oracle = false\n'
+        'require_oracle_isolation = false\n'
+    )
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def persist_tui_settings(
+    path: str | Path,
+    *,
+    workspace: str | Path | None = None,
+    profile: str | None = None,
+    acceptance_commands: Sequence[str] | None = None,
+    security: Mapping[str, Any] | None = None,
+) -> Path:
+    target = Path(path).expanduser().resolve()
+    text = target.read_text(encoding="utf-8") if target.exists() else _base_text()
+    if profile is not None:
+        if profile not in DOMAINS:
+            raise TUIConfigError(f"unsupported profile/domain: {profile}")
+        text = _set_value(text, section=None, key="profile", value=profile)
+    if acceptance_commands is not None:
+        commands = tuple(acceptance_commands)
+        if any(not isinstance(item, str) or not item for item in commands):
+            raise TUIConfigError("acceptance commands must be non-empty strings")
+        text = _set_value(text, section=None, key="acceptance_commands", value=commands)
+    if workspace is not None:
+        root = initial_workspace(workspace)
+        text = _set_value(text, section="workspace", key="root", value=str(root))
+    for key, value in dict(security or {}).items():
+        if key not in {
+            "execution_backend", "strict_layout", "strict_tool_isolation",
+            "network_policy", "require_sealed_oracle", "require_oracle_isolation",
+        }:
+            raise TUIConfigError(f"unsupported TUI security key: {key}")
+        text = _set_value(text, section="security", key=key, value=value)
+
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise TUIConfigError(f"generated config is invalid TOML: {exc}") from exc
+    _atomic_write(target, text)
+    return target

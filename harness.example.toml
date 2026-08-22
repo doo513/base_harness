@@ -1,5 +1,6 @@
 profile = "software"
 run_dir = "./run"
+acceptance_commands = []
 default_model = "primary"
 
 [workspace]
@@ -9,10 +10,12 @@ build_dir = "build"
 cache_dir = ".cache/harness"
 
 [security]
+execution_backend = "local"
 strict_layout = false
 strict_tool_isolation = false
 network_policy = "allow"
 require_sealed_oracle = false
+require_oracle_isolation = false
 
 [memory]
 enabled = false

@@ -186,4 +186,8 @@ class SoftwareProfile(DomainProfile):
                 backend=(self.oracle_backend or self.execution_backend),
                 require_filesystem_isolation=self.require_oracle_isolation,
             )
-        return CommandCompletionOracle(self.acceptance_commands)
+        return CommandCompletionOracle(
+            self.acceptance_commands,
+            backend=(self.oracle_backend or self.execution_backend),
+            require_filesystem_isolation=self.require_oracle_isolation,
+        )

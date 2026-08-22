@@ -29,6 +29,7 @@ from harness.skill_actions import (
 from harness.skill_catalog import SkillCatalog, SkillError
 from harness.task_intake import analyze_task_input
 from harness.tui import RunLaunchSpec, _default_new_run_dir
+from harness.tui_config import TUIConfigError, persist_tui_settings
 
 
 COMMANDS = (
@@ -39,6 +40,7 @@ COMMANDS = (
     "/models",
     "/mcp",
     "/skills",
+    "/domain",
     "/mode",
     "/accept",
     "/workspace",
@@ -242,6 +244,12 @@ class AppState:
     config: str = "harness.toml"
     mode: str = "software"
     acceptance: tuple[str, ...] = ()
+    execution_backend: str | None = None
+    strict_layout: bool | None = None
+    strict_tool_isolation: bool | None = None
+    network_policy: str | None = None
+    require_sealed_oracle: bool | None = None
+    require_oracle_isolation: bool | None = None
     session_env: dict[str, str] = field(default_factory=dict, repr=False)
     last_run: str | None = None
 
@@ -251,6 +259,17 @@ class AppState:
         if secret_name and secret_name in self.session_env:
             ready = True
         return alias, model, ready
+
+    def security_mapping(self) -> dict[str, Any]:
+        values = {
+            "execution_backend": self.execution_backend,
+            "strict_layout": self.strict_layout,
+            "strict_tool_isolation": self.strict_tool_isolation,
+            "network_policy": self.network_policy,
+            "require_sealed_oracle": self.require_sealed_oracle,
+            "require_oracle_isolation": self.require_oracle_isolation,
+        }
+        return {key: value for key, value in values.items() if value is not None}
 
 
 class SlashCompleter(Completer):
@@ -272,8 +291,10 @@ class SlashCompleter(Completer):
             choices = list(PROVIDER_PRESETS)
         elif command in {"/model", "/models"}:
             choices = list(_configured_models(self.state.config))
-        elif command == "/mode":
+        elif command in {"/domain", "/mode"}:
             choices = ["software", "hackathon", "ctf", "demo"]
+        elif command == "/permissions":
+            choices = ["isolated", "local"]
         elif command == "/mcp":
             choices = ["list", "search", "add"]
         elif command == "/skills":
@@ -570,18 +591,60 @@ def _skills(state: AppState, query: str = "") -> None:
         _emit(("class:accent", f"  ● {skill.name:<20}"), ("class:muted", skill.description))
 
 
-def _permissions(state: AppState) -> None:
-    data = _config_data(state.config)
-    security = data.get("security") if isinstance(data.get("security"), dict) else {}
+def _permissions(state: AppState, argument: str = "") -> None:
+    requested = argument.strip().lower()
+    if requested:
+        if requested == "isolated":
+            if os.name == "nt":
+                _print_error("The isolated preset requires Linux/WSL. Run the TUI inside WSL or use the explicit local preset.")
+                return
+            values = {
+                "execution_backend": "linux-namespace",
+                "strict_layout": True,
+                "strict_tool_isolation": True,
+                "network_policy": "deny",
+                "require_sealed_oracle": False,
+                "require_oracle_isolation": True,
+            }
+        elif requested == "local":
+            values = {
+                "execution_backend": "local",
+                "strict_layout": False,
+                "strict_tool_isolation": False,
+                "network_policy": "allow",
+                "require_sealed_oracle": False,
+                "require_oracle_isolation": False,
+            }
+        else:
+            _print_error("Use /permissions isolated or /permissions local.")
+            return
+        try:
+            persist_tui_settings(state.config, security=values)
+        except (OSError, TUIConfigError) as exc:
+            _print_error(f"Security settings were not saved: {exc}")
+            return
+        state.execution_backend = values["execution_backend"]
+        state.strict_layout = values["strict_layout"]
+        state.strict_tool_isolation = values["strict_tool_isolation"]
+        state.network_policy = values["network_policy"]
+        state.require_sealed_oracle = values["require_sealed_oracle"]
+        state.require_oracle_isolation = values["require_oracle_isolation"]
+        _print_good(f"Permission preset · {requested} · saved to TOML")
+
     _emit(("class:assistant", "Execution boundary"))
-    for key, default in (
-        ("strict_layout", False),
-        ("strict_tool_isolation", False),
-        ("network_policy", "allow"),
-        ("require_sealed_oracle", False),
+    for key, value in (
+        ("execution_backend", state.execution_backend or "config default"),
+        ("strict_layout", state.strict_layout if state.strict_layout is not None else "config default"),
+        ("strict_tool_isolation", state.strict_tool_isolation if state.strict_tool_isolation is not None else "config default"),
+        ("network_policy", state.network_policy or "config default"),
+        ("require_sealed_oracle", state.require_sealed_oracle if state.require_sealed_oracle is not None else "config default"),
+        ("require_oracle_isolation", state.require_oracle_isolation if state.require_oracle_isolation is not None else "config default"),
     ):
-        _emit(("class:muted", f"  {key:<24}"), ("class:assistant", str(security.get(key, default))))
-    _print_note("The TUI displays policy; authority remains in the Harness runtime.")
+        _emit(("class:muted", f"  {key:<24}"), ("class:assistant", str(value)))
+    if state.execution_backend == "local":
+        _print_note("Local mode sanitizes the environment but is not an OS filesystem/network sandbox.")
+    else:
+        _print_note("The CLI/runtime enforces the persisted policy; the TUI does not synthesize authority.")
 
 
 def _status(state: AppState) -> None:
@@ -589,7 +652,9 @@ def _status(state: AppState) -> None:
     acceptance = state.acceptance or _detect_acceptance(state.workspace)
     _emit(("class:assistant", "Session"))
     _emit(("class:muted", "  workspace   "), ("class:assistant", str(Path(state.workspace).expanduser().resolve())))
-    _emit(("class:muted", "  profile     "), ("class:assistant", state.mode))
+    _emit(("class:muted", "  domain      "), ("class:assistant", state.mode))
+    _emit(("class:muted", "  config      "), ("class:assistant", str(Path(state.config).expanduser().resolve())))
+    _emit(("class:muted", "  backend     "), ("class:assistant", state.execution_backend or "config default"))
     _emit(("class:muted", "  model       "), ("class:assistant", f"{alias} · {model}"))
     _emit(("class:muted", "  route       "), (("class:good" if ready else "class:warn"), "configured" if ready else "setup needed"))
     _emit(("class:muted", "  fixed check "), ("class:assistant", acceptance[0] if acceptance else "profile/task contract"))
@@ -603,12 +668,13 @@ def _help() -> None:
         ("/model [alias]", "show or switch model"),
         ("/mcp list|search|add", "discover/configure MCP"),
         ("/skills [query]", "inspect available SKILL.md guidance"),
-        ("/mode [name]", "software / hackathon / ctf / demo"),
+        ("/domain [name]", "select software / hackathon / ctf / demo and save it"),
+        ("/mode [name]", "compatibility alias for /domain"),
         ("/accept [command]", "set a fixed completion command"),
         ("/workspace [path]", "switch project directory"),
         ("/resume <run-dir>", "resume a persisted run"),
         ("/inspect <run-dir>", "inspect a persisted run"),
-        ("/permissions", "show execution/security boundary"),
+        ("/permissions [isolated|local]", "show or persist an execution boundary preset"),
         ("/status", "show session state"),
         ("/new", "clear last-run conversation state"),
         ("/clear", "clear terminal"),
@@ -643,7 +709,7 @@ def _ensure_model_ready(state: AppState, session: PromptSession) -> bool:
 
 
 def _task_spec(state: AppState, task: str) -> RunLaunchSpec:
-    """Compatibility helper; task-specific completion stays with shared CLI/task contracts."""
+    """Build a CLI request while persisted TOML remains the policy source."""
     intake = analyze_task_input(task)
     workspace = intake.requested_workspace or state.workspace
     acceptance = () if intake.artifact_target else (state.acceptance or _detect_acceptance(workspace))
@@ -657,8 +723,6 @@ def _task_spec(state: AppState, task: str) -> RunLaunchSpec:
         goal=task,
         acceptance_commands=tuple(acceptance),
         max_steps=30,
-        execution_backend="local",
-        network_policy="allow",
         resume=False,
     )
 
@@ -679,29 +743,48 @@ def _handle_command(state: AppState, session: PromptSession, raw: str) -> bool:
         _mcp(state, session, argument)
     elif command == "/skills":
         _skills(state, argument)
-    elif command == "/mode":
-        value = argument.strip() or _prompt_text(session, "Mode", state.mode)
+    elif command in {"/domain", "/mode"}:
+        value = argument.strip() or _prompt_text(session, "Domain", state.mode)
         if value not in {"software", "hackathon", "ctf", "demo"}:
-            _print_error("Mode must be software, hackathon, ctf, or demo.")
+            _print_error("Domain must be software, hackathon, ctf, or demo.")
         else:
-            state.mode = value
-            _print_good(f"Profile · {state.mode}")
+            try:
+                persist_tui_settings(state.config, profile=value)
+            except (OSError, TUIConfigError) as exc:
+                _print_error(f"Domain was not saved: {exc}")
+            else:
+                state.mode = value
+                _print_good(f"Domain · {state.mode} · saved to TOML")
     elif command == "/accept":
         value = argument.strip() or _prompt_text(session, "Acceptance command", state.acceptance[0] if state.acceptance else "")
-        state.acceptance = (value,) if value else ()
-        _print_good("Fixed acceptance updated." if value else "Fixed acceptance reset.")
+        acceptance = (value,) if value else ()
+        try:
+            persist_tui_settings(state.config, acceptance_commands=acceptance)
+        except (OSError, TUIConfigError) as exc:
+            _print_error(f"Acceptance command was not saved: {exc}")
+        else:
+            state.acceptance = acceptance
+            _print_good("Fixed acceptance saved." if value else "Fixed acceptance reset and saved.")
     elif command == "/workspace":
         value = argument.strip() or _prompt_text(session, "Workspace", state.workspace)
         path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
         if not path.exists() or not path.is_dir():
             _print_error("Workspace must be an existing directory.")
         else:
-            state.workspace = str(path.resolve())
-            _print_good(f"Workspace · {state.workspace}")
+            resolved = str(path.resolve())
+            try:
+                persist_tui_settings(state.config, workspace=resolved)
+            except (OSError, TUIConfigError) as exc:
+                _print_error(f"Workspace was not saved: {exc}")
+            else:
+                state.workspace = resolved
+                _print_good(f"Workspace · {state.workspace} · saved to TOML")
     elif command in {"/resume", "/inspect"}:
         _print_note(f"{command} is handled by the conversational frontend.")
     elif command == "/permissions":
-        _permissions(state)
+        _permissions(state, argument)
     elif command == "/new":
         state.last_run = None
         _print_good("Fresh conversation state.")
@@ -716,9 +799,10 @@ def _handle_command(state: AppState, session: PromptSession, raw: str) -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="base_harness conversational terminal UI")
-    parser.add_argument("--workspace", default=".")
-    parser.add_argument("--config", default="harness.toml")
-    parser.add_argument("--mode", choices=["software", "hackathon", "ctf", "demo"], default="software")
+    parser.add_argument("--workspace")
+    parser.add_argument("--config")
+    parser.add_argument("--domain", dest="mode", choices=["software", "hackathon", "ctf", "demo"])
+    parser.add_argument("--mode", dest="mode", choices=["software", "hackathon", "ctf", "demo"], help=argparse.SUPPRESS)
     return parser
 
 
