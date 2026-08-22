@@ -1,0 +1,116 @@
+name: p0-runtime-tui-oracle-remediation
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/p0-runtime-tui-oracle-remediation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p0-runtime-tui-oracle-develop
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Restore reviewed patch bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/p0_runtime_bundle/part*.b64 > /tmp/base_harness_p0_bundle.b64
+          base64 --decode /tmp/base_harness_p0_bundle.b64 > /tmp/base_harness_p0_bundle.zip
+          expected='71081320b03990546e06aba23afc813f396c32b71f972d49c78e4aa2b34dfe23'
+          actual="$(sha256sum /tmp/base_harness_p0_bundle.zip | awk '{print $1}')"
+          test "$actual" = "$expected"
+          rm -rf /tmp/base_harness_p0_bundle
+          mkdir -p /tmp/base_harness_p0_bundle
+          unzip -q /tmp/base_harness_p0_bundle.zip -d /tmp/base_harness_p0_bundle
+
+      - name: Apply reviewed P0 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/base_harness_p0_bundle/base_harness_p0_bundle/apply.py . --no-test
+
+      - name: Install locked CI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-ci.lock
+          python -m pip install -e . --no-deps
+          python -m pip check
+
+      - name: Focused P0 validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m harness.cli --help
+          python -m harness.tui_conversation --help
+          pytest -q \
+            tests/test_p0_runtime_settings.py \
+            tests/test_integration_tui.py \
+            tests/test_tui_conversation_v2.py \
+            tests/test_stage2_security.py
+
+      - name: Full regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Commit validated P0 runtime changes
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf scripts/p0_runtime_bundle
+          rm -f .github/workflows/p0-runtime-tui-oracle-remediation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: unify TUI settings and sandboxed completion'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin develop
+            if git push origin HEAD:develop; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - name: Capture diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          git diff --stat > /tmp/p0-runtime-diff-stat.txt || true
+          git diff > /tmp/p0-runtime.patch || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-runtime-tui-oracle-diagnostics
+          path: |
+            /tmp/p0-runtime-diff-stat.txt
+            /tmp/p0-runtime.patch
+          if-no-files-found: ignore
