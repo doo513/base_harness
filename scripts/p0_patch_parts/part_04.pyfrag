@@ -1,0 +1,180 @@
+        config=str(config_path),
+        mode=mode,
+        acceptance=settings.acceptance_commands,
+        execution_backend=settings.execution_backend,
+        strict_layout=settings.strict_layout,
+        strict_tool_isolation=settings.strict_tool_isolation,
+        network_policy=settings.network_policy,
+        require_sealed_oracle=settings.require_sealed_oracle,
+        require_oracle_isolation=settings.require_oracle_isolation,
+    )
+    session: PromptSession = PromptSession(
+'''
+regex_once(
+    "src/harness/tui_conversation.py",
+    r"    args = _build_parser\(\)\.parse_args\(argv\)\n    state = legacy\.AppState\(workspace=args\.workspace, config=args\.config, mode=args\.mode\)\n    session: PromptSession = PromptSession\(\n",
+    MAIN_BOOTSTRAP,
+)
+replace_once(
+    "src/harness/tui_conversation.py",
+    '                state.workspace = str(requested)\n                legacy._print_good(f"Workspace · {requested}")\n',
+    '                try:\n                    persist_tui_settings(state.config, workspace=requested)\n                except (OSError, TUIConfigError) as exc:\n                    legacy._print_error(f"Workspace was not saved: {exc}")\n                    print()\n                    continue\n                state.workspace = str(requested)\n                legacy._print_good(f"Workspace · {requested} · saved to TOML")\n',
+)
+
+# CLI uses the shared TOML and an independent oracle backend.
+replace_once(
+    "src/harness/cli.py",
+    '        default="local",\n        help="Shell execution backend. linux-namespace provides the Stage-02 production sandbox on supported Linux hosts.",\n',
+    '        default=str(security_defaults.get("execution_backend", "local")),\n        help="Shell execution backend. linux-namespace provides the Stage-02 production sandbox on supported Linux hosts.",\n',
+)
+replace_once(
+    "src/harness/cli.py",
+    '    parser.add_argument("--require-oracle-isolation", action="store_true",\n                        help="Require the sealed oracle backend to report strong filesystem isolation.")\n    args = parser.parse_args()\n',
+    '    parser.add_argument(\n        "--require-oracle-isolation",\n        action=argparse.BooleanOptionalAction,\n        default=bool(security_defaults.get("require_oracle_isolation", False)),\n        help="Require every command-based completion oracle to report strong filesystem isolation.",\n    )\n    args = parser.parse_args()\n    acceptance_commands = list(args.accept_command or config.acceptance_commands)\n',
+)
+replace_once(
+    "src/harness/cli.py",
+    '        oracle_backend = (\n            LinuxNamespaceSandboxBackend(\n                network_policy=NetworkPolicy.DENY,\n                workspace_writable=False,\n                read_only_paths=[Path(args.sealed_oracle_root).resolve()],\n            )\n            if args.sealed_oracle_root\n            else None\n        )\n    else:\n        execution_backend = LocalProcessBackend(inherit_env=False)\n        oracle_backend = execution_backend\n',
+    '        oracle_backend = (\n            LinuxNamespaceSandboxBackend(\n                network_policy=NetworkPolicy.DENY,\n                workspace_writable=False,\n                read_only_paths=[Path(args.sealed_oracle_root).resolve()],\n            )\n            if args.sealed_oracle_root\n            else LinuxNamespaceSandboxBackend(network_policy=NetworkPolicy.DENY)\n        )\n    else:\n        execution_backend = LocalProcessBackend(inherit_env=False)\n        oracle_backend = LocalProcessBackend(inherit_env=False)\n',
+)
+replace_exact_count(
+    "src/harness/cli.py",
+    '            acceptance_commands=args.accept_command,\n',
+    '            acceptance_commands=acceptance_commands,\n',
+    2,
+)
+
+COMMAND_ORACLE = r'''class CommandCompletionOracle:
+    """Operator-fixed command oracle executed through an explicit backend.
+
+    The backend is supplied by CLI/runtime composition. Completion checks can no
+    longer instantiate a fresh host-local process and silently bypass the Actor
+    sandbox selection.
+    """
+    name = "command_oracle"
+
+    def __init__(
+        self,
+        commands: list[str],
+        timeout_seconds: float = 120,
+        *,
+        backend: ExecutionBackend | None = None,
+        require_filesystem_isolation: bool = False,
+        allow_test_attestation: bool = False,
+    ):
+        self.commands = list(commands)
+        self.timeout_seconds = float(timeout_seconds)
+        self.backend = backend or LocalProcessBackend(inherit_env=False)
+        self.require_filesystem_isolation = bool(require_filesystem_isolation)
+        self.allow_test_attestation = bool(allow_test_attestation)
+
+    def evaluate(self, *, goal, state, workspace):
+        if not self.commands:
+            return CompletionResult(
+                False,
+                "no acceptance commands configured",
+                oracle_id=self.name,
+                independence_level="operator_fixed_unsealed",
+            )
+        workspace = Path(workspace).expanduser().resolve()
+        att = self.backend.isolation_attestation(workspace=workspace)
+        trusted_source = (
+            att.source == "runtime_probe"
+            or (att.source == "test_fixture" and self.allow_test_attestation)
+        )
+        strong_boundary = att.strong_filesystem_boundary and trusted_source
+        independence = (
+            "operator_fixed_unsealed_and_filesystem_isolation"
+            if strong_boundary
+            else "operator_fixed_unsealed"
+        )
+        attestation = {
+            "backend": getattr(self.backend, "name", type(self.backend).__name__),
+            "source": att.source,
+            "filesystem_isolated": att.filesystem_isolated,
+            "network_isolated": att.network_isolated,
+            "environment_sanitized": att.environment_sanitized,
+        }
+        if self.require_filesystem_isolation and not strong_boundary:
+            return _finalize_completion_result(
+                accepted=False,
+                reason="command oracle requires filesystem-isolated backend",
+                evidence=[{"sandbox": attestation}],
+                oracle_id=self.name,
+                independence_level=independence,
+            )
+
+        evidence = []
+        for command in self.commands:
+            result = self.backend.run_shell(
+                workspace=workspace,
+                command=command,
+                timeout_seconds=self.timeout_seconds,
+                env=None,
+            )
+            record = {
+                "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+                "returncode": result.returncode,
+                "stdout": result.stdout[-4000:],
+                "stderr": result.stderr[-4000:],
+                "timed_out": result.timed_out,
+                "sandbox": attestation,
+            }
+            evidence.append(record)
+            if result.returncode != 0 or result.timed_out:
+                return _finalize_completion_result(
+                    accepted=False,
+                    reason="acceptance command failed",
+                    evidence=evidence,
+                    oracle_id=self.name,
+                    independence_level=independence,
+                )
+        return _finalize_completion_result(
+            accepted=True,
+            reason="all acceptance commands passed",
+            evidence=evidence,
+            oracle_id=self.name,
+            independence_level=independence,
+        )
+'''
+regex_once(
+    "src/harness/core/oracles.py",
+    r"class CommandCompletionOracle:.*?\n\n@dataclass\(frozen=True\)\nclass SealVerification",
+    COMMAND_ORACLE + "\n\n@dataclass(frozen=True)\nclass SealVerification",
+)
+replace_once(
+    "src/harness/profiles/software.py",
+    '        return CommandCompletionOracle(self.acceptance_commands)\n',
+    '        return CommandCompletionOracle(\n            self.acceptance_commands,\n            backend=(self.oracle_backend or self.execution_backend),\n            require_filesystem_isolation=self.require_oracle_isolation,\n        )\n',
+)
+replace_once(
+    "src/harness/profiles/hackathon.py",
+    '        return CommandCompletionOracle(self.acceptance_commands)\n',
+    '        return CommandCompletionOracle(\n            self.acceptance_commands,\n            backend=(self.oracle_backend or self.execution_backend),\n            require_filesystem_isolation=self.require_oracle_isolation,\n        )\n',
+)
+
+# Example configuration.
+replace_once(
+    "harness.example.toml",
+    'run_dir = "./run"\ndefault_model = "primary"\n',
+    'run_dir = "./run"\nacceptance_commands = []\ndefault_model = "primary"\n',
+)
+replace_once(
+    "harness.example.toml",
+    '[security]\nstrict_layout = false\n',
+    '[security]\nexecution_backend = "local"\nstrict_layout = false\n',
+)
+replace_once(
+    "harness.example.toml",
+    'require_sealed_oracle = false\n',
+    'require_sealed_oracle = false\nrequire_oracle_isolation = false\n',
+)
+
+TESTS = r'''import os
+from pathlib import Path
+import tomllib
+
+from harness.config import load_harness_config
+from harness.core.oracles import CommandCompletionOracle
+from harness.core.sandbox import ExecutionResult, LocalProcessBackend, RecordingIsolatedTestBackend
+from harness.profiles.software import SoftwareProfile
