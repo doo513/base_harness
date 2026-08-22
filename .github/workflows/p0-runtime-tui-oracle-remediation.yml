@@ -1,5 +1,5 @@
 name: p0-runtime-tui-oracle-remediation
-# bundle-revision: 2
+# bundle-revision: 3
 
 on:
   push:
@@ -45,6 +45,16 @@ jobs:
             rm -rf /tmp/base_harness_p0_bundle
             mkdir -p /tmp/base_harness_p0_bundle
             unzip -q /tmp/base_harness_p0_bundle.zip -d /tmp/base_harness_p0_bundle
+            python - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/base_harness_p0_bundle/base_harness_p0_bundle/apply.py')
+          text = path.read_text(encoding='utf-8')
+          old = "if 'if self.strict_layout is not None:' not in text:"
+          new = "if 'if self.strict_layout is not None:' not in text and 'for value, positive, negative in (' not in text:"
+          if old not in text:
+              raise SystemExit('compatibility anchor was not found in reviewed applicator')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='')
+          PY
           } 2>&1 | tee /tmp/p0-runtime.log
 
       - name: Apply reviewed P0 patch
