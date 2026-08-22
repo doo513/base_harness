@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _write(path: str, text: str) -> None:
+    target = ROOT / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8", newline="")
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    text = _read(path)
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(f"{path}: expected one literal match, found {count}: {old[:100]!r}")
+    _write(path, text.replace(old, new, 1))
+
+
+def replace_exact_count(path: str, old: str, new: str, expected: int) -> None:
+    text = _read(path)
+    count = text.count(old)
+    if count != expected:
+        raise RuntimeError(f"{path}: expected {expected} literal matches, found {count}: {old[:100]!r}")
+    _write(path, text.replace(old, new, expected))
+
+
+def regex_once(path: str, pattern: str, replacement: str) -> None:
+    text = _read(path)
+    compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
+    updated, count = compiled.subn(lambda _match: replacement, text, count=1)
+    if count != 1:
+        raise RuntimeError(f"{path}: expected one regex match, found {count}: {pattern[:120]!r}")
+    _write(path, updated)
+
+
+TUI_CONFIG = r'''from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import re
+import tempfile
+import tomllib
+from typing import Any, Mapping, Sequence
+
+
+DOMAINS = ("software", "hackathon", "ctf", "demo")
+
+
+class TUIConfigError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class TUISettings:
+    profile: str = "software"
+    acceptance_commands: tuple[str, ...] = ()
+    execution_backend: str | None = None
+    strict_layout: bool | None = None
+    strict_tool_isolation: bool | None = None
+    network_policy: str | None = None
+    require_sealed_oracle: bool | None = None
+    require_oracle_isolation: bool | None = None
+
+    def security_mapping(self) -> dict[str, Any]:
+        values = {
+            "execution_backend": self.execution_backend,
+            "strict_layout": self.strict_layout,
+            "strict_tool_isolation": self.strict_tool_isolation,
+            "network_policy": self.network_policy,
+            "require_sealed_oracle": self.require_sealed_oracle,
+            "require_oracle_isolation": self.require_oracle_isolation,
+        }
+        return {key: value for key, value in values.items() if value is not None}
+
+
+def initial_workspace(
+    explicit: str | Path | None = None,
+    *,
+    invocation_dir: str | Path | None = None,
+    home_dir: str | Path | None = None,
+) -> Path:
+    """Use an explicit directory, otherwise invocation cwd, then the user home."""
+    if explicit is not None:
+        candidates = [Path(explicit).expanduser()]
+    else:
+        candidates = [
+            Path(invocation_dir) if invocation_dir is not None else Path.cwd(),
+            Path(home_dir).expanduser() if home_dir is not None else Path.home(),
+        ]
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved.exists() and resolved.is_dir():
+            return resolved
+    if explicit is not None:
+        raise TUIConfigError(f"workspace must be an existing directory: {explicit}")
+    raise TUIConfigError("neither the invocation directory nor the user home is available")
+
+
+def default_config_path(
+    explicit: str | Path | None = None,
+    *,
+    invocation_dir: str | Path | None = None,
+    home_dir: str | Path | None = None,
+) -> Path:
+    """Prefer explicit/local TOML; otherwise store shared settings under user home."""
+    if explicit is not None:
+        return Path(explicit).expanduser().resolve()
+    env_path = os.environ.get("HARNESS_CONFIG")
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+
+    invocation = Path(invocation_dir) if invocation_dir is not None else Path.cwd()
+    local = invocation / "harness.toml"
+    if local.exists() and local.is_file():
+        return local.resolve()
+
+    if home_dir is not None:
+        home = Path(home_dir).expanduser()
+        if os.name == "nt":
+            return (home / "AppData" / "Roaming" / "base_harness" / "harness.toml").resolve()
+        return (home / ".config" / "base_harness" / "harness.toml").resolve()
+
+    home = Path.home()
+    if os.name == "nt":
+        root = Path(os.environ.get("APPDATA") or (home / "AppData" / "Roaming"))
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME") or (home / ".config")).expanduser()
+    return (root / "base_harness" / "harness.toml").resolve()
+
+
+def load_tui_settings(path: str | Path) -> TUISettings:
+    candidate = Path(path).expanduser()
+    if not candidate.exists():
+        return TUISettings()
+    if not candidate.is_file():
+        raise TUIConfigError(f"config path is not a file: {candidate}")
+    try:
+        with candidate.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise TUIConfigError(f"config cannot be loaded: {exc}") from exc
+
+    profile = raw.get("profile", "software")
+    if profile not in DOMAINS:
+        raise TUIConfigError(f"unsupported profile/domain in config: {profile!r}")
+    acceptance = raw.get("acceptance_commands", [])
+    if not isinstance(acceptance, list) or any(not isinstance(item, str) or not item for item in acceptance):
+        raise TUIConfigError("acceptance_commands must be an array of non-empty strings")
+    security = raw.get("security", {})
+    if not isinstance(security, dict):
+        raise TUIConfigError("security must be a TOML table")
+
+    def optional_bool(key: str) -> bool | None:
+        value = security.get(key)
+        if value is not None and not isinstance(value, bool):
+            raise TUIConfigError(f"security.{key} must be boolean")
+        return value
+
+    execution_backend = security.get("execution_backend")
+    if execution_backend is not None and execution_backend not in {"local", "linux-namespace"}:
+        raise TUIConfigError("security.execution_backend must be local or linux-namespace")
+    network_policy = security.get("network_policy")
+    if network_policy is not None and network_policy not in {"allow", "deny"}:
+        raise TUIConfigError("security.network_policy must be allow or deny")
+
+    return TUISettings(
+        profile=profile,
