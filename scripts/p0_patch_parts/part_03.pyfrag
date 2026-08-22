@@ -1,0 +1,180 @@
+replace_once(
+    "src/harness/tui_visual.py",
+    '    _emit(("class:muted", "  profile     "), ("class:assistant", state.mode))\n',
+    '    _emit(("class:muted", "  domain      "), ("class:assistant", state.mode))\n    _emit(("class:muted", "  config      "), ("class:assistant", str(Path(state.config).expanduser().resolve())))\n    _emit(("class:muted", "  backend     "), ("class:assistant", state.execution_backend or "config default"))\n',
+)
+replace_once(
+    "src/harness/tui_visual.py",
+    '        ("/mode [name]", "software / hackathon / ctf / demo"),\n',
+    '        ("/domain [name]", "select software / hackathon / ctf / demo and save it"),\n        ("/mode [name]", "compatibility alias for /domain"),\n',
+)
+replace_once(
+    "src/harness/tui_visual.py",
+    '        ("/permissions", "show execution/security boundary"),\n',
+    '        ("/permissions [isolated|local]", "show or persist an execution boundary preset"),\n',
+)
+TASK_SPEC_VISUAL = r'''def _task_spec(state: AppState, task: str) -> RunLaunchSpec:
+    """Build a CLI request while persisted TOML remains the policy source."""
+    intake = analyze_task_input(task)
+    workspace = intake.requested_workspace or state.workspace
+    acceptance = () if intake.artifact_target else (state.acceptance or _detect_acceptance(workspace))
+    if state.mode in {"ctf", "demo"}:
+        acceptance = ()
+    return RunLaunchSpec(
+        config=state.config if Path(state.config).expanduser().exists() else None,
+        workspace=workspace,
+        run_dir=_default_new_run_dir(),
+        profile=state.mode,
+        goal=task,
+        acceptance_commands=tuple(acceptance),
+        max_steps=30,
+        resume=False,
+    )
+'''
+regex_once(
+    "src/harness/tui_visual.py",
+    r"def _task_spec\(state: AppState, task: str\) -> RunLaunchSpec:.*?\n\ndef _handle_command",
+    TASK_SPEC_VISUAL + "\n\ndef _handle_command",
+)
+HANDLE_COMMAND = r'''def _handle_command(state: AppState, session: PromptSession, raw: str) -> bool:
+    command, _, argument = raw.strip().partition(" ")
+    if command in {"/exit", "/quit"}:
+        return False
+    if command == "/help":
+        _help()
+    elif command == "/status":
+        _status(state)
+    elif command == "/connect":
+        _connect(state, session, argument)
+    elif command in {"/model", "/models"}:
+        _models(state, session, argument)
+    elif command == "/mcp":
+        _mcp(state, session, argument)
+    elif command == "/skills":
+        _skills(state, argument)
+    elif command in {"/domain", "/mode"}:
+        value = argument.strip() or _prompt_text(session, "Domain", state.mode)
+        if value not in {"software", "hackathon", "ctf", "demo"}:
+            _print_error("Domain must be software, hackathon, ctf, or demo.")
+        else:
+            try:
+                persist_tui_settings(state.config, profile=value)
+            except (OSError, TUIConfigError) as exc:
+                _print_error(f"Domain was not saved: {exc}")
+            else:
+                state.mode = value
+                _print_good(f"Domain · {state.mode} · saved to TOML")
+    elif command == "/accept":
+        value = argument.strip() or _prompt_text(session, "Acceptance command", state.acceptance[0] if state.acceptance else "")
+        acceptance = (value,) if value else ()
+        try:
+            persist_tui_settings(state.config, acceptance_commands=acceptance)
+        except (OSError, TUIConfigError) as exc:
+            _print_error(f"Acceptance command was not saved: {exc}")
+        else:
+            state.acceptance = acceptance
+            _print_good("Fixed acceptance saved." if value else "Fixed acceptance reset and saved.")
+    elif command == "/workspace":
+        value = argument.strip() or _prompt_text(session, "Workspace", state.workspace)
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if not path.exists() or not path.is_dir():
+            _print_error("Workspace must be an existing directory.")
+        else:
+            resolved = str(path.resolve())
+            try:
+                persist_tui_settings(state.config, workspace=resolved)
+            except (OSError, TUIConfigError) as exc:
+                _print_error(f"Workspace was not saved: {exc}")
+            else:
+                state.workspace = resolved
+                _print_good(f"Workspace · {state.workspace} · saved to TOML")
+    elif command in {"/resume", "/inspect"}:
+        _print_note(f"{command} is handled by the conversational frontend.")
+    elif command == "/permissions":
+        _permissions(state, argument)
+    elif command == "/new":
+        state.last_run = None
+        _print_good("Fresh conversation state.")
+    elif command == "/clear":
+        os.system("cls" if os.name == "nt" else "clear")
+        _banner(state)
+    else:
+        _print_error(f"Unknown command: {command}. Use /help.")
+    print()
+    return True
+'''
+regex_once(
+    "src/harness/tui_visual.py",
+    r"def _handle_command\(state: AppState, session: PromptSession, raw: str\) -> bool:.*?\n\ndef _build_parser",
+    HANDLE_COMMAND + "\n\ndef _build_parser",
+)
+replace_once(
+    "src/harness/tui_visual.py",
+    '    parser.add_argument("--workspace", default=".")\n    parser.add_argument("--config", default="harness.toml")\n    parser.add_argument("--mode", choices=["software", "hackathon", "ctf", "demo"], default="software")\n',
+    '    parser.add_argument("--workspace")\n    parser.add_argument("--config")\n    parser.add_argument("--domain", dest="mode", choices=["software", "hackathon", "ctf", "demo"])\n    parser.add_argument("--mode", dest="mode", choices=["software", "hackathon", "ctf", "demo"], help=argparse.SUPPRESS)\n',
+)
+
+# Conversational frontend bootstrap and canonical command vocabulary.
+replace_once(
+    "src/harness/tui_conversation.py",
+    "from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir, _default_run_root\n",
+    "from harness.tui import RunLaunchSpec, RunView, _default_new_run_dir, _default_run_root\nfrom harness.tui_config import (\n    TUIConfigError,\n    default_config_path,\n    initial_workspace,\n    load_tui_settings,\n    persist_tui_settings,\n)\n",
+)
+replace_once(
+    "src/harness/tui_conversation.py",
+    '    "/mode": "Override domain profile",\n',
+    '    "/domain": "Select domain",\n',
+)
+replace_once(
+    "src/harness/tui_conversation.py",
+    '    "/resume": "Resume by explicit run path",\n',
+    '    "/resume": "Resume by explicit run path",\n    "/mode": "Alias for /domain",\n',
+)
+TASK_SPEC_CONVERSATION = r'''def _task_spec(state: legacy.AppState, task: str, *, artifact_target: str | None) -> RunLaunchSpec:
+    acceptance = () if artifact_target else (state.acceptance or legacy._detect_acceptance(state.workspace))
+    if state.mode in {"ctf", "demo"}:
+        acceptance = ()
+    return RunLaunchSpec(
+        config=state.config if Path(state.config).expanduser().exists() else None,
+        workspace=state.workspace,
+        run_dir=_default_new_run_dir(),
+        profile=state.mode,
+        goal=task,
+        acceptance_commands=tuple(acceptance),
+        max_steps=30,
+        resume=False,
+    )
+'''
+regex_once(
+    "src/harness/tui_conversation.py",
+    r"def _task_spec\(state: legacy.AppState, task: str, \*, artifact_target: str \| None\) -> RunLaunchSpec:.*?\n\ndef _resume",
+    TASK_SPEC_CONVERSATION + "\n\ndef _resume",
+)
+replace_once(
+    "src/harness/tui_conversation.py",
+    '    parser.add_argument("--workspace", default=".")\n    parser.add_argument("--config", default="harness.toml")\n    parser.add_argument("--mode", choices=["software", "hackathon", "ctf", "demo"], default="software")\n',
+    '    parser.add_argument("--workspace", help="Initial workspace; defaults to invocation cwd, then user home.")\n    parser.add_argument("--config", help="Shared TOML; defaults to local harness.toml or the user config directory.")\n    parser.add_argument("--domain", dest="mode", choices=["software", "hackathon", "ctf", "demo"])\n    parser.add_argument("--mode", dest="mode", choices=["software", "hackathon", "ctf", "demo"], help=argparse.SUPPRESS)\n',
+)
+MAIN_BOOTSTRAP = r'''    args = _build_parser().parse_args(argv)
+    invocation_dir = Path.cwd()
+    try:
+        workspace = initial_workspace(args.workspace, invocation_dir=invocation_dir)
+        config_path = default_config_path(args.config, invocation_dir=invocation_dir)
+        settings = load_tui_settings(config_path)
+        mode = args.mode or settings.profile
+        persist_tui_settings(
+            config_path,
+            workspace=workspace,
+            profile=mode,
+            acceptance_commands=settings.acceptance_commands,
+            security=settings.security_mapping(),
+        )
+        settings = load_tui_settings(config_path)
+    except (OSError, TUIConfigError) as exc:
+        print(f"TUI configuration error: {exc}", file=sys.stderr)
+        return 2
+
+    state = legacy.AppState(
+        workspace=str(workspace),
