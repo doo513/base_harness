@@ -1,0 +1,180 @@
+
+RUN_LAUNCH_SPEC = r'''@dataclass(frozen=True)
+class RunLaunchSpec:
+    """Declarative TUI request translated to the shared CLI boundary."""
+
+    config: str | None = None
+    workspace: str = "."
+    run_dir: str = "./run"
+    profile: str = "software"
+    goal: str | None = None
+    acceptance_commands: tuple[str, ...] = ()
+    max_steps: int = 30
+    task_revision: str | None = None
+    model_revision: str | None = None
+    execution_backend: str | None = None
+    strict_layout: bool | None = None
+    strict_tool_isolation: bool | None = None
+    network_policy: str | None = None
+    require_sealed_oracle: bool | None = None
+    sealed_oracle_root: str | None = None
+    require_oracle_isolation: bool | None = None
+    require_complete_provenance: bool = False
+    resume: bool = False
+
+    def command(self, *, python_executable: str | None = None) -> list[str]:
+        python = python_executable or sys.executable
+        argv = [python, "-m", "harness.cli"]
+        if self.config:
+            argv += ["--config", self.config]
+        argv += [
+            "--profile", self.profile,
+            "--workspace", self.workspace,
+            "--run-dir", self.run_dir,
+            "--max-steps", str(self.max_steps),
+        ]
+        if self.execution_backend is not None:
+            argv += ["--execution-backend", self.execution_backend]
+        if self.network_policy is not None:
+            argv += ["--network-policy", self.network_policy]
+        if self.goal:
+            argv += ["--goal", self.goal]
+        for command in self.acceptance_commands:
+            if command:
+                argv += ["--accept-command", command]
+        if self.task_revision:
+            argv += ["--task-revision", self.task_revision]
+        if self.model_revision:
+            argv += ["--model-revision", self.model_revision]
+        if self.sealed_oracle_root:
+            argv += ["--sealed-oracle-root", self.sealed_oracle_root]
+        for value, positive, negative in (
+            (self.strict_layout, "--strict-layout", "--no-strict-layout"),
+            (self.strict_tool_isolation, "--strict-tool-isolation", "--no-strict-tool-isolation"),
+            (self.require_sealed_oracle, "--require-sealed-oracle", "--no-require-sealed-oracle"),
+            (self.require_oracle_isolation, "--require-oracle-isolation", "--no-require-oracle-isolation"),
+        ):
+            if value is not None:
+                argv.append(positive if value else negative)
+        if self.require_complete_provenance:
+            argv.append("--require-complete-provenance")
+        if self.resume:
+            argv.append("--resume")
+        return argv
+'''
+regex_once(
+    "src/harness/tui.py",
+    r"@dataclass\(frozen=True\)\nclass RunLaunchSpec:.*?\n\ndef _read_json_object",
+    RUN_LAUNCH_SPEC + "\n\ndef _read_json_object",
+)
+
+# TUI state and commands persist to shared TOML.
+replace_once(
+    "src/harness/tui_visual.py",
+    "from harness.tui import RunLaunchSpec, _default_new_run_dir\n",
+    "from harness.tui import RunLaunchSpec, _default_new_run_dir\nfrom harness.tui_config import TUIConfigError, persist_tui_settings\n",
+)
+replace_once("src/harness/tui_visual.py", '    "/mode",\n', '    "/domain",\n    "/mode",\n')
+APP_STATE = r'''@dataclass
+class AppState:
+    workspace: str = "."
+    config: str = "harness.toml"
+    mode: str = "software"
+    acceptance: tuple[str, ...] = ()
+    execution_backend: str | None = None
+    strict_layout: bool | None = None
+    strict_tool_isolation: bool | None = None
+    network_policy: str | None = None
+    require_sealed_oracle: bool | None = None
+    require_oracle_isolation: bool | None = None
+    session_env: dict[str, str] = field(default_factory=dict, repr=False)
+    last_run: str | None = None
+
+    def model_status(self) -> tuple[str, str, bool]:
+        alias, model, ready = _model_status(self.config)
+        secret_name = _secret_name_for_default(self.config)
+        if secret_name and secret_name in self.session_env:
+            ready = True
+        return alias, model, ready
+
+    def security_mapping(self) -> dict[str, Any]:
+        values = {
+            "execution_backend": self.execution_backend,
+            "strict_layout": self.strict_layout,
+            "strict_tool_isolation": self.strict_tool_isolation,
+            "network_policy": self.network_policy,
+            "require_sealed_oracle": self.require_sealed_oracle,
+            "require_oracle_isolation": self.require_oracle_isolation,
+        }
+        return {key: value for key, value in values.items() if value is not None}
+'''
+regex_once(
+    "src/harness/tui_visual.py",
+    r"@dataclass\nclass AppState:.*?\n\nclass SlashCompleter",
+    APP_STATE + "\n\nclass SlashCompleter",
+)
+replace_once(
+    "src/harness/tui_visual.py",
+    '        elif command == "/mode":\n            choices = ["software", "hackathon", "ctf", "demo"]\n',
+    '        elif command in {"/domain", "/mode"}:\n            choices = ["software", "hackathon", "ctf", "demo"]\n        elif command == "/permissions":\n            choices = ["isolated", "local"]\n',
+)
+PERMISSIONS = r'''def _permissions(state: AppState, argument: str = "") -> None:
+    requested = argument.strip().lower()
+    if requested:
+        if requested == "isolated":
+            if os.name == "nt":
+                _print_error("The isolated preset requires Linux/WSL. Run the TUI inside WSL or use the explicit local preset.")
+                return
+            values = {
+                "execution_backend": "linux-namespace",
+                "strict_layout": True,
+                "strict_tool_isolation": True,
+                "network_policy": "deny",
+                "require_sealed_oracle": False,
+                "require_oracle_isolation": True,
+            }
+        elif requested == "local":
+            values = {
+                "execution_backend": "local",
+                "strict_layout": False,
+                "strict_tool_isolation": False,
+                "network_policy": "allow",
+                "require_sealed_oracle": False,
+                "require_oracle_isolation": False,
+            }
+        else:
+            _print_error("Use /permissions isolated or /permissions local.")
+            return
+        try:
+            persist_tui_settings(state.config, security=values)
+        except (OSError, TUIConfigError) as exc:
+            _print_error(f"Security settings were not saved: {exc}")
+            return
+        state.execution_backend = values["execution_backend"]
+        state.strict_layout = values["strict_layout"]
+        state.strict_tool_isolation = values["strict_tool_isolation"]
+        state.network_policy = values["network_policy"]
+        state.require_sealed_oracle = values["require_sealed_oracle"]
+        state.require_oracle_isolation = values["require_oracle_isolation"]
+        _print_good(f"Permission preset · {requested} · saved to TOML")
+
+    _emit(("class:assistant", "Execution boundary"))
+    for key, value in (
+        ("execution_backend", state.execution_backend or "config default"),
+        ("strict_layout", state.strict_layout if state.strict_layout is not None else "config default"),
+        ("strict_tool_isolation", state.strict_tool_isolation if state.strict_tool_isolation is not None else "config default"),
+        ("network_policy", state.network_policy or "config default"),
+        ("require_sealed_oracle", state.require_sealed_oracle if state.require_sealed_oracle is not None else "config default"),
+        ("require_oracle_isolation", state.require_oracle_isolation if state.require_oracle_isolation is not None else "config default"),
+    ):
+        _emit(("class:muted", f"  {key:<24}"), ("class:assistant", str(value)))
+    if state.execution_backend == "local":
+        _print_note("Local mode sanitizes the environment but is not an OS filesystem/network sandbox.")
+    else:
+        _print_note("The CLI/runtime enforces the persisted policy; the TUI does not synthesize authority.")
+'''
+regex_once(
+    "src/harness/tui_visual.py",
+    r"def _permissions\(state: AppState\) -> None:.*?\n\ndef _status",
+    PERMISSIONS + "\n\ndef _status",
+)
