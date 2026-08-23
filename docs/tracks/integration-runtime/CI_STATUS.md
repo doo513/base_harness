@@ -1,7 +1,7 @@
 # Integration Runtime CI Status
 
-- Source commit: 03110079386e31b32a1fc0ef90fbe6c4c8214e11
-- Branch: develop
+- Source commit: 6813f2cc1b180e588b11a9673b8f7bd4e722f7b5
+- Branch: main
 - Result: **PASS**
 - Runner: ubuntu-latest
 - Python: 3.11
@@ -59,5 +59,5 @@ stage02-binding-cost                             PASS
 ....ss.................................................................. [ 65%]
 ........................................................................ [ 87%]
 ..........................................                               [100%]
-323 passed, 7 skipped in 26.63s
+323 passed, 7 skipped in 29.16s
 ```
