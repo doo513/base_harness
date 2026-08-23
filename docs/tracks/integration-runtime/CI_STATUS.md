@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 58d5ac351b548812e06ebc3a9cf6dff9d614360c
+- Source commit: 03110079386e31b32a1fc0ef90fbe6c4c8214e11
 - Branch: develop
-- Result: **FAIL**
+- Result: **PASS**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -10,7 +10,7 @@
 ## Gate ledger
 
 ```text
-compile                                          FAIL
+compile                                          PASS
 cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
@@ -59,5 +59,5 @@ stage02-binding-cost                             PASS
 ....ss.................................................................. [ 65%]
 ........................................................................ [ 87%]
 ..........................................                               [100%]
-323 passed, 7 skipped in 29.01s
+323 passed, 7 skipped in 26.63s
 ```
