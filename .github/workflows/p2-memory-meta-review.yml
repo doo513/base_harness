@@ -1,0 +1,145 @@
+name: p2-memory-meta-review-direct-develop
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - scripts/apply_p2_meta_review.py
+      - .github/workflows/p2-memory-meta-review.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-memory-meta-review-develop
+  cancel-in-progress: false
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply meta-review corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/apply_p2_meta_review.py
+
+      - name: Install locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-ci.lock
+          python -m pip install -e . --no-deps
+          python -m pip check
+
+      - name: Focused meta-review validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_p2_memory_v2.py::test_p2c_korean_bm25_and_explicit_token_budget \
+            tests/test_p2_memory_v2.py::test_p2d_impact_analysis_separates_exposure_from_declared_dependency \
+            tests/test_p2_memory_v2.py \
+            tests/test_integration_project_memory.py
+
+      - name: Compile and interfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m harness.cli --help
+          python -m harness.tui_conversation --help
+
+      - name: Full regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q 2>&1 | tee /tmp/p2-meta-full-pytest.log
+
+      - name: Stage-08 regression probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/stage8_retrieval_probe.py
+          python scripts/stage8_retrieval_adversarial_probe.py
+          python scripts/stage8_retrieval_resume_probe.py
+          python scripts/stage8_artifact_integrity_probe.py
+
+      - name: Append meta-review evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          report='docs/tracks/integration-runtime/P2_MEMORY_A_D_IMPLEMENTATION_REPORT.md'
+          {
+            echo
+            echo '## 15. 메타 재점검 보완의 실제 검증 결과'
+            echo
+            echo '```text'
+            echo 'Unicode/Hangul BM25 focused test          PASS'
+            echo 'max_tokens enforcement focused test       PASS'
+            echo 'lineage impact-analysis focused test      PASS'
+            echo 'P2-A~D focused regression                 PASS'
+            echo 'legacy project-memory compatibility       PASS'
+            echo 'compileall / CLI / TUI                    PASS'
+            echo 'full pytest regression                    PASS'
+            echo 'Stage-08 retrieval/adversarial/resume     PASS'
+            echo 'Stage-08 artifact-integrity               PASS'
+            echo '```'
+            echo
+            echo '### Full pytest tail'
+            echo
+            echo '```text'
+            tail -n 8 /tmp/p2-meta-full-pytest.log
+            echo '```'
+          } >> "$report"
+
+      - name: Commit validated meta-review corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/apply_p2_meta_review.py
+          rm -f .github/workflows/p2-memory-meta-review.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(memory): close multilingual budget and impact gaps'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin develop
+            if git push origin HEAD:develop; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - name: Capture failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          git diff --stat > /tmp/p2-meta-diff-stat.txt || true
+          git diff > /tmp/p2-meta.patch || true
+          python -m compileall -q src tests scripts \
+            > /tmp/p2-meta-compile.txt 2>&1 || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-memory-meta-review-diagnostics
+          path: |
+            /tmp/p2-meta-full-pytest.log
+            /tmp/p2-meta-diff-stat.txt
+            /tmp/p2-meta.patch
+            /tmp/p2-meta-compile.txt
+          if-no-files-found: ignore
