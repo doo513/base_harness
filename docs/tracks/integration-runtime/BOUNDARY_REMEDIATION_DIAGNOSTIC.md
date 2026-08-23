@@ -1,6 +1,6 @@
 # Boundary Remediation Diagnostic
 
-- source: 5060a262759886dbaabe03d8c1c59ddd325f5153
+- source: 4ce38f12cd3054a4dae16c9612d947f33595700f
 - stage: apply
 - outcome: failure
 
@@ -18,13 +18,13 @@ Traceback (most recent call last):
   File "<frozen runpy>", line 291, in run_path
   File "<frozen runpy>", line 98, in _run_module_code
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/runner/work/base_harness/base_harness/scripts/apply_p2_memory.py", line 29, in <module>
+  File "/home/runner/work/base_harness/base_harness/scripts/apply_p2_memory.py", line 32, in <module>
     main()
-  File "/home/runner/work/base_harness/base_harness/scripts/apply_p2_memory.py", line 18, in main
+  File "/home/runner/work/base_harness/base_harness/scripts/apply_p2_memory.py", line 21, in main
     source = lzma.decompress(base64.b64decode(encoded)).decode("utf-8")
-                             ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/base64.py", line 88, in b64decode
-    return binascii.a2b_base64(s, strict_mode=validate)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-binascii.Error: Incorrect padding
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/lzma.py", line 343, in decompress
+    res = decomp.decompress(data)
+          ^^^^^^^^^^^^^^^^^^^^^^^
+_lzma.LZMAError: Corrupt input data
 ```
