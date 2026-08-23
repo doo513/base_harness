@@ -462,42 +462,52 @@ CI bot commit은 검증 결과 문서 갱신용이며 기능 구현 commit과 �
 
 ## 7. 검증 결과
 
-### 7.1 Full integration CI — 구현 source `03aae871...`
+최종 기능/test source는 다음 commit이다.
 
-Repository CI가 다음을 기록했다.
+```text
+7313028ba5b33b92b321528ff39315035e2e4cf0
+```
+
+Repository integration CI가 이 source를 기준으로 다음을 기록했다.
 
 ```text
 Result: PASS
 compile: PASS
+CLI/TUI module + console: PASS
 full-pytest: PASS
+core-freeze-audit: PASS
 Stage 02 isolation/binding: PASS
 Stage 03 resume: PASS
 Stage 04 semantic verification: PASS
-Stage 05 recovery: PASS
-Stage 06 progress: PASS
-Stage 07 context/adversarial/resume/compat/cost: PASS
+Stage 05 recovery/adversarial/terminal: PASS
+Stage 06 progress/adversarial/resume: PASS
+Stage 07 context/adversarial/resume/compat/cost/goal-bounds: PASS
 Stage 08 retrieval/adversarial/resume/cost/integrity: PASS
 ```
 
 전체 pytest:
 
 ```text
-330 passed, 7 skipped
+331 passed, 7 skipped in 29.80s
 ```
 
-이는 `03aae871f01d6dfece45c258a46fa13b8d70a179`까지의 구현과 verified-fact preservation regression을 포함한다.
-
-### 7.2 추가 budget-failure regression
-
-이후 `7313028ba5b33b92b321528ff39315035e2e4cf0`에서 다음 테스트를 추가했다.
+이 결과에는 다음 신규 회귀가 포함된다.
 
 ```text
-4K에 들어갈 수 없는 mandatory context
-→ ContextBudgetError
-→ provider/model 호출 0회
+- 4096 local route의 conservative budget
+- explicit context_window override
+- OpenAI-compatible localhost 11434/1234 route 감지
+- active_context fold 및 중복 namespace 제거
+- goal_contract 유지
+- 모든 tool name / safety metadata 유지
+- verified fact identity 전체 유지
+- relevant fact preview/evidence 우선 유지
+- remote route metadata 미지정 시 passthrough
+- LLMController의 duplicate raw goal 제거
+- 4K에 절대 맞지 않는 mandatory context는 provider 호출 전에 차단
 ```
 
-이 문서 최초 작성 시점에는 해당 추가 테스트를 포함한 전체 CI bot 결과가 아직 별도 `CI_STATUS.md`에 기록되기 전이므로, `7313028...`에 대해서는 Full CI PASS를 선행 주장하지 않는다.
+따라서 현재 repository evidence 기준으로 이번 구현은 **compile/full regression 및 기존 Stage 02~08 gate를 깨지 않고 PASS**했다.
 
 ---
 
