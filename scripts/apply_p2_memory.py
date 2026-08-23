@@ -15,6 +15,9 @@ def main() -> None:
         path.read_text(encoding="ascii").strip()
         for path in sorted(PARTS.glob("part*.b64"))
     )
+    # Contents API transports may omit terminal Base64 padding. Padding is not
+    # payload data; the decoded applicator SHA-256 below remains authoritative.
+    encoded += "=" * (-len(encoded) % 4)
     source = lzma.decompress(base64.b64decode(encoded)).decode("utf-8")
     actual = hashlib.sha256(source.encode("utf-8")).hexdigest()
     if actual != EXPECTED_SHA256:
