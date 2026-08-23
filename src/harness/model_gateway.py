@@ -5,6 +5,7 @@ from time import monotonic, sleep
 from typing import Any, Callable, Mapping, Protocol
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 import urllib.error
@@ -79,6 +80,129 @@ class ModelProvider(Protocol):
     capabilities: ProviderCapabilities
 
     def complete(self, request: ModelRequest) -> ModelResponse: ...
+
+
+_DECISION_KINDS = (
+    "plan", "task", "propose", "verify_claim", "tool", "retrieve", "refute", "complete"
+)
+
+_DECISION_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["kind", "payload"],
+    "properties": {
+        "kind": {"type": "string", "enum": list(_DECISION_KINDS)},
+        "payload": {"type": "object"},
+    },
+}
+
+
+def _strip_json_fence(content: str) -> str:
+    text = content.strip()
+    match = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else text
+
+
+def _looks_truncated_json(text: str, exc: json.JSONDecodeError) -> bool:
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+    if stripped.count("{") > stripped.count("}") or stripped.count("[") > stripped.count("]"):
+        return True
+    return exc.pos >= max(0, len(stripped) - 2)
+
+
+def _canonical_decision_json(content: str) -> str:
+    text = _strip_json_fence(content)
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as exc:
+        kind = "protocol_truncated" if _looks_truncated_json(text, exc) else "protocol_invalid_json"
+        raise ProviderError(
+            f"local model returned invalid decision JSON: {exc.msg}",
+            kind=kind,
+            retryable=True,
+        ) from exc
+
+    if not isinstance(obj, dict):
+        raise ProviderError("decision must be a JSON object", kind="protocol_schema", retryable=True)
+    if set(obj) != {"kind", "payload"}:
+        raise ProviderError(
+            "decision object must contain exactly kind and payload",
+            kind="protocol_schema",
+            retryable=True,
+        )
+    kind = obj.get("kind")
+    payload = obj.get("payload")
+    if kind not in _DECISION_KINDS or not isinstance(payload, dict):
+        raise ProviderError("decision kind/payload violates harness protocol", kind="protocol_schema", retryable=True)
+
+    if kind == "tool":
+        tool = payload.get("tool")
+        if not isinstance(tool, str) or not tool.strip():
+            raise ProviderError("tool.tool must be a non-empty string", kind="protocol_schema", retryable=True)
+        if not isinstance(payload.get("args", {}), dict):
+            raise ProviderError("tool.args must be an object", kind="protocol_schema", retryable=True)
+    elif kind == "plan":
+        objective = payload.get("objective")
+        tasks = payload.get("tasks")
+        if not isinstance(objective, str) or not objective.strip() or not isinstance(tasks, list) or not tasks:
+            raise ProviderError("plan requires non-empty objective and tasks", kind="protocol_schema", retryable=True)
+    elif kind in {"verify_claim", "refute"}:
+        key = payload.get("key")
+        if not isinstance(key, str) or not key.strip():
+            raise ProviderError(f"{kind}.key must be a non-empty string", kind="protocol_schema", retryable=True)
+    elif kind == "retrieve":
+        query = payload.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise ProviderError("retrieve.query must be a non-empty string", kind="protocol_schema", retryable=True)
+
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _repair_request(request: ModelRequest, error_kind: str) -> ModelRequest:
+    suffix = (
+        "\n\nLOCAL MODEL PROTOCOL REPAIR:\n"
+        f"The previous answer failed with {error_kind}. "
+        "Return exactly one complete JSON object matching the harness decision schema. "
+        "Do not use markdown fences or commentary. Never emit an empty tool name."
+    )
+    return ModelRequest(system=request.system, user=request.user + suffix)
+
+
+def _http_json(
+    endpoint: str,
+    *,
+    body: dict[str, Any],
+    timeout_seconds: float,
+    api_key: str | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if api_key is not None:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            request_id = response.headers.get("x-request-id")
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8")[-2000:]
+        except Exception:
+            detail = ""
+        retryable = exc.code == 429 or 500 <= exc.code < 600
+        kind = "rate_limit" if exc.code == 429 else "http_error"
+        raise ProviderError(f"provider HTTP {exc.code}: {detail}", kind=kind, retryable=retryable) from exc
+    except urllib.error.URLError as exc:
+        raise ProviderError(f"provider connection failed: {exc}", kind="network_error", retryable=True) from exc
+    except TimeoutError as exc:
+        raise ProviderError("provider request timed out", kind="timeout", retryable=True) from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProviderError(f"provider response is not valid JSON: {exc}", kind="invalid_response") from exc
+    if not isinstance(payload, dict):
+        raise ProviderError("provider response must be a JSON object", kind="invalid_response")
+    return payload, request_id
 
 
 class CommandProvider:
@@ -184,46 +308,19 @@ class OpenAICompatibleProvider:
         elif self.options.get("json_mode") is True:
             body["response_format"] = {"type": "json_object"}
 
-        # The Harness actor wire protocol is one JSON decision per turn. Modern
-        # Ollama thinking models may otherwise spend the response budget in the
-        # non-authoritative `reasoning` field and leave final `content` empty.
-        # The standard Ollama OpenAI-compatible port is therefore treated as a
-        # protocol-compatibility route, while explicit options can still override it.
         if self.ollama_compat:
             body.setdefault("reasoning_effort", "none")
             if self.options.get("json_mode") is not False:
                 body.setdefault("response_format", {"type": "json_object"})
 
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if self.api_key is not None:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        http_request = urllib.request.Request(self.endpoint, data=data, headers=headers, method="POST")
         started = monotonic()
-        try:
-            with urllib.request.urlopen(http_request, timeout=self.timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-                request_id = response.headers.get("x-request-id")
-        except urllib.error.HTTPError as exc:
-            try:
-                detail = exc.read().decode("utf-8")[-2000:]
-            except Exception:
-                detail = ""
-            retryable = exc.code == 429 or 500 <= exc.code < 600
-            kind = "rate_limit" if exc.code == 429 else "http_error"
-            raise ProviderError(
-                f"provider HTTP {exc.code}: {detail}",
-                kind=kind,
-                retryable=retryable,
-            ) from exc
-        except urllib.error.URLError as exc:
-            raise ProviderError(f"provider connection failed: {exc}", kind="network_error", retryable=True) from exc
-        except TimeoutError as exc:
-            raise ProviderError("provider request timed out", kind="timeout", retryable=True) from exc
+        payload, request_id = _http_json(
+            self.endpoint,
+            body=body,
+            timeout_seconds=self.timeout_seconds,
+            api_key=self.api_key,
+        )
         latency = monotonic() - started
-
-        if not isinstance(payload, dict):
-            raise ProviderError("provider response must be a JSON object", kind="invalid_response")
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ProviderError("provider response has no choices", kind="invalid_response")
@@ -236,7 +333,6 @@ class OpenAICompatibleProvider:
             content = msg_dict["reasoning_content"]
         if not content and isinstance(msg_dict.get("text"), str):
             content = msg_dict["text"]
-
         if not isinstance(content, str) or not content.strip():
             reasoning_present = isinstance(msg_dict.get("reasoning"), str) and bool(msg_dict.get("reasoning", "").strip())
             detail = "; reasoning was present but final content was empty" if reasoning_present else ""
@@ -245,7 +341,6 @@ class OpenAICompatibleProvider:
                 kind="empty_response",
                 retryable=True,
             )
-
         return ModelResponse(
             content=content,
             provider_id=self.provider_id,
@@ -257,6 +352,135 @@ class OpenAICompatibleProvider:
                 "finish_reason": first.get("finish_reason"),
                 "reasoning_present": isinstance(msg_dict.get("reasoning"), str) and bool(msg_dict.get("reasoning", "").strip()),
             },
+        )
+
+
+class OllamaProvider:
+    provider_id = "ollama"
+    capabilities = ProviderCapabilities(structured_output=True, streaming=True, reasoning=True)
+    protocol_enforced = True
+
+    def __init__(self, config: ModelConfig, *, secret_resolver: SecretResolver):
+        if config.provider != "ollama" or not config.model:
+            raise ConfigError("OllamaProvider requires provider='ollama' and model")
+        endpoint = (config.endpoint or "http://127.0.0.1:11434").rstrip("/")
+        self.endpoint = endpoint if endpoint.endswith("/api/chat") else endpoint + "/api/chat"
+        self.model = config.model
+        self.timeout_seconds = float(config.timeout_seconds)
+        self.options = dict(config.options)
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        generation_options: dict[str, Any] = {"temperature": self.options.get("temperature", 0)}
+        if "top_p" in self.options:
+            generation_options["top_p"] = self.options["top_p"]
+        if "num_predict" in self.options:
+            generation_options["num_predict"] = self.options["num_predict"]
+        elif "max_tokens" in self.options:
+            generation_options["num_predict"] = self.options["max_tokens"]
+
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": request.system},
+                {"role": "user", "content": request.user},
+            ],
+            "stream": False,
+            "format": _DECISION_JSON_SCHEMA,
+            "options": generation_options,
+        }
+        if self.options.get("think", False) is False:
+            body["think"] = False
+
+        started = monotonic()
+        payload, _ = _http_json(self.endpoint, body=body, timeout_seconds=self.timeout_seconds)
+        latency = monotonic() - started
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            raise ProviderError("Ollama response has no message", kind="invalid_response")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ProviderError("Ollama returned empty assistant content", kind="empty_response", retryable=True)
+        prompt = payload.get("prompt_eval_count")
+        completion = payload.get("eval_count")
+        usage = ModelUsage(
+            input_tokens=prompt if isinstance(prompt, int) else None,
+            output_tokens=completion if isinstance(completion, int) else None,
+            total_tokens=(prompt + completion) if isinstance(prompt, int) and isinstance(completion, int) else None,
+        )
+        return ModelResponse(
+            content=content,
+            provider_id=self.provider_id,
+            model_id=self.model,
+            usage=usage,
+            latency_seconds=latency,
+            raw_metadata={"done_reason": payload.get("done_reason"), "structured_output": "json_schema"},
+        )
+
+
+class LMStudioProvider:
+    provider_id = "lm-studio"
+    capabilities = ProviderCapabilities(structured_output=True, native_tool_calling=True, streaming=True)
+    protocol_enforced = True
+
+    def __init__(self, config: ModelConfig, *, secret_resolver: SecretResolver):
+        if config.provider != "lm-studio" or not config.model:
+            raise ConfigError("LMStudioProvider requires provider='lm-studio' and model")
+        endpoint = (config.endpoint or "http://127.0.0.1:1234/v1").rstrip("/")
+        self.endpoint = endpoint if endpoint.endswith("/chat/completions") else endpoint + "/chat/completions"
+        self.model = config.model
+        self.api_key = secret_resolver.resolve(config.api_key)
+        self.timeout_seconds = float(config.timeout_seconds)
+        self.options = dict(config.options)
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": request.system},
+                {"role": "user", "content": request.user},
+            ],
+            "stream": False,
+            "temperature": self.options.get("temperature", 0),
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "harness_decision",
+                    "strict": True,
+                    "schema": _DECISION_JSON_SCHEMA,
+                },
+            },
+        }
+        if "max_tokens" in self.options:
+            body["max_tokens"] = self.options["max_tokens"]
+        if "top_p" in self.options:
+            body["top_p"] = self.options["top_p"]
+
+        started = monotonic()
+        payload, request_id = _http_json(
+            self.endpoint,
+            body=body,
+            timeout_seconds=self.timeout_seconds,
+            api_key=self.api_key,
+        )
+        latency = monotonic() - started
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ProviderError("LM Studio response has no choices", kind="invalid_response")
+        first = choices[0]
+        message = first.get("message") if isinstance(first, dict) else None
+        if not isinstance(message, dict):
+            raise ProviderError("LM Studio choice has no message", kind="invalid_response")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ProviderError("LM Studio returned empty assistant content", kind="empty_response", retryable=True)
+        return ModelResponse(
+            content=content,
+            provider_id=self.provider_id,
+            model_id=self.model,
+            request_id=request_id or (payload.get("id") if isinstance(payload.get("id"), str) else None),
+            usage=OpenAICompatibleProvider._usage(payload.get("usage")),
+            latency_seconds=latency,
+            raw_metadata={"finish_reason": first.get("finish_reason"), "structured_output": "json_schema"},
         )
 
 
@@ -273,6 +497,8 @@ class ProviderRegistry:
         registry.register("command", lambda config, resolver: CommandProvider(config))
         registry.register("openai-compatible", lambda config, resolver: OpenAICompatibleProvider(config, secret_resolver=resolver))
         registry.register("openai", lambda config, resolver: OpenAICompatibleProvider(config, secret_resolver=resolver))
+        registry.register("ollama", lambda config, resolver: OllamaProvider(config, secret_resolver=resolver))
+        registry.register("lm-studio", lambda config, resolver: LMStudioProvider(config, secret_resolver=resolver))
         return registry
 
     def register(self, provider_id: str, factory: ProviderFactory) -> None:
@@ -326,6 +552,7 @@ class ModelGateway:
             "requests": 0,
             "failures": 0,
             "fallbacks": 0,
+            "protocol_repairs": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
@@ -352,26 +579,33 @@ class ModelGateway:
         return provider
 
     def complete(self, *, system: str, user: str) -> str:
-        request = ModelRequest(system=system, user=user)
+        base_request = ModelRequest(system=system, user=user)
         aliases = (self.default_model, *self.fallback_models)
         last_error: ProviderError | None = None
         for alias_index, alias in enumerate(aliases):
             if alias_index > 0:
                 self._telemetry["fallbacks"] += 1
             provider = self._provider(alias)
+            protocol_enforced = bool(getattr(provider, "protocol_enforced", False))
+            request = base_request
             for attempt in range(self.max_attempts_per_model):
                 self._telemetry["requests"] += 1
                 try:
                     response = provider.complete(request)
+                    content = _canonical_decision_json(response.content) if protocol_enforced else response.content
                 except ProviderError as exc:
                     self._telemetry["failures"] += 1
                     self._telemetry["last_error_kind"] = exc.kind
                     last_error = exc
-                    if not exc.retryable or attempt + 1 >= self.max_attempts_per_model:
+                    if protocol_enforced and exc.kind.startswith("protocol_") and attempt + 1 < self.max_attempts_per_model:
+                        self._telemetry["protocol_repairs"] += 1
+                        request = _repair_request(base_request, exc.kind)
+                    elif not exc.retryable or attempt + 1 >= self.max_attempts_per_model:
                         break
                     if self.retry_backoff_seconds:
                         sleep(self.retry_backoff_seconds * (attempt + 1))
                     continue
+
                 self._telemetry["latency_seconds"] += float(response.latency_seconds)
                 self._telemetry["last_provider"] = response.provider_id
                 self._telemetry["last_model"] = response.model_id
@@ -383,7 +617,8 @@ class ModelGateway:
                     self._telemetry["output_tokens"] += response.usage.output_tokens
                 if response.usage.total_tokens is not None:
                     self._telemetry["total_tokens"] += response.usage.total_tokens
-                return response.content
+                return content
+
         if last_error is not None:
             raise ModelGatewayError(
                 f"all configured model routes failed; last={last_error.kind}: {last_error}"
@@ -395,11 +630,16 @@ class ModelGateway:
 
     def descriptor(self) -> dict[str, Any]:
         return {
-            "schema_version": "model-gateway-v1",
+            "schema_version": "model-gateway-v2",
             "default_model": self.default_model,
             "fallback_models": list(self.fallback_models),
             "max_attempts_per_model": self.max_attempts_per_model,
             "registered_providers": list(self.registry.providers()),
+            "local_protocol": {
+                "providers": ["ollama", "lm-studio"],
+                "structured_output": "decision-json-schema",
+                "repair_scope": "gateway-only-one-retry-within-model-attempt-budget",
+            },
             "models": {
                 alias: {
                     "provider": config.provider,
