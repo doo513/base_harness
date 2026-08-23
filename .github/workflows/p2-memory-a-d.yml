@@ -1,0 +1,179 @@
+name: p2-memory-a-d-direct-develop
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - scripts/apply_p2_memory.py
+      - scripts/p2_memory_payload/**
+      - .github/workflows/p2-memory-a-d.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-memory-a-d-develop
+  cancel-in-progress: false
+
+jobs:
+  implement-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply P2 A-D implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/apply_p2_memory.py
+          python scripts/apply_p2_memory.py
+
+      - name: Install locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-ci.lock
+          python -m pip install -e . --no-deps
+          python -m pip check
+
+      - name: P2-A lifecycle validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_p2_memory_v2.py::test_p2a_lifecycle_supersession_and_replay \
+            tests/test_p2_memory_v2.py::test_p2a_invalidation_removes_record_from_current_view \
+            tests/test_p2_memory_v2.py::test_p2a_episodic_variants_and_v1_migration
+
+      - name: P2-B evidence binding validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_p2_memory_v2.py::test_p2b_evidence_binding_and_verification_history \
+            tests/test_p2_memory_v2.py::test_p2b_unrelated_evidence_is_rejected \
+            tests/test_integration_project_memory.py
+
+      - name: P2-C typed retrieval and assembly validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_p2_memory_v2.py::test_p2c_typed_bm25_and_query_time_assembly
+
+      - name: P2-D lineage validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_p2_memory_v2.py::test_p2d_lineage_presented_cited_required_and_produced \
+            tests/test_p2_memory_v2.py::test_memory_decision_protocol_validates_dedicated_operations
+
+      - name: Compile and interface gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m harness.cli --help
+          python -m harness.tui_conversation --help
+
+      - name: Full regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q 2>&1 | tee /tmp/p2-full-pytest.log
+
+      - name: Stage-08 compatibility probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/stage8_retrieval_probe.py
+          python scripts/stage8_retrieval_adversarial_probe.py
+          python scripts/stage8_retrieval_resume_probe.py
+          python scripts/stage8_artifact_integrity_probe.py
+
+      - name: Finalize evidence report
+        shell: bash
+        run: |
+          set -euo pipefail
+          report='docs/tracks/integration-runtime/P2_MEMORY_A_D_IMPLEMENTATION_REPORT.md'
+          {
+            echo
+            echo '## 13. 실제 검증 결과'
+            echo
+            echo 'GitHub Actions의 `ubuntu-latest`, Python 3.11, `develop` checkout에서 다음 gate를 실제 실행했다.'
+            echo
+            echo '```text'
+            echo 'P2-A lifecycle focused tests                 PASS'
+            echo 'P2-B evidence-binding focused tests          PASS'
+            echo 'P2-C typed retrieval/assembly focused test   PASS'
+            echo 'P2-D lineage focused tests                   PASS'
+            echo 'legacy project-memory compatibility tests    PASS'
+            echo 'compileall                                   PASS'
+            echo 'CLI help                                     PASS'
+            echo 'TUI help                                     PASS'
+            echo 'full pytest regression                       PASS'
+            echo 'Stage-08 retrieval probe                     PASS'
+            echo 'Stage-08 adversarial probe                   PASS'
+            echo 'Stage-08 resume probe                        PASS'
+            echo 'Stage-08 artifact-integrity probe            PASS'
+            echo '```'
+            echo
+            echo '### Full pytest tail'
+            echo
+            echo '```text'
+            tail -n 8 /tmp/p2-full-pytest.log
+            echo '```'
+            echo
+            echo '이 결과는 applicator가 생성한 임시 작업 트리가 아니라, 최종 commit에 포함될 동일한 source와 tests를 대상으로 얻었다.'
+          } >> "$report"
+
+      - name: Commit validated P2 A-D implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/apply_p2_memory.py
+          rm -rf scripts/p2_memory_payload
+          rm -f .github/workflows/p2-memory-a-d.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(memory): implement P2 lifecycle verification retrieval lineage'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin develop
+            if git push origin HEAD:develop; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - name: Capture failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          git diff --stat > /tmp/p2-memory-diff-stat.txt || true
+          git diff > /tmp/p2-memory.patch || true
+          python -m compileall -q src tests scripts \
+            > /tmp/p2-memory-compile.txt 2>&1 || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-memory-a-d-diagnostics
+          path: |
+            /tmp/p2-full-pytest.log
+            /tmp/p2-memory-diff-stat.txt
+            /tmp/p2-memory.patch
+            /tmp/p2-memory-compile.txt
+          if-no-files-found: ignore
