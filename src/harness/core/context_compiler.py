@@ -9,7 +9,7 @@ import json
 
 
 class ContextBudgetError(ValueError):
-    """Raised when mandatory actor context cannot fit the selected model route."""
+    """Selected model route cannot fit the mandatory working context."""
 
 
 @dataclass(frozen=True)
@@ -20,10 +20,13 @@ class RouteContextBudget:
     source: str
 
     def __post_init__(self) -> None:
-        for name in ("context_window", "reserved_output_tokens", "safety_margin_tokens"):
-            value = getattr(self, name)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise ContextBudgetError(f"{name} must be a non-negative integer")
+        values = (
+            self.context_window,
+            self.reserved_output_tokens,
+            self.safety_margin_tokens,
+        )
+        if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values):
+            raise ContextBudgetError("context budget values must be non-negative integers")
         if self.context_window < 1:
             raise ContextBudgetError("context_window must be positive")
         if self.reserved_output_tokens + self.safety_margin_tokens >= self.context_window:
@@ -61,17 +64,18 @@ class ContextCompileResult:
             "source_estimated_input_tokens": self.source_estimated_input_tokens,
             "compiled_estimated_input_tokens": self.compiled_estimated_input_tokens,
             "estimated_reduction_tokens": max(
-                0, self.source_estimated_input_tokens - self.compiled_estimated_input_tokens
+                0,
+                self.source_estimated_input_tokens - self.compiled_estimated_input_tokens,
             ),
             "estimated_reduction_ratio": round(
                 max(0, source - self.compiled_estimated_input_tokens) / source,
                 4,
             ),
-            "budget": self.budget.dump() if self.budget is not None else None,
+            "budget": self.budget.dump() if self.budget else None,
         }
 
 
-def _json_text(value: Any) -> str:
+def _json(value: Any) -> str:
     return json.dumps(
         value,
         ensure_ascii=False,
@@ -82,24 +86,21 @@ def _json_text(value: Any) -> str:
 
 
 def estimate_tokens(value: Any) -> int:
-    """Return a conservative tokenizer-independent admission estimate.
+    """Conservative tokenizer-independent admission estimate.
 
-    Three UTF-8 bytes per token intentionally overestimates typical English JSON
-    and remains conservative for Hangul-heavy text without coupling the Kernel to
-    a provider tokenizer. It is a prompt admission guard, not usage accounting.
+    The compiler uses UTF-8 bytes / 3 as a guard. It intentionally does not
+    claim exact provider token accounting.
     """
-    raw = value if isinstance(value, str) else _json_text(value)
-    size = len(raw.encode("utf-8"))
+    text = value if isinstance(value, str) else _json(value)
+    size = len(text.encode("utf-8"))
     return 0 if size == 0 else max(1, ceil(size / 3))
 
 
 def _positive_int(value: Any) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return int(value)
-    return None
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
-def _endpoint_port(endpoint: Any) -> int | None:
+def _port(endpoint: Any) -> int | None:
     if not isinstance(endpoint, str) or not endpoint:
         return None
     try:
@@ -109,595 +110,406 @@ def _endpoint_port(endpoint: Any) -> int | None:
 
 
 def resolve_model_context_budget(model: Any) -> RouteContextBudget | None:
-    """Resolve a context budget from a ModelGateway-compatible descriptor.
-
-    Remote routes remain unchanged unless they explicitly declare a context
-    window. Ollama/LM Studio routes, including their common compatibility ports,
-    default conservatively to 4096. Operators can override this with
-    options.context_window or options.num_ctx.
-    """
-    descriptor_fn = getattr(model, "descriptor", None)
-    if not callable(descriptor_fn):
+    """Read route budget metadata without querying mutable provider state."""
+    descriptor = getattr(model, "descriptor", None)
+    if not callable(descriptor):
         return None
     try:
-        descriptor = descriptor_fn()
+        raw = descriptor()
     except Exception:
         return None
-    if not isinstance(descriptor, dict):
+    if not isinstance(raw, dict):
         return None
 
-    alias = descriptor.get("default_model")
-    models = descriptor.get("models")
-    if not isinstance(alias, str) or not isinstance(models, dict):
-        return None
-    route = models.get(alias)
+    alias = raw.get("default_model")
+    models = raw.get("models")
+    route = models.get(alias) if isinstance(alias, str) and isinstance(models, dict) else None
     if not isinstance(route, dict):
         return None
+
     options = route.get("options")
     options = options if isinstance(options, dict) else {}
-
     provider = str(route.get("provider", "")).strip().lower()
-    port = _endpoint_port(route.get("endpoint"))
-    local_compat = provider in {"ollama", "lm-studio"} or port in {11434, 1234}
+    local = provider in {"ollama", "lm-studio"} or _port(route.get("endpoint")) in {11434, 1234}
 
-    explicit_window = _positive_int(options.get("context_window"))
-    num_ctx = _positive_int(options.get("num_ctx"))
-    context_window = explicit_window or num_ctx
+    window = _positive_int(options.get("context_window"))
     source = "model_option"
-    if context_window is None and local_compat:
-        context_window = 4096
+    if window is None and local:
+        window = 4096
         source = "local_compat_default"
-    if context_window is None:
+    if window is None:
         return None
 
     reserved = (
         _positive_int(options.get("reserved_output_tokens"))
         or _positive_int(options.get("num_predict"))
         or _positive_int(options.get("max_tokens"))
-        or min(1024, max(512, context_window // 4))
+        or min(1024, max(512, window // 4))
     )
     safety = (
         _positive_int(options.get("context_safety_margin_tokens"))
-        or min(512, max(192, context_window // 16))
+        or min(512, max(192, window // 16))
     )
-    return RouteContextBudget(
-        context_window=context_window,
-        reserved_output_tokens=reserved,
-        safety_margin_tokens=safety,
-        source=source,
-    )
+    return RouteContextBudget(window, reserved, safety, source)
 
 
-def _trim_text(value: Any, limit: int) -> Any:
-    if not isinstance(value, str):
-        return value
-    if limit < 0:
-        return value
-    return value if len(value) <= limit else value[:limit]
+def _text(value: Any, limit: int) -> str:
+    raw = "" if value is None else str(value)
+    return raw if len(raw) <= limit else raw[:limit]
 
 
-def _copy_mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(value) if isinstance(value, dict) else {}
-
-
-def _compact_failure(item: Any, message_chars: int) -> dict[str, Any] | None:
-    if not isinstance(item, dict):
+def _preview(value: Any, limit: int) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
         return None
-    result: dict[str, Any] = {}
-    for key in (
-        "kind",
-        "target",
-        "repeat_count",
-        "generation",
-        "recommended_recovery",
-        "strategy_generation",
-    ):
-        if key in item:
-            result[key] = copy.deepcopy(item[key])
-    if "message" in item:
-        result["message"] = _trim_text(str(item.get("message", "")), message_chars)
+    raw = str(value.get("text", ""))
+    visible = _text(raw, limit)
+    result = {
+        "text": visible,
+        "visible_chars": len(visible),
+        "truncated": bool(value.get("truncated")) or len(raw) > len(visible),
+    }
+    if value.get("original_chars") is not None:
+        result["original_chars"] = value.get("original_chars")
     return result
 
 
-def _compact_control(control: Any, *, failure_count: int, failure_chars: int) -> dict[str, Any]:
-    source = _copy_mapping(control)
-    failures = source.get("recent_failures")
-    selected_failures: list[dict[str, Any]] = []
-    if isinstance(failures, list) and failure_count > 0:
-        for item in failures[-failure_count:]:
-            compact = _compact_failure(item, failure_chars)
-            if compact is not None:
-                selected_failures.append(compact)
+def _active_by_key(context: dict[str, Any], kind: str, limit: int) -> dict[str, dict[str, Any]]:
+    active = context.get("active_context")
+    items = active.get(kind) if isinstance(active, dict) else None
+    result: dict[str, dict[str, Any]] = {}
+    if isinstance(items, list):
+        for item in items[:limit]:
+            if isinstance(item, dict) and isinstance(item.get("key"), str):
+                result[item["key"]] = item
+    return result
+
+
+def _facts(context: dict[str, Any], *, active_limit: int, active_chars: int, rich_stub: bool):
+    trusted = context.get("trusted")
+    raw_facts = trusted.get("facts") if isinstance(trusted, dict) else None
+    if not isinstance(raw_facts, dict):
+        return {}
+
+    active = _active_by_key(context, "facts", active_limit)
+    output: dict[str, Any] = {}
+    for key, raw in raw_facts.items():
+        if not isinstance(raw, dict):
+            continue
+        focus = active.get(str(key))
+        item: dict[str, Any] = {
+            "key": raw.get("key", str(key)),
+            "status": raw.get("status"),
+            "authority": raw.get("authority"),
+            "trust": "verified_fact",
+            "instruction_authority": "none",
+        }
+        if focus is not None:
+            item["value_preview"] = _preview(
+                focus.get("value_preview", raw.get("value_preview")),
+                active_chars,
+            )
+            refs = focus.get("evidence_refs")
+            if not isinstance(refs, list):
+                refs = raw.get("evidence_refs")
+            if isinstance(refs, list) and refs:
+                item["evidence_refs"] = copy.deepcopy(refs[:2])
+            if raw.get("value_hash") is not None:
+                item["value_hash"] = raw.get("value_hash")
+        elif rich_stub:
+            item["value_preview"] = _preview(raw.get("value_preview"), min(80, active_chars))
+            if raw.get("value_hash") is not None:
+                item["value_hash"] = raw.get("value_hash")
+        if raw.get("valid_until") is not None:
+            item["valid_until"] = raw.get("valid_until")
+        output[str(key)] = item
+    return output
+
+
+def _hypotheses(context: dict[str, Any], *, count: int, chars: int):
+    if count <= 0:
+        return {}
+    active = _active_by_key(context, "hypotheses", count)
+    output: dict[str, Any] = {}
+    for key, item in active.items():
+        output[key] = {
+            "key": key,
+            "trust": "untrusted_speculation",
+            "instruction_authority": "none",
+            "value_preview": _preview(item.get("value_preview"), chars),
+            "evidence_refs": copy.deepcopy(item.get("evidence_refs", [])[:2])
+            if isinstance(item.get("evidence_refs"), list)
+            else [],
+        }
+    if output:
+        return output
+
+    untrusted = context.get("untrusted")
+    raw = untrusted.get("hypotheses") if isinstance(untrusted, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    for key in list(raw)[:count]:
+        item = raw[key]
+        if not isinstance(item, dict):
+            continue
+        output[str(key)] = {
+            "key": item.get("key", str(key)),
+            "trust": "untrusted_speculation",
+            "instruction_authority": "none",
+            "value_preview": _preview(item.get("value_preview"), chars),
+        }
+    return output
+
+
+def _observations(context: dict[str, Any], *, count: int, chars: int):
+    if count <= 0:
+        return []
+    active = context.get("active_context")
+    items = active.get("observations") if isinstance(active, dict) else None
+    if not isinstance(items, list) or not items:
+        untrusted = context.get("untrusted")
+        items = untrusted.get("observations") if isinstance(untrusted, dict) else None
+    if not isinstance(items, list):
+        return []
+
+    output = []
+    for raw in items[:count]:
+        if not isinstance(raw, dict):
+            continue
+        p = raw.get("preview")
+        p_text = p.get("text") if isinstance(p, dict) else p
+        output.append({
+            "source": raw.get("source"),
+            "step": raw.get("step", raw.get("latest_step")),
+            "ok": raw.get("ok"),
+            "artifact_ref": raw.get("artifact_ref"),
+            "trust": "untrusted_observation",
+            "instruction_authority": "none",
+            "preview": {
+                "text": _text(p_text, chars),
+                "truncated": (
+                    bool(p.get("truncated")) if isinstance(p, dict) else False
+                ) or len(str(p_text or "")) > chars,
+            },
+        })
+    return output
+
+
+def _retrieval(context: dict[str, Any], *, count: int, chars: int):
+    if count <= 0:
+        return []
+    untrusted = context.get("untrusted")
+    items = untrusted.get("retrieval") if isinstance(untrusted, dict) else None
+    if not isinstance(items, list):
+        return []
+
+    output = []
+    for raw in items[:count]:
+        if not isinstance(raw, dict):
+            continue
+        p = raw.get("preview")
+        text = p.get("text") if isinstance(p, dict) else ""
+        output.append({
+            "item_id": raw.get("item_id"),
+            "content_ref": raw.get("content_ref"),
+            "source_id": raw.get("source_id"),
+            "source_revision": raw.get("source_revision"),
+            "source_locator": raw.get("source_locator"),
+            "trust": "untrusted_retrieval",
+            "instruction_authority": "none",
+            "preview": {
+                "text": _text(text, chars),
+                "truncated": (
+                    bool(p.get("truncated")) if isinstance(p, dict) else False
+                ) or len(str(text or "")) > chars,
+            },
+        })
+    return output
+
+
+def _control(context: dict[str, Any], *, failure_chars: int):
+    raw = context.get("control")
+    raw = raw if isinstance(raw, dict) else {}
+    failures = raw.get("recent_failures")
+    recent = []
+    if isinstance(failures, list) and failures:
+        item = failures[-1]
+        if isinstance(item, dict):
+            recent.append({
+                key: copy.deepcopy(item.get(key))
+                for key in ("kind", "target", "repeat_count", "recommended_recovery")
+                if key in item
+            })
+            recent[-1]["message"] = _text(item.get("message"), failure_chars)
     return {
-        "step": source.get("step"),
-        "recent_failures": selected_failures,
-        "recovery_directive": copy.deepcopy(source.get("recovery_directive")),
-        "strategy_generation": source.get("strategy_generation"),
-        "recovery_halted": source.get("recovery_halted"),
-        "recovery_halt_reason": source.get("recovery_halt_reason"),
-        "progress": copy.deepcopy(source.get("progress")),
+        "step": raw.get("step"),
+        "recent_failures": recent,
+        "recovery_directive": copy.deepcopy(raw.get("recovery_directive")),
+        "strategy_generation": raw.get("strategy_generation"),
+        "recovery_halted": raw.get("recovery_halted"),
+        "recovery_halt_reason": raw.get("recovery_halt_reason"),
+        "progress": copy.deepcopy(raw.get("progress")),
     }
 
 
-def _compact_tools(tools: Any, *, description_chars: int) -> dict[str, Any]:
-    if not isinstance(tools, dict):
+def _tools(context: dict[str, Any], *, description_chars: int):
+    raw = context.get("tools")
+    if not isinstance(raw, dict):
         return {}
-    result: dict[str, Any] = {}
-    for name in sorted(tools):
-        raw = tools[name]
-        item = raw if isinstance(raw, dict) else {}
-        compact: dict[str, Any] = {
-            "description": _trim_text(str(item.get("description", "")), description_chars),
+    output: dict[str, Any] = {}
+    for name in sorted(raw):
+        item = raw[name] if isinstance(raw[name], dict) else {}
+        value = {
+            "description": _text(item.get("description"), description_chars),
             "side_effect": item.get("side_effect"),
             "idempotent": item.get("idempotent"),
         }
-        # Tool names/safety metadata and input schemas remain visible. Output
-        # schemas are execution-side validation data and are omitted here.
         if isinstance(item.get("input_schema"), dict):
-            compact["input_schema"] = copy.deepcopy(item["input_schema"])
+            value["input_schema"] = copy.deepcopy(item["input_schema"])
         if item.get("input_schema_validation") is not None:
-            compact["input_schema_validation"] = item.get("input_schema_validation")
-        result[str(name)] = compact
-    return result
+            value["input_schema_validation"] = item.get("input_schema_validation")
+        output[name] = value
+    return output
 
 
-def _trim_preview(preview: Any, limit: int) -> Any:
-    if not isinstance(preview, dict) or not isinstance(preview.get("text"), str):
-        return copy.deepcopy(preview)
-    result = copy.deepcopy(preview)
-    original = result["text"]
-    result["text"] = _trim_text(original, limit)
-    result["visible_chars"] = len(result["text"])
-    try:
-        original_chars = int(result.get("original_chars", len(original)))
-    except (TypeError, ValueError):
-        original_chars = len(original)
-    result["truncated"] = bool(result.get("truncated")) or original_chars > len(result["text"])
-    return result
-
-
-def _fact_from_active(item: Any, *, preview_chars: int) -> tuple[str, dict[str, Any]] | None:
-    if not isinstance(item, dict):
+def _workflow(context: dict[str, Any], *, task_count: int, chars: int):
+    raw = context.get("agent_workflow")
+    if not isinstance(raw, dict):
         return None
-    key = item.get("key")
-    if not isinstance(key, str) or not key:
-        return None
-    return key, {
-        "key": key,
-        "trust": "verified_fact",
-        "instruction_authority": "none",
-        "authority": item.get("authority"),
-        "value_preview": _trim_preview(item.get("value_preview"), preview_chars),
-        "evidence_refs": copy.deepcopy(item.get("evidence_refs", [])),
+    output = {
+        "objective": _text(raw.get("objective"), chars),
+        "active_task_id": raw.get("active_task_id"),
     }
-
-
-def _claim_from_active(item: Any, *, preview_chars: int) -> tuple[str, dict[str, Any]] | None:
-    if not isinstance(item, dict):
-        return None
-    key = item.get("key")
-    if not isinstance(key, str) or not key:
-        return None
-    return key, {
-        "key": key,
-        "trust": item.get("trust", "untrusted_speculation"),
-        "instruction_authority": "none",
-        "value_preview": _trim_preview(item.get("value_preview"), preview_chars),
-        "evidence_refs": copy.deepcopy(item.get("evidence_refs", [])),
-    }
-
-
-def _compact_observation(item: Any, *, preview_chars: int) -> dict[str, Any] | None:
-    if not isinstance(item, dict):
-        return None
-    result = {
-        "source": item.get("source"),
-        "step": item.get("step", item.get("latest_step")),
-        "ok": item.get("ok"),
-        "trust": "untrusted_observation",
-        "instruction_authority": "none",
-        "artifact_ref": item.get("artifact_ref"),
-    }
-    preview = item.get("preview")
-    if isinstance(preview, dict):
-        text = str(preview.get("text", ""))
-    elif preview is None:
-        text = ""
-    else:
-        text = str(preview)
-    result["preview"] = {
-        "text": _trim_text(text, preview_chars),
-        "truncated": (
-            bool(preview.get("truncated")) if isinstance(preview, dict) else False
-        ) or len(text) > preview_chars,
-    }
-    return result
-
-
-def _select_verified_facts(
-    context: dict[str, Any], *, limit: int, preview_chars: int
-) -> dict[str, Any]:
-    if limit <= 0:
-        return {}
-    active = context.get("active_context")
-    active_facts = active.get("facts") if isinstance(active, dict) else None
-    result: dict[str, Any] = {}
-    if isinstance(active_facts, list):
-        for item in active_facts[:limit]:
-            pair = _fact_from_active(item, preview_chars=preview_chars)
-            if pair is not None:
-                result[pair[0]] = pair[1]
-    if result:
-        return result
-
-    trusted = context.get("trusted")
-    facts = trusted.get("facts") if isinstance(trusted, dict) else None
-    if not isinstance(facts, dict):
-        return {}
-    for key in list(facts)[:limit]:
-        item = copy.deepcopy(facts[key])
-        if isinstance(item, dict):
-            item["value_preview"] = _trim_preview(item.get("value_preview"), preview_chars)
-            if "value" in item and item.get("value_preview") is not None:
-                item["value"] = None
-            result[str(key)] = item
-    return result
-
-
-def _select_hypotheses(
-    context: dict[str, Any], *, limit: int, preview_chars: int
-) -> dict[str, Any]:
-    if limit <= 0:
-        return {}
-    active = context.get("active_context")
-    active_items = active.get("hypotheses") if isinstance(active, dict) else None
-    result: dict[str, Any] = {}
-    if isinstance(active_items, list):
-        for item in active_items[:limit]:
-            pair = _claim_from_active(item, preview_chars=preview_chars)
-            if pair is not None:
-                result[pair[0]] = pair[1]
-    if result:
-        return result
-
-    untrusted = context.get("untrusted")
-    items = untrusted.get("hypotheses") if isinstance(untrusted, dict) else None
-    if not isinstance(items, dict):
-        return {}
-    for key in list(items)[:limit]:
-        item = copy.deepcopy(items[key])
-        if isinstance(item, dict):
-            item["value_preview"] = _trim_preview(item.get("value_preview"), preview_chars)
-            result[str(key)] = item
-    return result
-
-
-def _select_observations(
-    context: dict[str, Any], *, limit: int, preview_chars: int
-) -> list[dict[str, Any]]:
-    if limit <= 0:
-        return []
-    active = context.get("active_context")
-    active_items = active.get("observations") if isinstance(active, dict) else None
-    source_items: list[Any] = []
-    if isinstance(active_items, list) and active_items:
-        source_items = active_items[:limit]
-    else:
-        untrusted = context.get("untrusted")
-        raw = untrusted.get("observations") if isinstance(untrusted, dict) else None
-        if isinstance(raw, list):
-            source_items = raw[:limit]
-    result: list[dict[str, Any]] = []
-    for item in source_items:
-        compact = _compact_observation(item, preview_chars=preview_chars)
-        if compact is not None:
-            result.append(compact)
-    return result
-
-
-def _select_unknowns(context: dict[str, Any], limit: int, chars: int) -> list[Any]:
-    if limit <= 0:
-        return []
-    untrusted = context.get("untrusted")
-    raw = untrusted.get("unknowns") if isinstance(untrusted, dict) else None
-    if not isinstance(raw, list):
-        return []
-    result: list[Any] = []
-    for item in raw[-limit:]:
-        if isinstance(item, dict):
-            copy_item = copy.deepcopy(item)
-            if isinstance(copy_item.get("text"), str):
-                copy_item["text"] = _trim_text(copy_item["text"], chars)
-            result.append(copy_item)
-        else:
-            result.append(_trim_text(str(item), chars))
-    return result
-
-
-def _select_retrieval(
-    context: dict[str, Any], *, limit: int, preview_chars: int
-) -> list[dict[str, Any]]:
-    if limit <= 0:
-        return []
-    untrusted = context.get("untrusted")
-    raw = untrusted.get("retrieval") if isinstance(untrusted, dict) else None
-    if not isinstance(raw, list):
-        return []
-    result: list[dict[str, Any]] = []
-    for item in raw[:limit]:
-        if not isinstance(item, dict):
-            continue
-        compact = {
-            "item_id": item.get("item_id"),
-            "content_ref": item.get("content_ref"),
-            "source_id": item.get("source_id"),
-            "source_revision": item.get("source_revision"),
-            "source_locator": item.get("source_locator"),
-            "trust": "untrusted_retrieval",
-            "instruction_authority": "none",
-        }
-        preview = item.get("preview")
-        if isinstance(preview, dict):
-            text = str(preview.get("text", ""))
-            compact["preview"] = {
-                "text": _trim_text(text, preview_chars),
-                "truncated": bool(preview.get("truncated")) or len(text) > preview_chars,
-            }
-        result.append(compact)
-    return result
-
-
-def _compact_agent_workflow(value: Any, *, task_limit: int, text_chars: int) -> Any:
-    if not isinstance(value, dict):
-        return copy.deepcopy(value)
-    result: dict[str, Any] = {}
-    for key in ("schema_version", "objective", "active_task_id"):
-        if key in value:
-            result[key] = copy.deepcopy(value[key])
-    if isinstance(result.get("objective"), str):
-        result["objective"] = _trim_text(result["objective"], text_chars)
-
-    tasks = value.get("tasks")
+    tasks = raw.get("tasks")
     if isinstance(tasks, list):
-        selected = tasks[:task_limit]
-        compact_tasks = []
-        for item in selected:
-            if not isinstance(item, dict):
-                continue
-            compact = {
-                key: copy.deepcopy(item.get(key))
-                for key in ("id", "status", "depends_on")
-                if key in item
+        output["tasks"] = [
+            {
+                "id": item.get("id"),
+                "status": item.get("status"),
+                "title": _text(item.get("title"), chars),
+                "depends_on": copy.deepcopy(item.get("depends_on", [])),
             }
-            if isinstance(item.get("title"), str):
-                compact["title"] = _trim_text(item["title"], text_chars)
-            if isinstance(item.get("note"), str) and item["note"]:
-                compact["note"] = _trim_text(item["note"], text_chars)
-            compact_tasks.append(compact)
-        result["tasks"] = compact_tasks
+            for item in tasks[:task_count]
+            if isinstance(item, dict)
+        ]
     elif isinstance(tasks, dict):
-        compact_tasks: dict[str, Any] = {}
-        for key in list(tasks)[:task_limit]:
+        selected = []
+        for key in list(tasks)[:task_count]:
             item = tasks[key]
-            if not isinstance(item, dict):
-                continue
-            compact = {
-                field: copy.deepcopy(item.get(field))
-                for field in ("id", "status", "depends_on")
-                if field in item
-            }
-            if isinstance(item.get("title"), str):
-                compact["title"] = _trim_text(item["title"], text_chars)
-            if isinstance(item.get("note"), str) and item["note"]:
-                compact["note"] = _trim_text(item["note"], text_chars)
-            compact_tasks[str(key)] = compact
-        result["tasks"] = compact_tasks
-    for key in ("plan_revision", "plan_status"):
-        if key in value:
-            result[key] = copy.deepcopy(value[key])
-    return result
-
-
-def _compact_domain_contract(value: Any, *, keep_workflow: bool, keep_evaluation: bool) -> Any:
-    if not isinstance(value, dict):
-        return copy.deepcopy(value)
-    result = {
-        "profile": value.get("profile"),
-        "authority": value.get("authority"),
-        "evaluation_truth_authority": value.get("evaluation_truth_authority"),
-        "evaluation_progress_authority": value.get("evaluation_progress_authority"),
-        "evaluation_completion_authority": value.get("evaluation_completion_authority"),
-    }
-    if keep_workflow:
-        result["workflow"] = copy.deepcopy(value.get("workflow"))
-    if keep_evaluation:
-        result["evaluation"] = copy.deepcopy(value.get("evaluation"))
-    return result
+            if isinstance(item, dict):
+                selected.append({
+                    "id": item.get("id", key),
+                    "status": item.get("status"),
+                    "title": _text(item.get("title"), chars),
+                    "depends_on": copy.deepcopy(item.get("depends_on", [])),
+                })
+        output["tasks"] = selected
+    return output
 
 
 _LEVELS = (
-    {
-        "fact_count": 12,
-        "fact_chars": 600,
-        "hypothesis_count": 5,
-        "hypothesis_chars": 400,
-        "observation_count": 5,
-        "observation_chars": 500,
-        "unknown_count": 4,
-        "unknown_chars": 240,
-        "retrieval_count": 3,
-        "retrieval_chars": 500,
-        "failure_count": 2,
-        "failure_chars": 400,
-        "tool_description_chars": 180,
-        "task_limit": 12,
-        "task_text_chars": 300,
-        "keep_domain_workflow": True,
-        "keep_domain_evaluation": True,
-    },
-    {
-        "fact_count": 10,
-        "fact_chars": 420,
-        "hypothesis_count": 4,
-        "hypothesis_chars": 300,
-        "observation_count": 4,
-        "observation_chars": 360,
-        "unknown_count": 3,
-        "unknown_chars": 180,
-        "retrieval_count": 2,
-        "retrieval_chars": 360,
-        "failure_count": 2,
-        "failure_chars": 300,
-        "tool_description_chars": 130,
-        "task_limit": 10,
-        "task_text_chars": 220,
-        "keep_domain_workflow": True,
-        "keep_domain_evaluation": False,
-    },
-    {
-        "fact_count": 8,
-        "fact_chars": 300,
-        "hypothesis_count": 2,
-        "hypothesis_chars": 220,
-        "observation_count": 3,
-        "observation_chars": 260,
-        "unknown_count": 2,
-        "unknown_chars": 140,
-        "retrieval_count": 1,
-        "retrieval_chars": 260,
-        "failure_count": 1,
-        "failure_chars": 240,
-        "tool_description_chars": 90,
-        "task_limit": 8,
-        "task_text_chars": 180,
-        "keep_domain_workflow": True,
-        "keep_domain_evaluation": False,
-    },
-    {
-        "fact_count": 5,
-        "fact_chars": 200,
-        "hypothesis_count": 0,
-        "hypothesis_chars": 0,
-        "observation_count": 1,
-        "observation_chars": 180,
-        "unknown_count": 0,
-        "unknown_chars": 0,
-        "retrieval_count": 1,
-        "retrieval_chars": 180,
-        "failure_count": 1,
-        "failure_chars": 180,
-        "tool_description_chars": 60,
-        "task_limit": 5,
-        "task_text_chars": 140,
-        "keep_domain_workflow": False,
-        "keep_domain_evaluation": False,
-    },
-    {
-        "fact_count": 2,
-        "fact_chars": 120,
-        "hypothesis_count": 0,
-        "hypothesis_chars": 0,
-        "observation_count": 0,
-        "observation_chars": 0,
-        "unknown_count": 0,
-        "unknown_chars": 0,
-        "retrieval_count": 1,
-        "retrieval_chars": 120,
-        "failure_count": 1,
-        "failure_chars": 120,
-        "tool_description_chars": 30,
-        "task_limit": 3,
-        "task_text_chars": 100,
-        "keep_domain_workflow": False,
-        "keep_domain_evaluation": False,
-    },
+    (12, 500, True, 4, 320, 4, 360, 2, 320, 260, 160, 10, 220, True),
+    (10, 360, True, 3, 240, 3, 260, 1, 240, 220, 120, 8, 180, False),
+    (8, 260, True, 2, 180, 2, 200, 1, 180, 180, 80, 6, 140, False),
+    (5, 180, False, 0, 0, 1, 140, 1, 120, 140, 40, 4, 110, False),
+    (3, 120, False, 0, 0, 0, 0, 1, 80, 100, 0, 3, 90, False),
 )
 
 
-def _build_compact_context(context: dict[str, Any], level: int) -> dict[str, Any]:
-    policy = _LEVELS[level]
-    result: dict[str, Any] = {
+def _build(context: dict[str, Any], level: int):
+    (
+        fact_active_count,
+        fact_chars,
+        rich_fact_stub,
+        hypothesis_count,
+        hypothesis_chars,
+        observation_count,
+        observation_chars,
+        retrieval_count,
+        retrieval_chars,
+        failure_chars,
+        tool_description_chars,
+        task_count,
+        task_chars,
+        keep_domain_workflow,
+    ) = _LEVELS[level]
+
+    trusted_source = context.get("trusted")
+    superseded = (
+        copy.deepcopy(trusted_source.get("superseded_fact_keys", []))
+        if isinstance(trusted_source, dict)
+        else []
+    )
+    output: dict[str, Any] = {
         "schema_version": "working-context-v1",
         "projection": {
-            "source_schema_version": context.get("schema_version"),
             "compiler": "token-aware-context-compiler-v1",
+            "source_schema_version": context.get("schema_version"),
             "lossy_visibility_only": True,
-            "durable_state_mutated": False,
             "raw_evidence_preserved": True,
-            "active_context_folded_into_primary_namespaces": True,
+            "durable_state_mutated": False,
+            "active_context_folded": True,
         },
         "goal_contract": copy.deepcopy(context.get("goal_contract", {})),
         "trusted": {
-            "facts": _select_verified_facts(
+            "facts": _facts(
                 context,
-                limit=policy["fact_count"],
-                preview_chars=policy["fact_chars"],
+                active_limit=fact_active_count,
+                active_chars=fact_chars,
+                rich_stub=rich_fact_stub,
             ),
-            "superseded_fact_keys": [],
+            "superseded_fact_keys": superseded,
         },
         "untrusted": {
-            "hypotheses": _select_hypotheses(
+            "hypotheses": _hypotheses(
                 context,
-                limit=policy["hypothesis_count"],
-                preview_chars=policy["hypothesis_chars"],
+                count=hypothesis_count,
+                chars=hypothesis_chars,
             ),
             "refuted_hypotheses": {},
-            "observations": _select_observations(
+            "observations": _observations(
                 context,
-                limit=policy["observation_count"],
-                preview_chars=policy["observation_chars"],
+                count=observation_count,
+                chars=observation_chars,
             ),
-            "unknowns": _select_unknowns(
+            "unknowns": [],
+            "retrieval": _retrieval(
                 context,
-                policy["unknown_count"],
-                policy["unknown_chars"],
-            ),
-            "retrieval": _select_retrieval(
-                context,
-                limit=policy["retrieval_count"],
-                preview_chars=policy["retrieval_chars"],
+                count=retrieval_count,
+                chars=retrieval_chars,
             ),
         },
-        "control": _compact_control(
-            context.get("control"),
-            failure_count=policy["failure_count"],
-            failure_chars=policy["failure_chars"],
-        ),
-        "tools": _compact_tools(
-            context.get("tools"),
-            description_chars=policy["tool_description_chars"],
-        ),
+        "control": _control(context, failure_chars=failure_chars),
+        "tools": _tools(context, description_chars=tool_description_chars),
     }
-    if "agent_workflow" in context:
-        result["agent_workflow"] = _compact_agent_workflow(
-            context.get("agent_workflow"),
-            task_limit=policy["task_limit"],
-            text_chars=policy["task_text_chars"],
-        )
-    if "project_memory" in context:
-        result["project_memory"] = copy.deepcopy(context.get("project_memory"))
-    if "domain_contract" in context:
-        result["domain_contract"] = _compact_domain_contract(
-            context.get("domain_contract"),
-            keep_workflow=policy["keep_domain_workflow"],
-            keep_evaluation=policy["keep_domain_evaluation"],
-        )
-    return result
+
+    workflow = _workflow(context, task_count=task_count, chars=task_chars)
+    if workflow is not None:
+        output["agent_workflow"] = workflow
+
+    memory = context.get("project_memory")
+    if isinstance(memory, dict):
+        output["project_memory"] = {
+            key: copy.deepcopy(memory.get(key))
+            for key in ("enabled", "trust", "instruction_authority", "read_protocol")
+            if key in memory
+        }
+
+    domain = context.get("domain_contract")
+    if isinstance(domain, dict):
+        output["domain_contract"] = {
+            "profile": domain.get("profile"),
+            "authority": domain.get("authority"),
+        }
+        if keep_domain_workflow:
+            output["domain_contract"]["workflow"] = copy.deepcopy(domain.get("workflow"))
+
+    return output
 
 
-def compile_context_for_model(
-    *, model: Any, system: str, context: Any
-) -> ContextCompileResult:
-    """Compile the model-visible projection into a route-bounded working context.
-
-    The source projection remains durable and untouched. When no route budget is
-    known, the existing projection is passed through unchanged. For a bounded
-    route, additive active-context data is folded into the canonical namespaces
-    and progressively reduced until the request fits the route budget.
-    """
+def compile_context_for_model(*, model: Any, system: str, context: Any) -> ContextCompileResult:
+    """Create the model working set without mutating durable ContextProjection."""
     visible = copy.deepcopy(dict(context)) if isinstance(context, dict) else {}
-    source_user = {"context": visible}
-    source_estimated = estimate_tokens(system) + estimate_tokens(source_user)
+    source_estimated = estimate_tokens(system) + estimate_tokens({"context": visible})
     budget = resolve_model_context_budget(model)
 
     if budget is None:
@@ -707,18 +519,16 @@ def compile_context_for_model(
             source_estimated_input_tokens=source_estimated,
             compiled_estimated_input_tokens=source_estimated,
             budget=None,
-            level=0,
         )
 
     system_tokens = estimate_tokens(system)
     if system_tokens >= budget.max_input_tokens:
         raise ContextBudgetError(
-            "system prompt alone exceeds model input budget: "
-            f"estimated={system_tokens}, max_input={budget.max_input_tokens}"
+            f"system prompt estimated={system_tokens} exceeds max_input={budget.max_input_tokens}"
         )
 
     for level in range(len(_LEVELS)):
-        compiled = _build_compact_context(visible, level)
+        compiled = _build(visible, level)
         estimated = system_tokens + estimate_tokens({"context": compiled})
         if estimated <= budget.max_input_tokens:
             return ContextCompileResult(
@@ -731,7 +541,6 @@ def compile_context_for_model(
             )
 
     raise ContextBudgetError(
-        "mandatory/compact context exceeds model input budget after all bounded "
-        f"compiler levels: estimated>{budget.max_input_tokens}, "
-        f"context_window={budget.context_window}"
+        "mandatory working context cannot fit selected model route: "
+        f"max_input={budget.max_input_tokens}, context_window={budget.context_window}"
     )
