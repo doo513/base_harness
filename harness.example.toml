@@ -29,6 +29,29 @@ endpoint = "https://example.invalid/v1"
 api_key = "env:MODEL_API_KEY"
 timeout_seconds = 120
 
+# Native local structured-output routes. Set default_model to one of these aliases
+# instead of routing Ollama/LM Studio through generic openai-compatible mode.
+[models.ollama]
+provider = "ollama"
+model = "gemma3:latest"
+endpoint = "http://127.0.0.1:11434"
+timeout_seconds = 120
+
+[models.ollama.options]
+temperature = 0
+max_tokens = 1024
+think = false
+
+[models.lmstudio]
+provider = "lm-studio"
+model = "local-model"
+endpoint = "http://127.0.0.1:1234/v1"
+timeout_seconds = 120
+
+[models.lmstudio.options]
+temperature = 0
+max_tokens = 1024
+
 [models.local]
 provider = "command"
 command = "local-agent --json"
