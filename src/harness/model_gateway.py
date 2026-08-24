@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from time import monotonic, sleep
 from typing import Any, Callable, Mapping, Protocol
 import hashlib
 import json
-import re
+import os
 import shlex
 import subprocess
 import urllib.error
@@ -13,6 +13,16 @@ import urllib.request
 from urllib.parse import urlparse
 
 from harness.config import ConfigError, ModelConfig, SecretResolver
+from harness.core.failures import (
+    FailureContext,
+    FailureKind,
+    FailureOrigin,
+    FailurePhase,
+    FailurePolicyEngine,
+    PolicyDecision,
+)
+from harness.model_error_envelope import extract_embedded_model_error
+from harness.model_protocol import DecisionProtocolError, decode_decision_text, decision_json_schema
 
 
 class ModelGatewayError(RuntimeError):
@@ -20,10 +30,35 @@ class ModelGatewayError(RuntimeError):
 
 
 class ProviderError(ModelGatewayError):
-    def __init__(self, message: str, *, kind: str = "provider_error", retryable: bool = False):
+    """Provider adapter transport for typed data; policy never branches on this class."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "provider_error",
+        retryable: bool = False,
+        details: Mapping[str, Any] | None = None,
+    ):
         super().__init__(message)
-        self.kind = kind
-        self.retryable = retryable
+        self.kind = str(kind)
+        self.retryable = bool(retryable)
+        self.details = dict(details or {})
+
+
+class ModelGatewayFailure(ModelGatewayError):
+    """Final normalized model-boundary failure after Gateway policy is exhausted."""
+
+    def __init__(self, context: FailureContext, policy_decision: PolicyDecision):
+        super().__init__(
+            f"model gateway failed: {context.kind.value}: {context.message}"
+        )
+        self.failure_context = context
+        self.policy_decision = policy_decision
+        # Compatibility metadata for older callers while routing remains
+        # FailureContext-driven.
+        self.kind = context.kind.value
+        self.retryable = context.retryable
 
 
 @dataclass(frozen=True)
@@ -66,6 +101,8 @@ class ModelUsage:
 
 @dataclass(frozen=True)
 class ModelResponse:
+    """Provider plugin response contract before Gateway normalization."""
+
     content: str
     provider_id: str
     model_id: str | None
@@ -75,6 +112,34 @@ class ModelResponse:
     raw_metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class NormalizedModelResponse:
+    """Single schema exposed by ModelGateway independent of provider."""
+
+    content: str
+    route_alias: str
+    provider_id: str
+    model_id: str | None
+    provider_call_id: str
+    request_id: str | None
+    usage: ModelUsage
+    latency_seconds: float
+    raw_metadata: dict[str, Any] = field(default_factory=dict)
+
+    def dump(self) -> dict[str, Any]:
+        return {
+            "schema_version": "normalized-model-response-v1",
+            "route_alias": self.route_alias,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "provider_call_id": self.provider_call_id,
+            "request_id": self.request_id,
+            "usage": self.usage.dump(),
+            "latency_seconds": float(self.latency_seconds),
+            "raw_metadata": dict(self.raw_metadata),
+        }
+
+
 class ModelProvider(Protocol):
     provider_id: str
     capabilities: ProviderCapabilities
@@ -82,90 +147,15 @@ class ModelProvider(Protocol):
     def complete(self, request: ModelRequest) -> ModelResponse: ...
 
 
-_DECISION_KINDS = (
-    "plan", "task", "propose", "verify_claim", "tool", "retrieve", "refute", "complete"
-)
-
-_DECISION_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["kind", "payload"],
-    "properties": {
-        "kind": {"type": "string", "enum": list(_DECISION_KINDS)},
-        "payload": {"type": "object"},
-    },
-}
-
-
-def _strip_json_fence(content: str) -> str:
-    text = content.strip()
-    match = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
-    return match.group(1).strip() if match else text
-
-
-def _looks_truncated_json(text: str, exc: json.JSONDecodeError) -> bool:
-    stripped = text.rstrip()
-    if not stripped:
-        return False
-    if stripped.count("{") > stripped.count("}") or stripped.count("[") > stripped.count("]"):
-        return True
-    return exc.pos >= max(0, len(stripped) - 2)
-
-
-def _canonical_decision_json(content: str) -> str:
-    text = _strip_json_fence(content)
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError as exc:
-        kind = "protocol_truncated" if _looks_truncated_json(text, exc) else "protocol_invalid_json"
-        raise ProviderError(
-            f"local model returned invalid decision JSON: {exc.msg}",
-            kind=kind,
-            retryable=True,
-        ) from exc
-
-    if not isinstance(obj, dict):
-        raise ProviderError("decision must be a JSON object", kind="protocol_schema", retryable=True)
-    if set(obj) != {"kind", "payload"}:
-        raise ProviderError(
-            "decision object must contain exactly kind and payload",
-            kind="protocol_schema",
-            retryable=True,
-        )
-    kind = obj.get("kind")
-    payload = obj.get("payload")
-    if kind not in _DECISION_KINDS or not isinstance(payload, dict):
-        raise ProviderError("decision kind/payload violates harness protocol", kind="protocol_schema", retryable=True)
-
-    if kind == "tool":
-        tool = payload.get("tool")
-        if not isinstance(tool, str) or not tool.strip():
-            raise ProviderError("tool.tool must be a non-empty string", kind="protocol_schema", retryable=True)
-        if not isinstance(payload.get("args", {}), dict):
-            raise ProviderError("tool.args must be an object", kind="protocol_schema", retryable=True)
-    elif kind == "plan":
-        objective = payload.get("objective")
-        tasks = payload.get("tasks")
-        if not isinstance(objective, str) or not objective.strip() or not isinstance(tasks, list) or not tasks:
-            raise ProviderError("plan requires non-empty objective and tasks", kind="protocol_schema", retryable=True)
-    elif kind in {"verify_claim", "refute"}:
-        key = payload.get("key")
-        if not isinstance(key, str) or not key.strip():
-            raise ProviderError(f"{kind}.key must be a non-empty string", kind="protocol_schema", retryable=True)
-    elif kind == "retrieve":
-        query = payload.get("query")
-        if not isinstance(query, str) or not query.strip():
-            raise ProviderError("retrieve.query must be a non-empty string", kind="protocol_schema", retryable=True)
-
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+_DECISION_JSON_SCHEMA: dict[str, Any] = decision_json_schema()
 
 
 def _repair_request(request: ModelRequest, error_kind: str) -> ModelRequest:
     suffix = (
-        "\n\nLOCAL MODEL PROTOCOL REPAIR:\n"
+        "\n\nMODEL PROTOCOL REPAIR:\n"
         f"The previous answer failed with {error_kind}. "
-        "Return exactly one complete JSON object matching the harness decision schema. "
-        "Do not use markdown fences or commentary. Never emit an empty tool name."
+        "Return exactly one complete JSON object matching the Harness decision schema. "
+        "Do not use markdown fences or commentary. Do not invent missing tool names or task IDs."
     )
     return ModelRequest(system=request.system, user=request.user + suffix)
 
@@ -193,13 +183,25 @@ def _http_json(
             detail = ""
         retryable = exc.code == 429 or 500 <= exc.code < 600
         kind = "rate_limit" if exc.code == 429 else "http_error"
-        raise ProviderError(f"provider HTTP {exc.code}: {detail}", kind=kind, retryable=retryable) from exc
+        raise ProviderError(
+            f"provider HTTP {exc.code}: {detail}",
+            kind=kind,
+            retryable=retryable,
+            details={"http_status": exc.code},
+        ) from exc
     except urllib.error.URLError as exc:
-        raise ProviderError(f"provider connection failed: {exc}", kind="network_error", retryable=True) from exc
+        raise ProviderError(
+            f"provider connection failed: {exc}",
+            kind="network_error",
+            retryable=True,
+        ) from exc
     except TimeoutError as exc:
         raise ProviderError("provider request timed out", kind="timeout", retryable=True) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProviderError(f"provider response is not valid JSON: {exc}", kind="invalid_response") from exc
+        raise ProviderError(
+            f"provider response is not valid JSON: {exc}",
+            kind="invalid_response",
+        ) from exc
     if not isinstance(payload, dict):
         raise ProviderError("provider response must be a JSON object", kind="invalid_response")
     return payload, request_id
@@ -207,7 +209,13 @@ def _http_json(
 
 class CommandProvider:
     provider_id = "command"
-    capabilities = ProviderCapabilities(structured_output=True)
+    capabilities = ProviderCapabilities(structured_output=False)
+
+    _BASE_ENV_KEYS = (
+        "PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR",
+        "TMP", "TEMP", "LANG", "LC_ALL", "VIRTUAL_ENV",
+        "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+    )
 
     def __init__(self, config: ModelConfig):
         if config.provider != "command" or not config.command:
@@ -217,6 +225,18 @@ class CommandProvider:
             raise ConfigError("command model argv must not be empty")
         self.argv = argv
         self.timeout_seconds = float(config.timeout_seconds)
+        self.options = dict(config.options)
+        allowlist = self.options.get("command_env_allowlist", [])
+        if not isinstance(allowlist, list) or any(not isinstance(item, str) or not item for item in allowlist):
+            raise ConfigError("command_env_allowlist must be a list of non-empty environment variable names")
+        self.command_env_allowlist = tuple(dict.fromkeys(allowlist))
+        self.command_inherit_env = bool(self.options.get("command_inherit_env", False))
+
+    def _environment(self) -> dict[str, str] | None:
+        if self.command_inherit_env:
+            return None
+        keys = tuple(dict.fromkeys((*self._BASE_ENV_KEYS, *self.command_env_allowlist)))
+        return {key: os.environ[key] for key in keys if key in os.environ}
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         started = monotonic()
@@ -228,23 +248,47 @@ class CommandProvider:
                 capture_output=True,
                 timeout=self.timeout_seconds,
                 shell=False,
+                env=self._environment(),
             )
         except subprocess.TimeoutExpired as exc:
             raise ProviderError("model command timed out", kind="timeout", retryable=True) from exc
         except OSError as exc:
             raise ProviderError(f"model command failed to start: {exc}", kind="execution_error") from exc
         latency = monotonic() - started
+        stderr = proc.stderr or ""
+        stderr_digest = hashlib.sha256(stderr.encode("utf-8", errors="replace")).hexdigest()
         if proc.returncode != 0:
+            embedded = extract_embedded_model_error(stderr)
+            if embedded is not None:
+                raise ProviderError(
+                    embedded.message,
+                    kind=embedded.kind,
+                    retryable=embedded.retryable,
+                    details={
+                        "exit_code": int(proc.returncode),
+                        "stderr_digest": stderr_digest,
+                        "adapter_error_envelope": True,
+                    },
+                )
             raise ProviderError(
-                f"model command failed ({proc.returncode}): {proc.stderr[-2000:]}",
+                f"model command failed ({proc.returncode}): {stderr[-2000:]}",
                 kind="execution_error",
+                details={
+                    "exit_code": int(proc.returncode),
+                    "stderr_digest": stderr_digest,
+                },
             )
         return ModelResponse(
             content=proc.stdout.strip(),
             provider_id=self.provider_id,
             model_id=None,
             latency_seconds=latency,
-            raw_metadata={"returncode": proc.returncode},
+            raw_metadata={
+                "returncode": proc.returncode,
+                "stderr_digest": stderr_digest,
+                "environment_policy": "inherit" if self.command_inherit_env else "minimal_allowlist",
+                "environment_allowlist": list(self.command_env_allowlist),
+            },
         )
 
 
@@ -518,7 +562,9 @@ class ProviderRegistry:
 
 
 class ModelGateway:
-    """Provider-neutral model boundary compatible with LLMController.ModelAdapter."""
+    """Provider-neutral model boundary with one normalization and policy pipeline."""
+
+    normalizes_decision_protocol = True
 
     def __init__(
         self,
@@ -530,6 +576,7 @@ class ModelGateway:
         registry: ProviderRegistry | None = None,
         max_attempts_per_model: int = 2,
         retry_backoff_seconds: float = 0.25,
+        failure_policy: FailurePolicyEngine | None = None,
     ):
         self.models = dict(models)
         if default_model not in self.models:
@@ -545,14 +592,17 @@ class ModelGateway:
         self.fallback_models = tuple(name for name in fallback_models if name != default_model)
         self.secret_resolver = secret_resolver or SecretResolver()
         self.registry = registry or ProviderRegistry.default()
+        self.failure_policy = failure_policy or FailurePolicyEngine()
         self.max_attempts_per_model = int(max_attempts_per_model)
         self.retry_backoff_seconds = float(retry_backoff_seconds)
         self._providers: dict[str, ModelProvider] = {}
+        self._call_sequence = 0
         self._telemetry = {
             "requests": 0,
             "failures": 0,
             "fallbacks": 0,
             "protocol_repairs": 0,
+            "lexical_repairs": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
@@ -560,7 +610,11 @@ class ModelGateway:
             "last_provider": None,
             "last_model": None,
             "last_request_id": None,
+            "last_provider_call_id": None,
             "last_error_kind": None,
+            "last_failure_context": None,
+            "last_policy_decision": None,
+            "last_response": None,
         }
 
     @classmethod
@@ -578,74 +632,265 @@ class ModelGateway:
             self._providers[alias] = provider
         return provider
 
-    def complete(self, *, system: str, user: str) -> str:
+    def _next_call_id(self) -> str:
+        self._call_sequence += 1
+        return f"model-call-{self._call_sequence:06d}"
+
+    def _provider_failure_context(
+        self,
+        *,
+        alias: str,
+        provider: ModelProvider,
+        call_id: str,
+        exc: ProviderError,
+    ) -> FailureContext:
+        config = self.models[alias]
+        raw_kind = exc.kind
+        if raw_kind == "configuration_error":
+            kind = FailureKind.IMPLEMENTATION_ERROR
+            origin = FailureOrigin.HARNESS
+            phase = FailurePhase.CONFIG_VALIDATE
+            fallback_safe = False
+        elif raw_kind.startswith("protocol_") or raw_kind == "protocol_boundary_violation":
+            kind = FailureKind.MODEL_PROTOCOL_ERROR
+            origin = FailureOrigin.MODEL
+            phase = FailurePhase.PROTOCOL_VALIDATE
+            fallback_safe = raw_kind != "protocol_boundary_violation"
+        else:
+            kind = FailureKind.MODEL_PROVIDER_ERROR
+            origin = FailureOrigin.PROVIDER
+            phase = FailurePhase.PROVIDER_CALL
+            fallback_safe = True
+        exit_code = exc.details.get("exit_code")
+        stderr_digest = exc.details.get("stderr_digest")
+        return FailureContext(
+            kind=kind,
+            origin=origin,
+            phase=phase,
+            message=str(exc),
+            retryable=bool(exc.retryable),
+            fallback_safe=fallback_safe,
+            route_alias=alias,
+            provider_id=getattr(provider, "provider_id", config.provider),
+            model_id=config.model,
+            call_id=call_id,
+            exit_code=exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
+            stderr_digest=stderr_digest if isinstance(stderr_digest, str) else None,
+            metadata={"provider_error_kind": raw_kind, **dict(exc.details)},
+        )
+
+    def _protocol_failure_context(
+        self,
+        *,
+        alias: str,
+        provider: ModelProvider,
+        call_id: str,
+        exc: DecisionProtocolError,
+    ) -> FailureContext:
+        config = self.models[alias]
+        return FailureContext(
+            kind=FailureKind.MODEL_PROTOCOL_ERROR,
+            origin=FailureOrigin.MODEL,
+            phase=FailurePhase.PROTOCOL_VALIDATE,
+            message=str(exc),
+            retryable=bool(exc.retryable),
+            fallback_safe=True,
+            route_alias=alias,
+            provider_id=getattr(provider, "provider_id", config.provider),
+            model_id=config.model,
+            call_id=call_id,
+            metadata={"protocol_error_kind": exc.kind},
+        )
+
+    @staticmethod
+    def _normalize_provider_response(
+        response: ModelResponse,
+        *,
+        alias: str,
+        call_id: str,
+    ) -> NormalizedModelResponse:
+        if not isinstance(response, ModelResponse):
+            raise ProviderError("provider must return ModelResponse", kind="invalid_response")
+        if not isinstance(response.content, str) or not response.content.strip():
+            raise ProviderError("provider returned empty assistant content", kind="empty_response", retryable=True)
+        if not isinstance(response.provider_id, str) or not response.provider_id:
+            raise ProviderError("provider response has invalid provider_id", kind="invalid_response")
+        if response.model_id is not None and not isinstance(response.model_id, str):
+            raise ProviderError("provider response has invalid model_id", kind="invalid_response")
+        if not isinstance(response.usage, ModelUsage):
+            raise ProviderError("provider response has invalid usage object", kind="invalid_response")
+        return NormalizedModelResponse(
+            content=response.content.strip(),
+            route_alias=alias,
+            provider_id=response.provider_id,
+            model_id=response.model_id,
+            provider_call_id=call_id,
+            request_id=response.request_id,
+            usage=response.usage,
+            latency_seconds=float(response.latency_seconds),
+            raw_metadata=dict(response.raw_metadata),
+        )
+
+    def _record_failure(self, context: FailureContext, decision: PolicyDecision) -> None:
+        self._telemetry["failures"] += 1
+        self._telemetry["last_error_kind"] = context.kind.value
+        self._telemetry["last_failure_context"] = context.dump()
+        self._telemetry["last_policy_decision"] = decision.dump()
+
+    def _record_success(self, response: NormalizedModelResponse) -> None:
+        self._telemetry["latency_seconds"] += float(response.latency_seconds)
+        self._telemetry["last_provider"] = response.provider_id
+        self._telemetry["last_model"] = response.model_id
+        self._telemetry["last_request_id"] = response.request_id
+        self._telemetry["last_provider_call_id"] = response.provider_call_id
+        self._telemetry["last_error_kind"] = None
+        self._telemetry["last_failure_context"] = None
+        self._telemetry["last_policy_decision"] = None
+        self._telemetry["last_response"] = response.dump()
+        if response.usage.input_tokens is not None:
+            self._telemetry["input_tokens"] += response.usage.input_tokens
+        if response.usage.output_tokens is not None:
+            self._telemetry["output_tokens"] += response.usage.output_tokens
+        if response.usage.total_tokens is not None:
+            self._telemetry["total_tokens"] += response.usage.total_tokens
+
+    def complete_response(self, *, system: str, user: str) -> NormalizedModelResponse:
         base_request = ModelRequest(system=system, user=user)
         aliases = (self.default_model, *self.fallback_models)
-        last_error: ProviderError | None = None
+        last_context: FailureContext | None = None
+        last_policy: PolicyDecision | None = None
+
         for alias_index, alias in enumerate(aliases):
             if alias_index > 0:
                 self._telemetry["fallbacks"] += 1
             provider = self._provider(alias)
-            protocol_enforced = bool(getattr(provider, "protocol_enforced", False))
             request = base_request
             for attempt in range(self.max_attempts_per_model):
+                call_id = self._next_call_id()
                 self._telemetry["requests"] += 1
+                context: FailureContext | None = None
                 try:
-                    response = provider.complete(request)
-                    content = _canonical_decision_json(response.content) if protocol_enforced else response.content
+                    raw_response = provider.complete(request)
+                    response = self._normalize_provider_response(raw_response, alias=alias, call_id=call_id)
+                    decoded = decode_decision_text(
+                        response.content,
+                        allow_control_character_repair=True,
+                    )
+                    if decoded.lexical_repaired:
+                        self._telemetry["lexical_repairs"] += 1
+                    response = replace(
+                        response,
+                        content=decoded.canonical_json,
+                        raw_metadata={
+                            **response.raw_metadata,
+                            "decision_protocol": "harness-json-decision",
+                            "lexical_repaired": decoded.lexical_repaired,
+                            "lexical_repair_kind": decoded.lexical_repair_kind,
+                        },
+                    )
                 except ProviderError as exc:
-                    self._telemetry["failures"] += 1
-                    self._telemetry["last_error_kind"] = exc.kind
-                    last_error = exc
-                    if protocol_enforced and exc.kind.startswith("protocol_") and attempt + 1 < self.max_attempts_per_model:
+                    context = self._provider_failure_context(
+                        alias=alias,
+                        provider=provider,
+                        call_id=call_id,
+                        exc=exc,
+                    )
+                except DecisionProtocolError as exc:
+                    context = self._protocol_failure_context(
+                        alias=alias,
+                        provider=provider,
+                        call_id=call_id,
+                        exc=exc,
+                    )
+                except Exception as exc:
+                    context = FailureContext(
+                        kind=FailureKind.IMPLEMENTATION_ERROR,
+                        origin=FailureOrigin.HARNESS,
+                        phase=FailurePhase.RESPONSE_NORMALIZE,
+                        message=f"model response normalization failed: {type(exc).__name__}: {exc}",
+                        retryable=False,
+                        fallback_safe=False,
+                        route_alias=alias,
+                        provider_id=getattr(provider, "provider_id", self.models[alias].provider),
+                        model_id=self.models[alias].model,
+                        call_id=call_id,
+                    )
+
+                if context is None:
+                    self._record_success(response)
+                    return response
+
+                attempts_remaining = attempt + 1 < self.max_attempts_per_model
+                fallback_available = alias_index + 1 < len(aliases)
+                policy = self.failure_policy.decide(
+                    context,
+                    attempts_remaining=attempts_remaining,
+                    fallback_available=fallback_available,
+                )
+                self._record_failure(context, policy)
+                last_context, last_policy = context, policy
+
+                if policy.retry_same_route:
+                    if context.kind is FailureKind.MODEL_PROTOCOL_ERROR:
+                        protocol_kind = str(
+                            context.metadata.get("protocol_error_kind")
+                            or context.metadata.get("provider_error_kind")
+                            or "protocol_error"
+                        )
+                        request = _repair_request(base_request, protocol_kind)
                         self._telemetry["protocol_repairs"] += 1
-                        request = _repair_request(base_request, exc.kind)
-                    elif not exc.retryable or attempt + 1 >= self.max_attempts_per_model:
-                        break
+                    else:
+                        request = base_request
                     if self.retry_backoff_seconds:
                         sleep(self.retry_backoff_seconds * (attempt + 1))
                     continue
+                if policy.fallback_allowed:
+                    break
+                raise ModelGatewayFailure(context, policy)
+            else:
+                continue
 
-                self._telemetry["latency_seconds"] += float(response.latency_seconds)
-                self._telemetry["last_provider"] = response.provider_id
-                self._telemetry["last_model"] = response.model_id
-                self._telemetry["last_request_id"] = response.request_id
-                self._telemetry["last_error_kind"] = None
-                if response.usage.input_tokens is not None:
-                    self._telemetry["input_tokens"] += response.usage.input_tokens
-                if response.usage.output_tokens is not None:
-                    self._telemetry["output_tokens"] += response.usage.output_tokens
-                if response.usage.total_tokens is not None:
-                    self._telemetry["total_tokens"] += response.usage.total_tokens
-                return content
+            # Inner loop broke only to use a policy-approved fallback route.
+            if last_policy is not None and last_policy.fallback_allowed:
+                continue
+            if last_context is not None and last_policy is not None:
+                raise ModelGatewayFailure(last_context, last_policy)
 
-        if last_error is not None:
-            raise ModelGatewayError(
-                f"all configured model routes failed; last={last_error.kind}: {last_error}"
-            ) from last_error
-        raise ModelGatewayError("all configured model routes failed")
+        if last_context is not None and last_policy is not None:
+            raise ModelGatewayFailure(last_context, last_policy)
+        context = FailureContext(
+            kind=FailureKind.IMPLEMENTATION_ERROR,
+            origin=FailureOrigin.HARNESS,
+            phase=FailurePhase.PROVIDER_CALL,
+            message="all configured model routes failed without a classified failure",
+        )
+        policy = self.failure_policy.decide(context)
+        raise ModelGatewayFailure(context, policy)
+
+    def complete(self, *, system: str, user: str) -> str:
+        return self.complete_response(system=system, user=user).content
 
     def telemetry_snapshot(self) -> dict[str, Any]:
         return dict(self._telemetry)
 
     def descriptor(self) -> dict[str, Any]:
         return {
-            "schema_version": "model-gateway-v2",
+            "schema_version": "model-gateway-v3",
             "default_model": self.default_model,
             "fallback_models": list(self.fallback_models),
             "max_attempts_per_model": self.max_attempts_per_model,
             "registered_providers": list(self.registry.providers()),
-            "local_protocol": {
-                "providers": ["ollama", "lm-studio"],
-                "structured_output": "decision-json-schema",
-                "repair_scope": "gateway-only-one-retry-within-model-attempt-budget",
-            },
+            "normalized_response_schema": "normalized-model-response-v1",
+            "decision_protocol": "harness-json-decision",
+            "retry_policy": self.failure_policy.descriptor(),
+            "command_environment_default": "minimal_allowlist",
             "models": {
                 alias: {
                     "provider": config.provider,
                     "model": config.model,
                     "endpoint": config.endpoint,
                     "api_key": config.api_key.descriptor() if config.api_key else None,
+                    "command": config.command,
                     "timeout_seconds": config.timeout_seconds,
                     "options": dict(config.options),
                 }
