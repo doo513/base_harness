@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: a44d0b1c950a4e5e1677c365471f1094104b0b4a
+- Source commit: aa82ec2d6d918b40c7aa0267797ffbc51276f3b3
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -69,5 +69,5 @@ E   ImportError: cannot import name '_extract_json_object' from 'harness.core.co
 =========================== short test summary info ============================
 ERROR tests/test_local_model_protocol_compat.py
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 error in 0.96s
+1 error in 0.57s
 ```
