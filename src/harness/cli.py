@@ -63,13 +63,11 @@ def main():
         default=os.environ.get("HARNESS_TASK_ARTIFACT_TARGET"),
         help="Relative evidence-backed deliverable path. Normally supplied by the conversational task intake layer.",
     )
-    parser.add_argument("--model-command",
-                        help="Legacy local model command. Overrides configured default_model.")
+    parser.add_argument("--model-command", help="Legacy local model command. Overrides configured default_model.")
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--resume", action="store_true",
                         help="Resume the persisted run in --run-dir instead of creating a new run.")
-    parser.add_argument("--task-revision",
-                        help="Stable task/input revision recorded in the run manifest.")
+    parser.add_argument("--task-revision", help="Stable task/input revision recorded in the run manifest.")
     parser.add_argument("--model-revision",
                         help="Override stable model/provider revision recorded in the run manifest.")
     parser.add_argument("--require-complete-provenance", action="store_true",
@@ -191,7 +189,7 @@ def main():
     enabled_plugins = tuple(item for item in config.plugins if item.enabled)
     if args.strict_tool_isolation and (enabled_mcp or enabled_plugins):
         parser.error(
-            "mcp-gateway-v1/plugin-gateway-v1 do not provide host-process isolation; "
+            "mcp-gateway-v2/plugin-gateway-v2 do not provide OS-level host-process isolation; "
             "disable those extensions or --strict-tool-isolation"
         )
     try:
@@ -203,9 +201,7 @@ def main():
             plugin_tools = plugin_gateway.discover_tools()
             collisions = sorted(set(extra_tools) & set(plugin_tools))
             if collisions:
-                raise ProfileCompositionError(
-                    "MCP/plugin tool collision: " + ", ".join(collisions)
-                )
+                raise ProfileCompositionError("MCP/plugin tool collision: " + ", ".join(collisions))
             extra_tools.update(plugin_tools)
         if extra_tools:
             profile = augment_profile_tools(profile, extra_tools)
@@ -233,6 +229,7 @@ def main():
         )
 
     gateway = None
+    model_preflight = None
     try:
         if args.model_command:
             gateway = ModelGateway.single_command(args.model_command)
@@ -242,10 +239,12 @@ def main():
                 default_model=config.default_model,
                 fallback_models=_configured_fallbacks(config),
             )
+        if gateway is not None:
+            model_preflight = gateway.preflight()
     except (ConfigError, ModelGatewayError) as exc:
         if mcp_gateway is not None:
             mcp_gateway.close()
-        parser.error(str(exc))
+        parser.error(f"model preflight failed: {exc}")
 
     controller = LLMController(gateway) if gateway is not None else DirectController()
     effective_model_revision = args.model_revision or (gateway.revision if gateway is not None else None)
@@ -271,14 +270,17 @@ def main():
             model_revision=effective_model_revision,
             require_complete_provenance=args.require_complete_provenance,
         )
+        if model_preflight is not None:
+            runtime.log("model.preflight", {**model_preflight, "authority": "diagnostic_only"})
         state = runtime.run()
         if memory_store is not None:
-            memory_publish_report = memory_store.publish_from_state(
-                state,
-                source_run_id=runtime.run_id,
-            )
+            memory_publish_report = memory_store.publish_from_state(state, source_run_id=runtime.run_id)
     except ResumeConflict as exc:
-        action = "use --resume with this run directory" if not args.resume else "check that --run-dir points to the intended persisted run"
+        action = (
+            "use --resume with this run directory"
+            if not args.resume
+            else "check that --run-dir points to the intended persisted run"
+        )
         parser.error(f"{exc}; {action}, or choose a fresh --run-dir")
     finally:
         if mcp_gateway is not None:
