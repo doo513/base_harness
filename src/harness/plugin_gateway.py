@@ -7,6 +7,7 @@ import copy
 import re
 
 from harness.config import PluginConfig
+from harness.config_contracts import validate_plugin_config_contract
 from harness.core.tools import (
     SandboxedArgvToolSpec,
     SandboxedCommandToolSpec,
@@ -17,11 +18,31 @@ from harness.core.tools import (
 
 PLUGIN_API_VERSION = "harness-plugin-v1"
 _PLUGIN_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_OPTION_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 ToolLike = ToolSpec | SandboxedCommandToolSpec | SandboxedArgvToolSpec | SandboxedSessionToolSpec
 
 
 class PluginError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class PluginStaticContract:
+    """Option contract read after import but before option-consuming factory call."""
+
+    api_version: str = PLUGIN_API_VERSION
+    allowed_options: tuple[str, ...] = ()
+
+    def validate(self) -> None:
+        if self.api_version != PLUGIN_API_VERSION:
+            raise PluginError(
+                f"unsupported plugin static contract API: {self.api_version!r}; expected {PLUGIN_API_VERSION!r}"
+            )
+        if len(self.allowed_options) != len(set(self.allowed_options)):
+            raise PluginError("plugin allowed_options must be unique")
+        for key in self.allowed_options:
+            if not isinstance(key, str) or not _OPTION_NAME_RE.fullmatch(key):
+                raise PluginError(f"invalid plugin option name in static contract: {key!r}")
 
 
 @dataclass(frozen=True)
@@ -54,19 +75,21 @@ class PluginManifest:
 class LoadedPlugin:
     config: PluginConfig
     manifest: PluginManifest
+    static_contract: PluginStaticContract
 
 
 class PluginGateway:
     """Explicit loader for already-installed trusted Python extensions.
 
-    Importing a Python module executes code in the host process. For that
-    reason plugins are never auto-installed or auto-discovered; only explicitly
-    enabled config entries are imported. Runtime tool/capability/isolation gates
-    still apply to contributed tools, but they cannot sandbox module import.
+    Importing a Python module executes code in the host process. This gateway
+    reduces configuration ambiguity but does NOT sandbox module import. Strict
+    host isolation therefore rejects Python plugins at the CLI/runtime boundary.
     """
 
     def __init__(self, configs: tuple[PluginConfig, ...]):
         self.configs = tuple(config for config in configs if config.enabled)
+        for config in self.configs:
+            validate_plugin_config_contract(config)
         self.loaded: dict[str, LoadedPlugin] = {}
         self._tools: dict[str, ToolLike] | None = None
 
@@ -86,6 +109,44 @@ class PluginGateway:
         manifest.validate()
         return manifest
 
+    @staticmethod
+    def _static_contract_from_module(module: Any, config: PluginConfig) -> PluginStaticContract:
+        provider = getattr(module, "harness_plugin_contract", None)
+        if provider is None:
+            if config.options:
+                raise PluginError(
+                    f"plugin {config.name!r} uses options but module {config.module!r} does not expose "
+                    "harness_plugin_contract() for pre-factory validation"
+                )
+            return PluginStaticContract()
+        if not callable(provider):
+            raise PluginError("harness_plugin_contract must be callable when present")
+        try:
+            raw = provider()
+        except Exception as exc:
+            raise PluginError(
+                f"plugin {config.name!r} static contract failed: {type(exc).__name__}: {exc}"
+            ) from exc
+        if isinstance(raw, PluginStaticContract):
+            contract = raw
+        elif isinstance(raw, Mapping):
+            allowed = raw.get("allowed_options", ())
+            if not isinstance(allowed, (list, tuple)) or any(not isinstance(item, str) for item in allowed):
+                raise PluginError("plugin static contract allowed_options must be a list/tuple of strings")
+            contract = PluginStaticContract(
+                api_version=str(raw.get("api_version", PLUGIN_API_VERSION)),
+                allowed_options=tuple(allowed),
+            )
+        else:
+            raise PluginError("harness_plugin_contract() must return PluginStaticContract or an object mapping")
+        contract.validate()
+        unknown = sorted(set(config.options) - set(contract.allowed_options))
+        if unknown:
+            raise PluginError(
+                f"unsupported plugin options for {config.name!r}: " + ", ".join(unknown)
+            )
+        return contract
+
     def _load_one(self, config: PluginConfig) -> LoadedPlugin:
         existing = self.loaded.get(config.name)
         if existing is not None:
@@ -94,6 +155,8 @@ class PluginGateway:
             module = import_module(config.module)
         except Exception as exc:
             raise PluginError(f"failed to import plugin {config.name!r}: {type(exc).__name__}: {exc}") from exc
+
+        static_contract = self._static_contract_from_module(module, config)
         factory = getattr(module, "harness_plugin", None)
         if not callable(factory):
             raise PluginError(f"plugin module {config.module!r} must expose harness_plugin(options=...)")
@@ -106,7 +169,7 @@ class PluginGateway:
             raise PluginError(
                 f"plugin config/manifest name mismatch: config={config.name!r}, manifest={manifest.name!r}"
             )
-        loaded = LoadedPlugin(config=config, manifest=manifest)
+        loaded = LoadedPlugin(config=config, manifest=manifest, static_contract=static_contract)
         self.loaded[config.name] = loaded
         return loaded
 
@@ -130,6 +193,8 @@ class PluginGateway:
                     "plugin_api_version": loaded.manifest.api_version,
                     "module": config.module,
                     "import_authority": "explicit_trusted_extension",
+                    "host_process_import": True,
+                    "static_option_contract": list(loaded.static_contract.allowed_options),
                 })
                 spec.provenance = provenance
                 result[public_name] = spec
@@ -146,12 +211,16 @@ class PluginGateway:
                 "api_version": loaded.manifest.api_version,
                 "module": config.module,
                 "options": dict(config.options),
+                "allowed_options": list(loaded.static_contract.allowed_options),
                 "tools": sorted((loaded.manifest.tools or {}).keys()),
             })
         return {
-            "schema_version": "plugin-gateway-v1",
+            "schema_version": "plugin-gateway-v2",
             "plugins": plugins,
             "auto_install": False,
             "auto_discovery": False,
             "import_authority": "explicit_trusted_extension",
+            "host_process_import": True,
+            "host_isolation": "none-for-module-import",
+            "strict_isolation_compatible": False,
         }
