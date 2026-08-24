@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 728ddab3381bde3916431c47729b033374b621b8
+- Source commit: a44d0b1c950a4e5e1677c365471f1094104b0b4a
 - Branch: develop
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,11 +54,20 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-........................................................................ [ 19%]
-............ssss..s..................................................... [ 39%]
-................................ss...................................... [ 58%]
-........................................................................ [ 78%]
-........................................................................ [ 98%]
-.......                                                                  [100%]
-360 passed, 7 skipped in 29.81s
+
+==================================== ERRORS ====================================
+__________ ERROR collecting tests/test_local_model_protocol_compat.py __________
+ImportError while importing test module '/home/runner/work/base_harness/base_harness/tests/test_local_model_protocol_compat.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_model_protocol_compat.py:8: in <module>
+    from harness.core.controller import LLMController, _extract_json_object
+E   ImportError: cannot import name '_extract_json_object' from 'harness.core.controller' (/home/runner/work/base_harness/base_harness/src/harness/core/controller.py)
+=========================== short test summary info ============================
+ERROR tests/test_local_model_protocol_compat.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.96s
 ```
