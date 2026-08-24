@@ -59,23 +59,31 @@ context_window = 8192
 reserved_output_tokens = 1024
 context_safety_margin_tokens = 256
 
-# OpenCode is intentionally connected through the existing CommandProvider.
-# The adapter runs `opencode run --format json` in a temporary workspace with
-# OpenCode permissions denied, so OpenCode may only return a Harness decision;
-# filesystem/shell/tool execution still belongs to base_harness.
-# Replace the OpenCode model below with any provider/model already configured
-# in your OpenCode installation.
+# Preferred OpenCode setup:
+#   1. Install/authenticate OpenCode normally.
+#   2. Start `verified-harness-tui`.
+#   3. Run `/model opencode`.
+# The Harness runs `opencode models opencode --verbose`, shows the catalog with
+# explicitly-free models first, and creates/updates [models.opencode] below.
+# The concrete model id, context metadata and explicit catalog cost metadata are
+# pinned in harness.toml so an experiment can be repeated with the same route.
+#
+# Manual illustration only; replace the provider/model id with a currently
+# available model from your own `opencode models opencode --verbose` output.
 [models.opencode]
 provider = "command"
-command = "python -m harness.opencode_adapter --model ollama/gemma3:latest --agent plan"
+model = "opencode/YOUR_MODEL_ID"
+command = "python -m harness.opencode_adapter --model opencode/YOUR_MODEL_ID --agent plan"
 timeout_seconds = 240
 
 [models.opencode.options]
 adapter = "opencode"
-# This is metadata for base_harness context budgeting. Match the underlying model.
-context_window = 8192
+catalog_provider = "opencode"
+catalog_model_id = "YOUR_MODEL_ID"
 reserved_output_tokens = 1024
 context_safety_margin_tokens = 256
+# context_window and catalog_explicitly_free are filled by the selector when
+# those fields are explicitly available in the OpenCode catalog metadata.
 
 # Unknown/custom providers can declare transport features explicitly without
 # assigning a model intelligence tier. Supported override keys include:
