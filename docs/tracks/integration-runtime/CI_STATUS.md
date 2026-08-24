@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 015b801c7becb63bb6969e40bd877c8b699e9d19
+- Source commit: bcc5d14f2dbaf225c655329c905027d13df1f15b
 - Branch: develop
-- Result: **FAIL**
+- Result: **PASS**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      FAIL
+full-pytest                                      PASS
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,42 +54,11 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-.F...................................................................... [ 18%]
+........................................................................ [ 18%]
 ...............ssss..s.................................................. [ 36%]
-...........................................................ss........... [ 54%]
-........................................................................ [ 73%]
+............................................................ss.......... [ 54%]
+........................................................................ [ 72%]
 ........................................................................ [ 91%]
-..................................                                       [100%]
-=================================== FAILURES ===================================
-_____ test_run_summary_separates_context_protocol_and_failure_observations _____
-
-    def test_run_summary_separates_context_protocol_and_failure_observations():
-        records = [
-            _event(
-                "model.context_compile",
-                {
-                    "level": 2,
-                    "source_estimated_input_tokens": 4000,
-                    "compiled_estimated_input_tokens": 2000,
-                    "estimated_reduction_ratio": 0.5,
-                    "budget": {"max_input_tokens": 3000},
-                },
-            ),
-            _event(
-                "model.protocol_decode",
-                {
-                    "kind": "tool",
-                    "lexical_repaired": True,
-                    "lexical_repair_kind": "raw_control_character",
-                },
-            ),
->           _event("failure", kind="actor_workflow_error"),
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        ]
-E       TypeError: _event() got multiple values for argument 'kind'
-
-tests/test_context_ablation_report.py:31: TypeError
-=========================== short test summary info ============================
-FAILED tests/test_context_ablation_report.py::test_run_summary_separates_context_protocol_and_failure_observations - TypeError: _event() got multiple values for argument 'kind'
-1 failed, 386 passed, 7 skipped in 30.17s
+...................................                                      [100%]
+388 passed, 7 skipped in 29.25s
 ```
