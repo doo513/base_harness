@@ -3,18 +3,20 @@ from types import SimpleNamespace
 
 from harness.opencode_adapter import (
     DEFAULT_OPENCODE_AGENT,
-    _deny_all_inline_config,
+    _deny_external_tools_inline_config,
     run_opencode_decision,
 )
 
 
-def test_inline_config_defines_minimal_primary_agent_with_all_tools_denied():
-    config = json.loads(_deny_all_inline_config())
+def test_inline_config_denies_external_tools_but_allows_internal_structured_output():
+    config = json.loads(_deny_external_tools_inline_config())
 
-    assert config["permission"] == "deny"
+    assert config["permission"]["*"] == "deny"
+    assert config["permission"]["StructuredOutput"] == "allow"
     agent = config["agent"][DEFAULT_OPENCODE_AGENT]
     assert agent["mode"] == "primary"
-    assert agent["permission"] == {"*": "deny"}
+    assert agent["permission"]["*"] == "deny"
+    assert agent["permission"]["StructuredOutput"] == "allow"
     assert "model transport" in agent["prompt"]
 
 
@@ -48,6 +50,7 @@ def test_default_opencode_run_uses_harness_model_agent(monkeypatch):
     )
 
     assert json.loads(result.decision_json)["kind"] == "complete"
+    assert result.external_tool_uses == 0
     argv = captured["argv"]
     assert argv[argv.index("--agent") + 1] == DEFAULT_OPENCODE_AGENT
     assert argv[argv.index("--model") + 1] == "opencode/free-model"
