@@ -42,7 +42,7 @@ def _gateway(provider):
     )
 
 
-def test_local_gateway_repairs_truncated_json_before_controller_sees_it():
+def test_gateway_repairs_truncated_json_before_controller_sees_it():
     provider = FakeLocalProvider([
         '{"kind":"plan","payload":{"objective":"inspect","tasks":[',
         '{"kind":"tool","payload":{"tool":"directory.list","args":{}}}',
@@ -53,14 +53,14 @@ def test_local_gateway_repairs_truncated_json_before_controller_sees_it():
 
     assert json.loads(raw)["kind"] == "tool"
     assert len(provider.requests) == 2
-    assert "LOCAL MODEL PROTOCOL REPAIR" in provider.requests[1].user
+    assert "MODEL PROTOCOL REPAIR" in provider.requests[1].user
     telemetry = gateway.telemetry_snapshot()
     assert telemetry["protocol_repairs"] == 1
     assert telemetry["failures"] == 1
     assert telemetry["last_error_kind"] is None
 
 
-def test_local_gateway_repairs_empty_tool_name():
+def test_gateway_repairs_schema_invalid_empty_tool_name():
     provider = FakeLocalProvider([
         '{"kind":"tool","payload":{"tool":"","args":{}}}',
         '{"kind":"tool","payload":{"tool":"file.read","args":{"path":"pyproject.toml"}}}',
@@ -73,7 +73,7 @@ def test_local_gateway_repairs_empty_tool_name():
     assert gateway.telemetry_snapshot()["protocol_repairs"] == 1
 
 
-def test_local_gateway_accepts_fenced_json_but_returns_canonical_json():
+def test_gateway_accepts_fenced_json_but_returns_canonical_json():
     provider = FakeLocalProvider([
         '```json\n{"kind":"complete","payload":{"reason":"done"}}\n```',
     ])
@@ -98,5 +98,7 @@ def test_local_provider_default_endpoints_and_protocol_capability():
 
     assert ollama.endpoint == "http://127.0.0.1:11434/api/chat"
     assert lmstudio.endpoint == "http://127.0.0.1:1234/v1/chat/completions"
+    # Providers may enforce schema natively, but Gateway still applies the same
+    # canonical response/protocol normalization to every route.
     assert ollama.protocol_enforced is True
     assert lmstudio.protocol_enforced is True
