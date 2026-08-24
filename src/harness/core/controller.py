@@ -1,14 +1,35 @@
 from dataclasses import dataclass
 from typing import Any, Protocol, Iterable
 import json
-import re
 
 from .context_compiler import compile_context_for_model
+from .failures import FailureKind
+from harness.model_protocol import (
+    DECISION_KINDS,
+    DecisionProtocolError,
+    decode_decision_text,
+    validate_decision,
+)
 
 
-VALID_DECISIONS = {
-    "plan", "task", "propose", "verify_claim", "tool", "retrieve", "complete", "refute"
-}
+VALID_DECISIONS = set(DECISION_KINDS)
+
+
+class ControllerBoundaryError(RuntimeError):
+    """Typed model/controller boundary failure consumable by the Kernel runtime."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_kind: FailureKind,
+        retry_safe: bool = False,
+        signature_key: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_kind = failure_kind
+        self.retry_safe = bool(retry_safe)
+        self.signature_key = signature_key
 
 
 @dataclass
@@ -17,80 +38,7 @@ class Decision:
     payload: dict[str, Any]
 
     def validate(self) -> None:
-        if self.kind not in VALID_DECISIONS:
-            raise ValueError(f"unsupported decision kind: {self.kind}")
-        if not isinstance(self.payload, dict):
-            raise ValueError("decision payload must be an object")
-
-        if self.kind == "plan":
-            extras = set(self.payload) - {"objective", "tasks"}
-            if extras:
-                raise ValueError("plan payload only supports objective and tasks")
-            objective = self.payload.get("objective")
-            tasks = self.payload.get("tasks")
-            if not isinstance(objective, str) or not objective.strip():
-                raise ValueError("plan.objective must be a non-empty string")
-            if not isinstance(tasks, list) or not tasks:
-                raise ValueError("plan.tasks must be a non-empty list")
-
-        elif self.kind == "task":
-            extras = set(self.payload) - {"id", "status", "note"}
-            if extras:
-                raise ValueError("task payload only supports id, status, and note")
-            task_id = self.payload.get("id")
-            status = self.payload.get("status")
-            note = self.payload.get("note")
-            if not isinstance(task_id, str) or not task_id.strip():
-                raise ValueError("task.id must be a non-empty string")
-            if status not in {"pending", "active", "done", "blocked"}:
-                raise ValueError("task.status must be pending|active|done|blocked")
-            if note is not None and not isinstance(note, str):
-                raise ValueError("task.note must be a string when provided")
-
-        elif self.kind == "propose":
-            key = self.payload.get("key")
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError("propose.key must be a non-empty string")
-            refs = self.payload.get("evidence_refs", [])
-            if not isinstance(refs, list) or not all(isinstance(x, str) for x in refs):
-                raise ValueError("propose.evidence_refs must be a list of strings")
-
-        elif self.kind == "verify_claim":
-            key = self.payload.get("key")
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError("verify_claim.key must be a non-empty string")
-
-        elif self.kind == "tool":
-            tool = self.payload.get("tool")
-            args = self.payload.get("args", {})
-            if not isinstance(tool, str) or not tool.strip():
-                raise ValueError("tool.tool must be a non-empty string")
-            if not isinstance(args, dict):
-                raise ValueError("tool.args must be an object")
-
-        elif self.kind == "retrieve":
-            extras = set(self.payload) - {"query"}
-            if extras:
-                raise ValueError(
-                    "retrieve payload only supports the query field; "
-                    "scope/top_k/provider/ranking are kernel-owned"
-                )
-            query = self.payload.get("query")
-            if not isinstance(query, str) or not query.strip():
-                raise ValueError("retrieve.query must be a non-empty string")
-
-        elif self.kind == "refute":
-            key = self.payload.get("key")
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError("refute.key must be a non-empty string")
-            reason = self.payload.get("reason", "")
-            if not isinstance(reason, str):
-                raise ValueError("refute.reason must be a string")
-
-        elif self.kind == "complete":
-            reason = self.payload.get("reason", "")
-            if not isinstance(reason, str):
-                raise ValueError("complete.reason must be a string")
+        validate_decision(self.kind, self.payload)
 
 
 class Controller(Protocol):
@@ -143,39 +91,27 @@ class ModelAdapter(Protocol):
     def complete(self, *, system: str, user: str) -> str: ...
 
 
-def _extract_json_object(raw: str) -> dict[str, Any]:
-    """Robustly extract a JSON object from local model outputs that may contain markdown fences or commentary."""
-    text = raw.strip()
+def _provider_failure_kind(exc: Exception) -> tuple[FailureKind, bool, str | None]:
+    """Translate provider-facing error metadata without importing provider code.
 
-    try:
-        val = json.loads(text)
-        if isinstance(val, dict):
-            return val
-    except Exception:
-        pass
-
-    fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
-    if fence_match:
-        fenced_text = fence_match.group(1).strip()
-        try:
-            val = json.loads(fenced_text)
-            if isinstance(val, dict):
-                return val
-        except Exception:
-            pass
-
-    first_brace = text.find('{')
-    last_brace = text.rfind('}')
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        candidate = text[first_brace:last_brace + 1]
-        try:
-            val = json.loads(candidate)
-            if isinstance(val, dict):
-                return val
-        except Exception:
-            pass
-
-    raise ValueError(f"model did not return valid JSON object: {raw[:150]!r}")
+    The controller intentionally depends only on the small ``kind``/``retryable``
+    exception surface. This avoids making the Kernel runtime depend on one model
+    gateway implementation while still distinguishing protocol from transport.
+    """
+    raw_kind = getattr(exc, "kind", None)
+    kind = str(raw_kind or "")
+    message = str(exc)
+    # ModelGateway may wrap the final provider kind into the error message. Keep
+    # this compatibility path until every adapter exports typed exceptions.
+    if not kind and "last=protocol_" in message:
+        fragment = message.split("last=", 1)[1].split(":", 1)[0]
+        kind = fragment.strip()
+    retryable = bool(getattr(exc, "retryable", False))
+    if kind.startswith("protocol_"):
+        return FailureKind.MODEL_PROTOCOL_ERROR, True, f"model-protocol:{kind}"
+    return FailureKind.MODEL_PROVIDER_ERROR, retryable, (
+        f"model-provider:{kind}" if kind else "model-provider:untyped"
+    )
 
 
 class LLMController:
@@ -214,6 +150,21 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
     def __init__(self, model: ModelAdapter):
         self.model = model
         self.last_context_compile: dict[str, Any] | None = None
+        self.last_protocol_decode: dict[str, Any] | None = None
+
+    def _complete(self, *, system: str, user: str) -> str:
+        try:
+            return self.model.complete(system=system, user=user)
+        except ControllerBoundaryError:
+            raise
+        except Exception as exc:
+            failure_kind, retry_safe, signature_key = _provider_failure_kind(exc)
+            raise ControllerBoundaryError(
+                f"model boundary failed: {type(exc).__name__}: {exc}",
+                failure_kind=failure_kind,
+                retry_safe=retry_safe,
+                signature_key=signature_key,
+            ) from exc
 
     def decide(self, goal, state, context):
         compiled = compile_context_for_model(
@@ -232,7 +183,7 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
             default=str,
             separators=(",", ":"),
         )
-        raw = self.model.complete(system=self.SYSTEM, user=user)
+        raw = self._complete(system=self.SYSTEM, user=user)
 
         # Retry once if raw response is completely empty. Provider-level retries
         # happen first; the compiler safety reserve leaves room for this short
@@ -242,11 +193,28 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
                 user
                 + "\n\nCRITICAL: Return one non-empty JSON decision, starting with plan or tool."
             )
-            raw = self.model.complete(system=self.SYSTEM, user=retry_prompt)
+            raw = self._complete(system=self.SYSTEM, user=retry_prompt)
 
-        obj = _extract_json_object(raw)
-        kind = str(obj.get("kind", ""))
-        payload = obj.get("payload", {})
+        try:
+            decoded = decode_decision_text(
+                raw,
+                allow_control_character_repair=True,
+            )
+        except DecisionProtocolError as exc:
+            raise ControllerBoundaryError(
+                f"model decision protocol failed: {exc}",
+                failure_kind=FailureKind.MODEL_PROTOCOL_ERROR,
+                retry_safe=True,
+                signature_key=f"model-protocol:{exc.kind}",
+            ) from exc
+
+        self.last_protocol_decode = {
+            "kind": decoded.kind,
+            "lexical_repaired": decoded.lexical_repaired,
+            "lexical_repair_kind": decoded.lexical_repair_kind,
+        }
+        kind = decoded.kind
+        payload = decoded.payload
 
         # A small model may skip the initial plan and immediately emit a task
         # update. Only an actually empty workflow is auto-promoted. Once a plan
@@ -257,7 +225,7 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
             tasks_map = getattr(agent_tasks, "tasks", {}) if agent_tasks else {}
             if not tasks_map:
                 task_id = str(payload.get("id") or "t1")
-                title = str(payload.get("note") or payload.get("title") or f"Task {task_id}")
+                title = str(payload.get("note") or f"Task {task_id}")
                 return Decision("plan", {
                     "objective": str(goal)[:120],
                     "tasks": [{"id": task_id, "title": title, "depends_on": []}],
