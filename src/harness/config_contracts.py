@@ -37,14 +37,14 @@ _PROVIDER_OPTIONS = {
     },
     "openai": {
         "temperature", "max_tokens", "top_p", "reasoning_effort",
-        "response_format", "json_mode", "ollama_compat",
+        "response_format", "json_mode", "ollama_compat", "seed",
     },
     "openai-compatible": {
         "temperature", "max_tokens", "top_p", "reasoning_effort",
-        "response_format", "json_mode", "ollama_compat",
+        "response_format", "json_mode", "ollama_compat", "seed",
     },
-    "ollama": {"temperature", "top_p", "num_predict", "max_tokens", "think"},
-    "lm-studio": {"temperature", "max_tokens", "top_p"},
+    "ollama": {"temperature", "top_p", "num_predict", "max_tokens", "think", "seed"},
+    "lm-studio": {"temperature", "max_tokens", "top_p", "seed"},
 }
 
 _MCP_STDIO_OPTIONS = {
@@ -96,6 +96,10 @@ def validate_model_config_contract(config: ModelConfig) -> None:
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                 raise ConfigError(f"options.{key} must be a positive integer")
 
+    seed = config.options.get("seed")
+    if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+        raise ConfigError("options.seed must be an integer when provided")
+
     if provider == "command":
         allowlist = config.options.get("command_env_allowlist", [])
         if not isinstance(allowlist, list) or any(not isinstance(item, str) or not item for item in allowlist):
@@ -115,11 +119,11 @@ def validate_model_config_contract(config: ModelConfig) -> None:
 
 
 def validate_mcp_server_contract(config: MCPServerConfig) -> None:
-    # mcp-gateway-v1 implements stdio only. Rejecting HTTP here is more honest
+    # mcp-gateway-v1/v2 implements stdio only. Rejecting HTTP here is more honest
     # than accepting the config and failing during first client creation.
     if config.transport != "stdio":
         raise ConfigError(
-            f"MCP transport {config.transport!r} is not implemented by mcp-gateway-v1"
+            f"MCP transport {config.transport!r} is not implemented by mcp-gateway-v2"
         )
     unknown = sorted(set(config.options) - _MCP_STDIO_OPTIONS)
     if unknown:
