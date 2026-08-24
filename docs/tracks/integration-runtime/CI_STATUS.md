@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 9b40034d579f1dc55840e5c25083f490561fb1a8
+- Source commit: 5d2f10002a5cd3fe4d6dc9fe12aebcdbc719d141
 - Branch: develop
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -55,10 +55,34 @@ stage02-binding-cost                             PASS
 
 ```text
 ........................................................................ [ 18%]
-...............ssss..s.................................................. [ 36%]
+...............ssss..s...............F.................................. [ 36%]
 .............................................................ss......... [ 54%]
 ........................................................................ [ 72%]
 ........................................................................ [ 90%]
 ....................................                                     [100%]
-389 passed, 7 skipped in 28.00s
+=================================== FAILURES ===================================
+_______________ test_provider_retry_requires_explicit_retry_safe _______________
+
+    def test_provider_retry_requires_explicit_retry_safe():
+        router = FailureRouter()
+        unsafe = Failure(FailureKind.MODEL_PROVIDER_ERROR, "provider unavailable")
+        safe = Failure(
+            FailureKind.MODEL_PROVIDER_ERROR,
+            "provider timed out",
+            retry_safe=True,
+        )
+        assert router.route(unsafe) is RecoveryAction.OBSERVE
+>       assert router.route(safe) is RecoveryAction.RETRY
+E       AssertionError: assert <RecoveryAction.OBSERVE: 'observe'> is <RecoveryAction.RETRY: 'retry'>
+E        +  where <RecoveryAction.OBSERVE: 'observe'> = route(Failure(kind=<FailureKind.MODEL_PROVIDER_ERROR: 'model_provider_error'>, message='provider timed out', action=None, retry_safe=True, signature_key=None, context=None))
+E        +    where route = <harness.core.failures.FailureRouter object at 0x7f8cff752c90>.route
+E        +  and   <RecoveryAction.RETRY: 'retry'> = RecoveryAction.RETRY
+
+tests/test_model_boundary_failure_taxonomy.py:84: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_model_boundary_failure_taxonomy.py::test_provider_retry_requires_explicit_retry_safe - AssertionError: assert <RecoveryAction.OBSERVE: 'observe'> is <RecoveryAction.RETRY: 'retry'>
+ +  where <RecoveryAction.OBSERVE: 'observe'> = route(Failure(kind=<FailureKind.MODEL_PROVIDER_ERROR: 'model_provider_error'>, message='provider timed out', action=None, retry_safe=True, signature_key=None, context=None))
+ +    where route = <harness.core.failures.FailureRouter object at 0x7f8cff752c90>.route
+ +  and   <RecoveryAction.RETRY: 'retry'> = RecoveryAction.RETRY
+1 failed, 388 passed, 7 skipped in 29.37s
 ```
