@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from time import monotonic, sleep
 from typing import Any, Callable, Mapping, Protocol
+import copy
 import hashlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
 from harness.config import ConfigError, ModelConfig, SecretResolver
+from harness.config_contracts import validate_model_config_contract
 from harness.core.failures import (
     FailureContext,
     FailureKind,
@@ -50,13 +54,9 @@ class ModelGatewayFailure(ModelGatewayError):
     """Final normalized model-boundary failure after Gateway policy is exhausted."""
 
     def __init__(self, context: FailureContext, policy_decision: PolicyDecision):
-        super().__init__(
-            f"model gateway failed: {context.kind.value}: {context.message}"
-        )
+        super().__init__(f"model gateway failed: {context.kind.value}: {context.message}")
         self.failure_context = context
         self.policy_decision = policy_decision
-        # Compatibility metadata for older callers while routing remains
-        # FailureContext-driven.
         self.kind = context.kind.value
         self.retryable = context.retryable
 
@@ -190,18 +190,11 @@ def _http_json(
             details={"http_status": exc.code},
         ) from exc
     except urllib.error.URLError as exc:
-        raise ProviderError(
-            f"provider connection failed: {exc}",
-            kind="network_error",
-            retryable=True,
-        ) from exc
+        raise ProviderError(f"provider connection failed: {exc}", kind="network_error", retryable=True) from exc
     except TimeoutError as exc:
         raise ProviderError("provider request timed out", kind="timeout", retryable=True) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProviderError(
-            f"provider response is not valid JSON: {exc}",
-            kind="invalid_response",
-        ) from exc
+        raise ProviderError(f"provider response is not valid JSON: {exc}", kind="invalid_response") from exc
     if not isinstance(payload, dict):
         raise ProviderError("provider response must be a JSON object", kind="invalid_response")
     return payload, request_id
@@ -273,10 +266,7 @@ class CommandProvider:
             raise ProviderError(
                 f"model command failed ({proc.returncode}): {stderr[-2000:]}",
                 kind="execution_error",
-                details={
-                    "exit_code": int(proc.returncode),
-                    "stderr_digest": stderr_digest,
-                },
+                details={"exit_code": int(proc.returncode), "stderr_digest": stderr_digest},
             )
         return ModelResponse(
             content=proc.stdout.strip(),
@@ -294,11 +284,7 @@ class CommandProvider:
 
 class OpenAICompatibleProvider:
     provider_id = "openai-compatible"
-    capabilities = ProviderCapabilities(
-        structured_output=True,
-        native_tool_calling=True,
-        streaming=True,
-    )
+    capabilities = ProviderCapabilities(structured_output=True, native_tool_calling=True, streaming=True)
 
     def __init__(self, config: ModelConfig, *, secret_resolver: SecretResolver):
         if config.provider not in {"openai-compatible", "openai"}:
@@ -351,7 +337,6 @@ class OpenAICompatibleProvider:
             body["response_format"] = dict(response_format)
         elif self.options.get("json_mode") is True:
             body["response_format"] = {"type": "json_object"}
-
         if self.ollama_compat:
             body.setdefault("reasoning_effort", "none")
             if self.options.get("json_mode") is not False:
@@ -421,7 +406,6 @@ class OllamaProvider:
             generation_options["num_predict"] = self.options["num_predict"]
         elif "max_tokens" in self.options:
             generation_options["num_predict"] = self.options["max_tokens"]
-
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -434,7 +418,6 @@ class OllamaProvider:
         }
         if self.options.get("think", False) is False:
             body["think"] = False
-
         started = monotonic()
         payload, _ = _http_json(self.endpoint, body=body, timeout_seconds=self.timeout_seconds)
         latency = monotonic() - started
@@ -487,18 +470,13 @@ class LMStudioProvider:
             "temperature": self.options.get("temperature", 0),
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": "harness_decision",
-                    "strict": True,
-                    "schema": _DECISION_JSON_SCHEMA,
-                },
+                "json_schema": {"name": "harness_decision", "strict": True, "schema": _DECISION_JSON_SCHEMA},
             },
         }
         if "max_tokens" in self.options:
             body["max_tokens"] = self.options["max_tokens"]
         if "top_p" in self.options:
             body["top_p"] = self.options["top_p"]
-
         started = monotonic()
         payload, request_id = _http_json(
             self.endpoint,
@@ -578,7 +556,12 @@ class ModelGateway:
         retry_backoff_seconds: float = 0.25,
         failure_policy: FailurePolicyEngine | None = None,
     ):
-        self.models = dict(models)
+        self.models = {
+            str(alias): replace(config, options=copy.deepcopy(config.options))
+            for alias, config in models.items()
+        }
+        for config in self.models.values():
+            validate_model_config_contract(config)
         if default_model not in self.models:
             raise ModelGatewayError(f"default model alias is not configured: {default_model}")
         unknown_fallbacks = [name for name in fallback_models if name not in self.models]
@@ -598,23 +581,11 @@ class ModelGateway:
         self._providers: dict[str, ModelProvider] = {}
         self._call_sequence = 0
         self._telemetry = {
-            "requests": 0,
-            "failures": 0,
-            "fallbacks": 0,
-            "protocol_repairs": 0,
-            "lexical_repairs": 0,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "latency_seconds": 0.0,
-            "last_provider": None,
-            "last_model": None,
-            "last_request_id": None,
-            "last_provider_call_id": None,
-            "last_error_kind": None,
-            "last_failure_context": None,
-            "last_policy_decision": None,
-            "last_response": None,
+            "requests": 0, "failures": 0, "fallbacks": 0, "protocol_repairs": 0,
+            "lexical_repairs": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            "latency_seconds": 0.0, "last_provider": None, "last_model": None,
+            "last_request_id": None, "last_provider_call_id": None, "last_error_kind": None,
+            "last_failure_context": None, "last_policy_decision": None, "last_response": None,
         }
 
     @classmethod
@@ -632,35 +603,61 @@ class ModelGateway:
             self._providers[alias] = provider
         return provider
 
+    @staticmethod
+    def _executable_available(executable: str) -> bool:
+        candidate = Path(executable).expanduser()
+        if candidate.is_absolute() or candidate.parent != Path("."):
+            return candidate.exists() and candidate.is_file()
+        return shutil.which(executable) is not None
+
+    def preflight(self) -> dict[str, Any]:
+        """Validate every route that can execute before HarnessRuntime starts."""
+        routes: list[dict[str, Any]] = []
+        for alias in (self.default_model, *self.fallback_models):
+            config = self.models[alias]
+            validate_model_config_contract(config)
+            provider = self._provider(alias)  # resolves required secret refs in provider constructors
+            detail = {
+                "alias": alias,
+                "provider": config.provider,
+                "model": config.model,
+                "status": "ready",
+            }
+            if isinstance(provider, CommandProvider):
+                executable = provider.argv[0]
+                if not self._executable_available(executable):
+                    raise ConfigError(f"model command executable is not available for {alias!r}: {executable!r}")
+                detail["command_executable"] = executable
+                adapter = config.options.get("adapter")
+                if adapter == "opencode":
+                    opencode_binary = str(config.options.get("opencode_binary") or "opencode")
+                    if not self._executable_available(opencode_binary):
+                        raise ConfigError(
+                            f"OpenCode adapter executable is not available for {alias!r}: {opencode_binary!r}"
+                        )
+                    detail["adapter"] = "opencode"
+                    detail["adapter_executable"] = opencode_binary
+            routes.append(detail)
+        return {"schema_version": "model-preflight-v1", "routes": routes}
+
     def _next_call_id(self) -> str:
         self._call_sequence += 1
         return f"model-call-{self._call_sequence:06d}"
 
-    def _provider_failure_context(
-        self,
-        *,
-        alias: str,
-        provider: ModelProvider,
-        call_id: str,
-        exc: ProviderError,
-    ) -> FailureContext:
+    def _provider_failure_context(self, *, alias: str, provider: ModelProvider, call_id: str, exc: ProviderError) -> FailureContext:
         config = self.models[alias]
         raw_kind = exc.kind
         if raw_kind == "configuration_error":
-            kind = FailureKind.IMPLEMENTATION_ERROR
-            origin = FailureOrigin.HARNESS
-            phase = FailurePhase.CONFIG_VALIDATE
-            fallback_safe = False
+            kind, origin, phase, fallback_safe = (
+                FailureKind.IMPLEMENTATION_ERROR, FailureOrigin.HARNESS, FailurePhase.CONFIG_VALIDATE, False
+            )
         elif raw_kind.startswith("protocol_") or raw_kind == "protocol_boundary_violation":
-            kind = FailureKind.MODEL_PROTOCOL_ERROR
-            origin = FailureOrigin.MODEL
-            phase = FailurePhase.PROTOCOL_VALIDATE
+            kind, origin, phase = FailureKind.MODEL_PROTOCOL_ERROR, FailureOrigin.MODEL, FailurePhase.PROTOCOL_VALIDATE
             fallback_safe = raw_kind != "protocol_boundary_violation"
         else:
-            kind = FailureKind.MODEL_PROVIDER_ERROR
-            origin = FailureOrigin.PROVIDER
-            phase = FailurePhase.PROVIDER_CALL
-            fallback_safe = True
+            kind, origin, phase, fallback_safe = (
+                FailureKind.MODEL_PROVIDER_ERROR, FailureOrigin.PROVIDER, FailurePhase.PROVIDER_CALL, True
+            )
         exit_code = exc.details.get("exit_code")
         stderr_digest = exc.details.get("stderr_digest")
         return FailureContext(
@@ -679,14 +676,7 @@ class ModelGateway:
             metadata={"provider_error_kind": raw_kind, **dict(exc.details)},
         )
 
-    def _protocol_failure_context(
-        self,
-        *,
-        alias: str,
-        provider: ModelProvider,
-        call_id: str,
-        exc: DecisionProtocolError,
-    ) -> FailureContext:
+    def _protocol_failure_context(self, *, alias: str, provider: ModelProvider, call_id: str, exc: DecisionProtocolError) -> FailureContext:
         config = self.models[alias]
         return FailureContext(
             kind=FailureKind.MODEL_PROTOCOL_ERROR,
@@ -703,12 +693,7 @@ class ModelGateway:
         )
 
     @staticmethod
-    def _normalize_provider_response(
-        response: ModelResponse,
-        *,
-        alias: str,
-        call_id: str,
-    ) -> NormalizedModelResponse:
+    def _normalize_provider_response(response: ModelResponse, *, alias: str, call_id: str) -> NormalizedModelResponse:
         if not isinstance(response, ModelResponse):
             raise ProviderError("provider must return ModelResponse", kind="invalid_response")
         if not isinstance(response.content, str) or not response.content.strip():
@@ -720,14 +705,9 @@ class ModelGateway:
         if not isinstance(response.usage, ModelUsage):
             raise ProviderError("provider response has invalid usage object", kind="invalid_response")
         return NormalizedModelResponse(
-            content=response.content.strip(),
-            route_alias=alias,
-            provider_id=response.provider_id,
-            model_id=response.model_id,
-            provider_call_id=call_id,
-            request_id=response.request_id,
-            usage=response.usage,
-            latency_seconds=float(response.latency_seconds),
+            content=response.content.strip(), route_alias=alias, provider_id=response.provider_id,
+            model_id=response.model_id, provider_call_id=call_id, request_id=response.request_id,
+            usage=response.usage, latency_seconds=float(response.latency_seconds),
             raw_metadata=dict(response.raw_metadata),
         )
 
@@ -772,10 +752,7 @@ class ModelGateway:
                 try:
                     raw_response = provider.complete(request)
                     response = self._normalize_provider_response(raw_response, alias=alias, call_id=call_id)
-                    decoded = decode_decision_text(
-                        response.content,
-                        allow_control_character_repair=True,
-                    )
+                    decoded = decode_decision_text(response.content, allow_control_character_repair=True)
                     if decoded.lexical_repaired:
                         self._telemetry["lexical_repairs"] += 1
                     response = replace(
@@ -789,19 +766,9 @@ class ModelGateway:
                         },
                     )
                 except ProviderError as exc:
-                    context = self._provider_failure_context(
-                        alias=alias,
-                        provider=provider,
-                        call_id=call_id,
-                        exc=exc,
-                    )
+                    context = self._provider_failure_context(alias=alias, provider=provider, call_id=call_id, exc=exc)
                 except DecisionProtocolError as exc:
-                    context = self._protocol_failure_context(
-                        alias=alias,
-                        provider=provider,
-                        call_id=call_id,
-                        exc=exc,
-                    )
+                    context = self._protocol_failure_context(alias=alias, provider=provider, call_id=call_id, exc=exc)
                 except Exception as exc:
                     context = FailureContext(
                         kind=FailureKind.IMPLEMENTATION_ERROR,
@@ -850,7 +817,6 @@ class ModelGateway:
             else:
                 continue
 
-            # Inner loop broke only to use a policy-approved fallback route.
             if last_policy is not None and last_policy.fallback_allowed:
                 continue
             if last_context is not None and last_policy is not None:
@@ -892,7 +858,10 @@ class ModelGateway:
                     "api_key": config.api_key.descriptor() if config.api_key else None,
                     "command": config.command,
                     "timeout_seconds": config.timeout_seconds,
-                    "options": dict(config.options),
+                    "options": copy.deepcopy(config.options),
+                    "options_hash": hashlib.sha256(
+                        json.dumps(config.options, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+                    ).hexdigest(),
                 }
                 for alias, config in sorted(self.models.items())
             },
@@ -901,10 +870,6 @@ class ModelGateway:
     @property
     def revision(self) -> str:
         payload = json.dumps(
-            self.descriptor(),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
+            self.descriptor(), ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
         ).encode("utf-8")
         return "model-gateway:" + hashlib.sha256(payload).hexdigest()
