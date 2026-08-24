@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: c449f87402c7ccdb561b6533e084c8f621c664e9
+- Source commit: bcb884d59b47fe6245b7a2a6a33dea261bf4aaef
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -63,7 +63,7 @@ stage02-binding-cost                             PASS
 =================================== FAILURES ===================================
 ______ test_plugin_manifest_identity_and_profile_composition_fail_closed _______
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f97845cef10>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ff113f70f50>
 tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_plugin_manifest_identity_0')
 
     def test_plugin_manifest_identity_and_profile_composition_fail_closed(monkeypatch, tmp_path):
@@ -94,5 +94,5 @@ E       KeyError: 'extra'
 tests/test_integration_mcp_plugin.py:188: KeyError
 =========================== short test summary info ============================
 FAILED tests/test_integration_mcp_plugin.py::test_plugin_manifest_identity_and_profile_composition_fail_closed - KeyError: 'extra'
-1 failed, 391 passed, 7 skipped in 30.73s
+1 failed, 391 passed, 7 skipped in 30.28s
 ```
