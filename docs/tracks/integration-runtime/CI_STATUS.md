@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: da68a50c2c1f03735611cc6d24872b2a10f71db3
+- Source commit: a257d5ba9b825e62ab9874352da155bb8d3859be
 - Branch: develop
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,11 +54,45 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-........................................................................ [ 18%]
+................................................F....................... [ 18%]
 ...................ssss..s.............................................. [ 36%]
 ................................................................ss...... [ 54%]
 ........................................................................ [ 72%]
 ........................................................................ [ 90%]
 .......................................                                  [100%]
-392 passed, 7 skipped in 29.57s
+=================================== FAILURES ===================================
+______ test_plugin_manifest_identity_and_profile_composition_fail_closed _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fe3bef829d0>
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_plugin_manifest_identity_0')
+
+    def test_plugin_manifest_identity_and_profile_composition_fail_closed(monkeypatch, tmp_path):
+        module = types.ModuleType("bad_harness_plugin")
+        module.harness_plugin = lambda *, options: {"name": "other", "version": "1"}
+        monkeypatch.setitem(sys.modules, "bad_harness_plugin", module)
+        with pytest.raises(PluginError):
+            PluginGateway((PluginConfig(name="expected", module="bad_harness_plugin"),)).discover_tools()
+    
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        profile = SoftwareProfile(workspace=workspace, acceptance_commands=["false"])
+        original_type = type(profile)
+        extra = ToolSpec(
+            name="extra",
+            description="extra",
+            handler=lambda: {},
+            side_effect=SideEffect.READ,
+            input_schema={"type": "object", "additionalProperties": False},
+            output_schema={"type": "object"},
+        )
+        augment_profile_tools(profile, {"extra": extra})
+        assert type(profile) is original_type
+>       assert "input_schema_hash" in profile.tools()["extra"].provenance
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'extra'
+
+tests/test_integration_mcp_plugin.py:188: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_integration_mcp_plugin.py::test_plugin_manifest_identity_and_profile_composition_fail_closed - KeyError: 'extra'
+1 failed, 391 passed, 7 skipped in 29.12s
 ```
