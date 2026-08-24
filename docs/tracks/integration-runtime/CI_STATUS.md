@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: 616d15c491c16ddaab70eb213090866894cff3e4
+- Source commit: 63868852ad9c781e5809f90d4c34dbec8a861163
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -87,5 +87,5 @@ E   SyntaxError: f-string expression part cannot include a backslash
 =========================== short test summary info ============================
 ERROR tests/test_integration_model_gateway.py
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 error in 1.09s
+1 error in 1.08s
 ```
