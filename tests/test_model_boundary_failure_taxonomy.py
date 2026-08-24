@@ -2,6 +2,7 @@ import pytest
 
 from harness.core.controller import ControllerBoundaryError, LLMController
 from harness.core.failures import Failure, FailureKind, FailureRouter, RecoveryAction
+from harness.model_error_envelope import encode_model_error, extract_embedded_model_error
 
 
 class ProviderFailure(RuntimeError):
@@ -35,6 +36,28 @@ def test_transport_provider_error_remains_model_provider_error():
     assert caught.value.failure_kind is FailureKind.MODEL_PROVIDER_ERROR
     assert caught.value.retry_safe is True
     assert caught.value.signature_key == "model-provider:timeout"
+
+
+def test_embedded_command_adapter_protocol_error_overrides_outer_execution_error():
+    marker = encode_model_error(
+        kind="protocol_schema",
+        message="tool.tool must be non-empty",
+        retryable=True,
+    )
+    outer = ProviderFailure("execution_error", False)
+    outer.args = (f"model command failed (2): prefix\n{marker}\n",)
+
+    controller = LLMController(RaisingModel(outer))
+    with pytest.raises(ControllerBoundaryError) as caught:
+        controller._complete(system="s", user="u")
+
+    assert caught.value.failure_kind is FailureKind.MODEL_PROTOCOL_ERROR
+    assert caught.value.retry_safe is True
+    assert caught.value.signature_key == "model-protocol:protocol_schema"
+
+
+def test_embedded_error_parser_ignores_unmarked_stderr():
+    assert extract_embedded_model_error("random stderr {not json}") is None
 
 
 def test_model_protocol_routes_to_targeted_repair():
