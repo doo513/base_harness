@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: cf0f72014ffc88b0a68defc6a461733299406046
+- Source commit: a0dce1bc400eaa82ddb48e009d15b950db1eb652
 - Branch: develop
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,11 +54,20 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-........................................................................ [ 18%]
-............ssss..s..................................................... [ 37%]
-..............................................ss........................ [ 56%]
-........................................................................ [ 75%]
-........................................................................ [ 94%]
-.....................                                                    [100%]
-374 passed, 7 skipped in 27.04s
+
+==================================== ERRORS ====================================
+_________ ERROR collecting tests/test_opencode_model_only_boundary.py __________
+ImportError while importing test module '/home/runner/work/base_harness/base_harness/tests/test_opencode_model_only_boundary.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_opencode_model_only_boundary.py:4: in <module>
+    from harness.opencode_adapter import (
+E   ImportError: cannot import name '_deny_all_inline_config' from 'harness.opencode_adapter' (/home/runner/work/base_harness/base_harness/src/harness/opencode_adapter.py)
+=========================== short test summary info ============================
+ERROR tests/test_opencode_model_only_boundary.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 1.03s
 ```
