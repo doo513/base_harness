@@ -41,6 +41,10 @@ timeout_seconds = 120
 temperature = 0
 max_tokens = 1024
 think = false
+# Set this to the actual context configured in Ollama when known.
+context_window = 8192
+reserved_output_tokens = 1024
+context_safety_margin_tokens = 256
 
 [models.lmstudio]
 provider = "lm-studio"
@@ -51,6 +55,32 @@ timeout_seconds = 120
 [models.lmstudio.options]
 temperature = 0
 max_tokens = 1024
+context_window = 8192
+reserved_output_tokens = 1024
+context_safety_margin_tokens = 256
+
+# OpenCode is intentionally connected through the existing CommandProvider.
+# The adapter runs `opencode run --format json` in a temporary workspace with
+# OpenCode permissions denied, so OpenCode may only return a Harness decision;
+# filesystem/shell/tool execution still belongs to base_harness.
+# Replace the OpenCode model below with any provider/model already configured
+# in your OpenCode installation.
+[models.opencode]
+provider = "command"
+command = "python -m harness.opencode_adapter --model ollama/gemma3:latest --agent plan"
+timeout_seconds = 240
+
+[models.opencode.options]
+adapter = "opencode"
+# This is metadata for base_harness context budgeting. Match the underlying model.
+context_window = 8192
+reserved_output_tokens = 1024
+context_safety_margin_tokens = 256
+
+# Unknown/custom providers can declare transport features explicitly without
+# assigning a model intelligence tier. Supported override keys include:
+# capability_structured_output, capability_native_tool_calling,
+# capability_streaming, capability_vision, capability_reasoning.
 
 [models.local]
 provider = "command"
