@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 
+from harness.model_error_envelope import encode_model_error
 from harness.model_protocol import DecisionProtocolError, decode_decision_text
 
 
@@ -28,7 +29,6 @@ class OpenCodeAdapterError(RuntimeError):
 
 DEFAULT_OPENCODE_AGENT = "harness-model"
 _INTERNAL_STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
-_ERROR_MARKER = "HARNESS_MODEL_ERROR:"
 
 
 @dataclass(frozen=True)
@@ -266,15 +266,10 @@ def run_opencode_decision(
 
 
 def _error_envelope(exc: OpenCodeAdapterError) -> str:
-    return _ERROR_MARKER + json.dumps(
-        {
-            "kind": exc.kind,
-            "message": str(exc),
-            "retryable": exc.retryable,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
+    return encode_model_error(
+        kind=exc.kind,
+        message=str(exc),
+        retryable=exc.retryable,
     )
 
 
