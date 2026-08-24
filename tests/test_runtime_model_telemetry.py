@@ -7,6 +7,15 @@ class FakeGateway:
             "requests": 2,
             "failures": 1,
             "protocol_repairs": 1,
+            "last_provider_call_id": "model-call-000002",
+            "last_failure_context": {
+                "schema_version": "failure-context-v1",
+                "kind": "model_provider_error",
+                "origin": "provider",
+                "phase": "provider_call",
+                "call_id": "model-call-000002",
+                "stderr_digest": "a" * 64,
+            },
         }
 
 
@@ -63,11 +72,13 @@ def test_model_attempt_emits_context_protocol_and_gateway_diagnostics():
     ]
     assert all(payload["authority"] == "diagnostic_only" for _, payload in runtime.rows)
     assert all(payload["attempt"] == 1 for _, payload in runtime.rows)
+    gateway = runtime.rows[-1][1]["telemetry"]
+    assert gateway["last_provider_call_id"] == "model-call-000002"
+    assert gateway["last_failure_context"]["phase"] == "provider_call"
+    assert len(gateway["last_failure_context"]["stderr_digest"]) == 64
 
 
 def test_resume_restored_metric_owns_durable_attempt_number():
-    # A freshly reconstructed controller starts its local invocation sequence at
-    # zero, while runtime_meta may restore seven earlier model attempts.
     runtime = Runtime(prior_attempts=7)
     assert runtime.controller.model_attempt_sequence == 0
 
@@ -86,8 +97,6 @@ def test_recovery_only_step_does_not_duplicate_model_telemetry():
         def step_once(self):
             return True
 
-    # Call the mixin method with a super implementation that does not advance
-    # the model-attempt sequence.
     class RecoveryRuntime(RuntimeModelTelemetryMixin, RecoveryOnly):
         def __init__(self):
             self.controller = runtime.controller
