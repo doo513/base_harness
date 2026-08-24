@@ -106,10 +106,6 @@ class HarnessRuntime(
         self.workspace_contract.ensure_managed_dirs()
         self.run_dir = Path(run_dir).resolve()
 
-        # Capture build/runtime identity once before run_dir creation can alter a
-        # repository worktree. The immutable snapshot is reused for the manifest
-        # and the semantic resume fingerprint rather than being recomputed per
-        # Actor turn.
         self.build_provenance = capture_build_provenance()
 
         self.oracle = profile.completion_oracle()
@@ -230,6 +226,17 @@ class HarnessRuntime(
         descriptor["progress_control"] = self.progress_policy.descriptor()
         descriptor["context_governance"] = self.context_policy.descriptor()
         descriptor["retrieval_memory"] = self._retrieval_config_descriptor()
+
+        model = getattr(self.controller, "model", None)
+        model_descriptor = getattr(model, "descriptor", None)
+        if callable(model_descriptor):
+            raw = model_descriptor()
+            if isinstance(raw, dict):
+                descriptor["model_gateway"] = {
+                    "revision": getattr(model, "revision", None),
+                    "descriptor": raw,
+                }
+
         # Only semantic build identity participates in resume equivalence. Git
         # commit/tree and CI presentation metadata stay in the audit manifest so
         # docs-only commits do not manufacture a false runtime conflict.
