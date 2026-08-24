@@ -4,6 +4,7 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from harness.config import ConfigError, MCPServerConfig, ModelConfig, PluginConfig
+from harness.model_protocol import OutputContract, OutputEnforcement
 
 
 _COMMON_MODEL_OPTIONS = {
@@ -12,6 +13,8 @@ _COMMON_MODEL_OPTIONS = {
     "context_safety_margin_tokens",
     "context_safety_margin_source",
     "fallback_models",
+    "output_contract",
+    "output_enforcement",
     "capability_structured_output",
     "capability_native_tool_calling",
     "capability_streaming",
@@ -71,11 +74,7 @@ def _validate_url(value: str | None, path: str) -> None:
 
 
 def validate_model_config_contract(config: ModelConfig) -> None:
-    """Reject unsupported built-in route fields before the first model call.
-
-    Custom provider IDs are intentionally left to their registered provider
-    contract because the core cannot know plugin-specific option keys.
-    """
+    """Reject unsupported built-in route fields before the first model call."""
     provider = config.provider
     allowed = _PROVIDER_OPTIONS.get(provider)
     if allowed is not None:
@@ -92,13 +91,19 @@ def validate_model_config_contract(config: ModelConfig) -> None:
 
     for key in ("context_window", "reserved_output_tokens", "context_safety_margin_tokens"):
         value = config.options.get(key)
-        if value is not None:
-            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-                raise ConfigError(f"options.{key} must be a positive integer")
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+            raise ConfigError(f"options.{key} must be a positive integer")
 
     seed = config.options.get("seed")
     if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
         raise ConfigError("options.seed must be an integer when provided")
+
+    output_contract = config.options.get("output_contract")
+    if output_contract is not None and output_contract not in {item.value for item in OutputContract}:
+        raise ConfigError(f"options.output_contract is invalid: {output_contract!r}")
+    output_enforcement = config.options.get("output_enforcement")
+    if output_enforcement is not None and output_enforcement not in {item.value for item in OutputEnforcement}:
+        raise ConfigError(f"options.output_enforcement is invalid: {output_enforcement!r}")
 
     if provider == "command":
         allowlist = config.options.get("command_env_allowlist", [])
@@ -119,8 +124,6 @@ def validate_model_config_contract(config: ModelConfig) -> None:
 
 
 def validate_mcp_server_contract(config: MCPServerConfig) -> None:
-    # mcp-gateway-v1/v2 implements stdio only. Rejecting HTTP here is more honest
-    # than accepting the config and failing during first client creation.
     if config.transport != "stdio":
         raise ConfigError(
             f"MCP transport {config.transport!r} is not implemented by mcp-gateway-v2"
@@ -155,9 +158,5 @@ def validate_mcp_server_contract(config: MCPServerConfig) -> None:
 
 
 def validate_plugin_config_contract(config: PluginConfig) -> None:
-    # Plugin-specific option keys cannot be validated safely until the module
-    # exposes a static contract. PluginGateway performs that validation before
-    # invoking the option-consuming factory. This function validates only core
-    # fields that are knowable without importing host code.
     if not isinstance(config.options, dict):
         raise ConfigError(f"plugin {config.name} options must be an object")
