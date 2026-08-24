@@ -3,8 +3,12 @@ from typing import Any, Protocol, Iterable
 import json
 
 from .context_compiler import compile_context_for_model
-from .failures import FailureKind
-from harness.model_error_envelope import extract_embedded_model_error
+from .failures import (
+    FailureContext,
+    FailureKind,
+    FailureOrigin,
+    FailurePhase,
+)
 from harness.model_protocol import (
     DECISION_KINDS,
     DecisionProtocolError,
@@ -17,19 +21,45 @@ VALID_DECISIONS = set(DECISION_KINDS)
 
 
 class ControllerBoundaryError(RuntimeError):
-    """Typed model/controller boundary failure consumable by the Kernel runtime."""
+    """Typed boundary failure; policy input is FailureContext, not exception type."""
 
     def __init__(
         self,
-        message: str,
+        message: str | None = None,
         *,
-        failure_kind: FailureKind,
+        failure_context: FailureContext | None = None,
+        failure_kind: FailureKind | None = None,
         retry_safe: bool = False,
         signature_key: str | None = None,
     ) -> None:
-        super().__init__(message)
-        self.failure_kind = failure_kind
-        self.retry_safe = bool(retry_safe)
+        # Compatibility constructor for older integration tests/callers.
+        if failure_context is None:
+            kind = failure_kind or FailureKind.IMPLEMENTATION_ERROR
+            origin = (
+                FailureOrigin.MODEL
+                if kind in {FailureKind.MODEL_PROTOCOL_ERROR, FailureKind.ACTOR_WORKFLOW_ERROR}
+                else FailureOrigin.HARNESS
+            )
+            phase = (
+                FailurePhase.PROTOCOL_VALIDATE
+                if kind is FailureKind.MODEL_PROTOCOL_ERROR
+                else FailurePhase.WORKFLOW
+                if kind is FailureKind.ACTOR_WORKFLOW_ERROR
+                else FailurePhase.CONTROLLER
+            )
+            failure_context = FailureContext(
+                kind=kind,
+                origin=origin,
+                phase=phase,
+                message=message or kind.value,
+                retryable=bool(retry_safe),
+                metadata={"legacy_signature_key": signature_key} if signature_key else {},
+            )
+        super().__init__(message or failure_context.message)
+        self.failure_context = failure_context
+        # Compatibility attributes; Runtime policy uses failure_context.
+        self.failure_kind = failure_context.kind
+        self.retry_safe = failure_context.retryable
         self.signature_key = signature_key
 
 
@@ -39,10 +69,9 @@ class Decision:
     payload: dict[str, Any]
 
     def validate(self) -> None:
-        # Preserve the historical Controller contract: arbitrary/custom
-        # Controllers that emit an invalid Decision raise ValueError and remain
-        # Harness integration failures. LLMController separately translates
-        # model-output decoder failures into typed MODEL_PROTOCOL_ERROR.
+        # Preserve the historical custom-Controller contract: arbitrary trusted
+        # Controller implementations that emit invalid decisions remain Harness
+        # integration failures rather than being mislabeled as model failures.
         try:
             validate_decision(self.kind, self.payload)
         except DecisionProtocolError as exc:
@@ -100,44 +129,12 @@ class ModelAdapter(Protocol):
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
-    """Compatibility wrapper over the canonical decision decoder.
-
-    Older integration tests/importers referenced this private helper directly.
-    Keep the symbol during the boundary migration, but do not retain a second
-    parsing implementation.
-    """
+    """Compatibility wrapper over the canonical decision decoder."""
     try:
         decoded = decode_decision_text(raw, allow_control_character_repair=True)
     except DecisionProtocolError as exc:
         raise ValueError(f"model did not return valid JSON object: {raw[:150]!r}") from exc
     return {"kind": decoded.kind, "payload": decoded.payload}
-
-
-def _provider_failure_kind(exc: Exception) -> tuple[FailureKind, bool, str | None]:
-    """Translate provider-facing error metadata without provider-specific imports."""
-    raw_kind = getattr(exc, "kind", None)
-    kind = str(raw_kind or "")
-    message = str(exc)
-    retryable = bool(getattr(exc, "retryable", False))
-
-    # Cooperating command adapters can preserve typed model/protocol failures in
-    # stderr. CommandProvider may wrap the child exit as execution_error, so the
-    # explicit marker has precedence over that outer transport classification.
-    embedded = extract_embedded_model_error(message)
-    if embedded is not None:
-        kind = embedded.kind
-        retryable = embedded.retryable
-
-    # Compatibility path for ModelGateway wrappers created before typed final
-    # errors were exposed as attributes.
-    if not kind and "last=protocol_" in message:
-        fragment = message.split("last=", 1)[1].split(":", 1)[0]
-        kind = fragment.strip()
-    if kind.startswith("protocol_") or kind == "protocol_boundary_violation":
-        return FailureKind.MODEL_PROTOCOL_ERROR, retryable, f"model-protocol:{kind}"
-    return FailureKind.MODEL_PROVIDER_ERROR, retryable, (
-        f"model-provider:{kind}" if kind else "model-provider:untyped"
-    )
 
 
 class LLMController:
@@ -185,18 +182,27 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
         except ControllerBoundaryError:
             raise
         except Exception as exc:
-            failure_kind, retry_safe, signature_key = _provider_failure_kind(exc)
-            raise ControllerBoundaryError(
-                f"model boundary failed: {type(exc).__name__}: {exc}",
-                failure_kind=failure_kind,
-                retry_safe=retry_safe,
-                signature_key=signature_key,
-            ) from exc
+            context = getattr(exc, "failure_context", None)
+            if isinstance(context, FailureContext):
+                raise ControllerBoundaryError(
+                    failure_context=context,
+                    message=f"model boundary failed: {context.message}",
+                ) from exc
+            # An arbitrary ModelAdapter that bypasses ModelGateway did not supply
+            # the common failure contract. That is an integration defect, not a
+            # provider failure inferred by Controller heuristics.
+            context = FailureContext(
+                kind=FailureKind.IMPLEMENTATION_ERROR,
+                origin=FailureOrigin.HARNESS,
+                phase=FailurePhase.CONTROLLER,
+                message=f"unclassified model adapter error: {type(exc).__name__}: {exc}",
+                retryable=False,
+                fallback_safe=False,
+            )
+            raise ControllerBoundaryError(failure_context=context) from exc
 
     def decide(self, goal, state, context):
         self.model_attempt_sequence += 1
-        # Never let a failed attempt inherit a successful decode record from the
-        # previous turn. Context telemetry is refreshed immediately below.
         self.last_protocol_decode = None
         compiled = compile_context_for_model(
             model=self.model,
@@ -205,9 +211,6 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
         )
         self.last_context_compile = compiled.telemetry()
 
-        # goal_contract already lives inside the governed ContextProjection.
-        # Serializing the raw GoalContract again duplicated mandatory text and
-        # bypassed the intended single model-visible context boundary.
         user = json.dumps(
             {"context": compiled.context},
             ensure_ascii=False,
@@ -216,52 +219,36 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
         )
         raw = self._complete(system=self.SYSTEM, user=user)
 
-        # Retry once if raw response is completely empty. Provider-level retries
-        # happen first; the compiler safety reserve leaves room for this short
-        # protocol reminder without replaying the unbounded source projection.
-        if not raw or not raw.strip():
-            retry_prompt = (
-                user
-                + "\n\nCRITICAL: Return one non-empty JSON decision, starting with plan or tool."
-            )
-            raw = self._complete(system=self.SYSTEM, user=retry_prompt)
-
+        # Configured ModelGateway routes already performed the only bounded
+        # lexical repair and retry/fallback policy. Non-Gateway adapters retain
+        # the compatibility parser but never receive Controller-owned retries.
+        allow_lexical_repair = not bool(
+            getattr(self.model, "normalizes_decision_protocol", False)
+        )
         try:
             decoded = decode_decision_text(
                 raw,
-                allow_control_character_repair=True,
+                allow_control_character_repair=allow_lexical_repair,
             )
         except DecisionProtocolError as exc:
-            raise ControllerBoundaryError(
-                f"model decision protocol failed: {exc}",
-                failure_kind=FailureKind.MODEL_PROTOCOL_ERROR,
-                retry_safe=True,
-                signature_key=f"model-protocol:{exc.kind}",
-            ) from exc
+            context = FailureContext(
+                kind=FailureKind.MODEL_PROTOCOL_ERROR,
+                origin=FailureOrigin.MODEL,
+                phase=FailurePhase.PROTOCOL_VALIDATE,
+                message=f"model decision protocol failed: {exc}",
+                retryable=False,
+                fallback_safe=False,
+                metadata={"protocol_error_kind": exc.kind},
+            )
+            raise ControllerBoundaryError(failure_context=context) from exc
 
         self.last_protocol_decode = {
             "kind": decoded.kind,
             "lexical_repaired": decoded.lexical_repaired,
             "lexical_repair_kind": decoded.lexical_repair_kind,
+            "gateway_normalized": not allow_lexical_repair,
         }
-        kind = decoded.kind
-        payload = decoded.payload
 
-        # A small model may skip the initial plan and immediately emit a task
-        # update. Only an actually empty workflow is auto-promoted. Once a plan
-        # exists, unknown task IDs remain errors so recovery can repair the typo
-        # instead of silently replacing the current plan.
-        if kind == "task" and state is not None:
-            agent_tasks = getattr(state, "agent_control", None)
-            tasks_map = getattr(agent_tasks, "tasks", {}) if agent_tasks else {}
-            if not tasks_map:
-                task_id = str(payload.get("id") or "t1")
-                title = str(payload.get("note") or f"Task {task_id}")
-                return Decision("plan", {
-                    "objective": str(goal)[:120],
-                    "tasks": [{"id": task_id, "title": title, "depends_on": []}],
-                })
-
-        decision = Decision(kind, payload)
+        decision = Decision(decoded.kind, decoded.payload)
         decision.validate()
         return decision
