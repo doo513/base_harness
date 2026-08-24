@@ -2,12 +2,32 @@ from __future__ import annotations
 
 from types import MethodType
 from typing import Any, Mapping
+import copy
 
 from harness.core.storage import canonical_hash
 
 
 class ProfileCompositionError(ValueError):
     pass
+
+
+def _clone_tool_spec(spec: Any) -> Any:
+    """Structural copy of mutable ToolSpec metadata without cloning handlers/backends."""
+    cloned = copy.copy(spec)
+    for field in (
+        "input_schema",
+        "output_schema",
+        "model_input_schema",
+        "model_output_schema",
+        "provenance",
+    ):
+        value = getattr(spec, field, None)
+        if isinstance(value, dict):
+            setattr(cloned, field, copy.deepcopy(value))
+    failure_modes = getattr(spec, "failure_modes", None)
+    if isinstance(failure_modes, list):
+        cloned.failure_modes = list(failure_modes)
+    return cloned
 
 
 def _stamp_tool_contract_provenance(spec: Any) -> None:
@@ -25,15 +45,15 @@ def _stamp_tool_contract_provenance(spec: Any) -> None:
 
 
 def augment_profile_tools(profile: Any, extra_tools: Mapping[str, Any]) -> Any:
-    """Add integration tools while preserving the original profile type/identity.
+    """Return a structurally isolated profile snapshot with composed tools.
 
-    Runtime provenance records the concrete profile class/source plus each
-    resulting tool descriptor. Keeping the original instance avoids replacing
-    that profile identity with a generic proxy in resume fingerprints.
+    The concrete profile class is preserved, but the source profile and its
+    ToolSpec objects are not mutated. This prevents tool/provenance state from
+    leaking between concurrent runs, retries, or later profile reuse.
     """
 
-    extras = dict(extra_tools)
-    base_tools = dict(profile.tools())
+    extras = {name: _clone_tool_spec(spec) for name, spec in extra_tools.items()}
+    base_tools = {name: _clone_tool_spec(spec) for name, spec in profile.tools().items()}
     collisions = sorted(set(base_tools) & set(extras))
     if collisions:
         raise ProfileCompositionError(
@@ -43,8 +63,12 @@ def augment_profile_tools(profile: Any, extra_tools: Mapping[str, Any]) -> Any:
     for spec in composed.values():
         _stamp_tool_contract_provenance(spec)
 
-    def tools(self):
-        return dict(composed)
+    profile_snapshot = copy.copy(profile)
 
-    profile.tools = MethodType(tools, profile)
-    return profile
+    def tools(self):
+        # Return fresh structural copies so callers cannot mutate the stored
+        # composition through a returned ToolSpec reference.
+        return {name: _clone_tool_spec(spec) for name, spec in composed.items()}
+
+    profile_snapshot.tools = MethodType(tools, profile_snapshot)
+    return profile_snapshot
