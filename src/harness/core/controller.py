@@ -174,16 +174,19 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
         self.model = model
         self.last_context_compile: dict[str, Any] | None = None
         self.last_protocol_decode: dict[str, Any] | None = None
+        self.last_failure_context: FailureContext | None = None
         self.model_attempt_sequence = 0
 
     def _complete(self, *, system: str, user: str) -> str:
         try:
             return self.model.complete(system=system, user=user)
-        except ControllerBoundaryError:
+        except ControllerBoundaryError as exc:
+            self.last_failure_context = exc.failure_context
             raise
         except Exception as exc:
             context = getattr(exc, "failure_context", None)
             if isinstance(context, FailureContext):
+                self.last_failure_context = context
                 raise ControllerBoundaryError(
                     failure_context=context,
                     message=f"model boundary failed: {context.message}",
@@ -199,11 +202,13 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
                 retryable=False,
                 fallback_safe=False,
             )
+            self.last_failure_context = context
             raise ControllerBoundaryError(failure_context=context) from exc
 
     def decide(self, goal, state, context):
         self.model_attempt_sequence += 1
         self.last_protocol_decode = None
+        self.last_failure_context = None
         compiled = compile_context_for_model(
             model=self.model,
             system=self.SYSTEM,
@@ -240,6 +245,7 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
                 fallback_safe=False,
                 metadata={"protocol_error_kind": exc.kind},
             )
+            self.last_failure_context = context
             raise ControllerBoundaryError(failure_context=context) from exc
 
         self.last_protocol_decode = {
