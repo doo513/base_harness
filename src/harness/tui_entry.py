@@ -15,6 +15,7 @@ from harness.opencode_selection import (
 
 
 _ORIGINAL_MODELS = legacy._models
+_ORIGINAL_HELP = legacy._help
 _ORIGINAL_COMPLETER = conversation._ConversationCompleter
 _INSTALLED = False
 
@@ -132,6 +133,18 @@ def _models_with_opencode(state, session, argument: str = "") -> None:
     _ORIGINAL_MODELS(state, session, argument)
 
 
+def _help_with_opencode() -> None:
+    _ORIGINAL_HELP()
+    legacy._emit(
+        ("class:accent", f"  {'/model opencode':<24}"),
+        ("class:muted", "browse OpenCode catalog; explicitly-free models are shown first"),
+    )
+    legacy._emit(
+        ("class:accent", f"  {'/model opencode refresh':<24}"),
+        ("class:muted", "refresh the OpenCode model catalog before selection"),
+    )
+
+
 class _OpenCodeCompleter(_ORIGINAL_COMPLETER):
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
@@ -151,6 +164,7 @@ def install_opencode_model_selector() -> None:
     if _INSTALLED:
         return
     legacy._models = _models_with_opencode
+    legacy._help = _help_with_opencode
     conversation._ConversationCompleter = _OpenCodeCompleter
     conversation._COMMAND_DESCRIPTIONS["/model"] = "Switch model; use /model opencode to browse OpenCode"
     conversation._COMPAT_COMMAND_DESCRIPTIONS["/models"] = "Alias for /model; /models opencode browses OpenCode"
