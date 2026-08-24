@@ -91,6 +91,20 @@ class ModelAdapter(Protocol):
     def complete(self, *, system: str, user: str) -> str: ...
 
 
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    """Compatibility wrapper over the canonical decision decoder.
+
+    Older integration tests/importers referenced this private helper directly.
+    Keep the symbol during the boundary migration, but do not retain a second
+    parsing implementation.
+    """
+    try:
+        decoded = decode_decision_text(raw, allow_control_character_repair=True)
+    except DecisionProtocolError as exc:
+        raise ValueError(f"model did not return valid JSON object: {raw[:150]!r}") from exc
+    return {"kind": decoded.kind, "payload": decoded.payload}
+
+
 def _provider_failure_kind(exc: Exception) -> tuple[FailureKind, bool, str | None]:
     """Translate provider-facing error metadata without importing provider code.
 
