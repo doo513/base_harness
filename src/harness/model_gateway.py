@@ -11,6 +11,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -234,15 +235,17 @@ class CommandProvider:
     def complete(self, request: ModelRequest) -> ModelResponse:
         started = monotonic()
         try:
-            proc = subprocess.run(
-                self.argv,
-                input=json.dumps({"system": request.system, "user": request.user}, ensure_ascii=False),
-                text=True,
-                capture_output=True,
-                timeout=self.timeout_seconds,
-                shell=False,
-                env=self._environment(),
-            )
+            with tempfile.TemporaryDirectory(prefix="base-harness-model-command-") as cwd:
+                proc = subprocess.run(
+                    self.argv,
+                    input=json.dumps({"system": request.system, "user": request.user}, ensure_ascii=False),
+                    text=True,
+                    capture_output=True,
+                    timeout=self.timeout_seconds,
+                    shell=False,
+                    env=self._environment(),
+                    cwd=cwd,
+                )
         except subprocess.TimeoutExpired as exc:
             raise ProviderError("model command timed out", kind="timeout", retryable=True) from exc
         except OSError as exc:
@@ -278,6 +281,8 @@ class CommandProvider:
                 "stderr_digest": stderr_digest,
                 "environment_policy": "inherit" if self.command_inherit_env else "minimal_allowlist",
                 "environment_allowlist": list(self.command_env_allowlist),
+                "cwd_policy": "temporary_directory",
+                "host_isolation": "process_boundary_not_sandbox",
             },
         )
 
@@ -329,7 +334,7 @@ class OpenAICompatibleProvider:
             ],
             "stream": False,
         }
-        for key in ("temperature", "max_tokens", "top_p", "reasoning_effort"):
+        for key in ("temperature", "max_tokens", "top_p", "reasoning_effort", "seed"):
             if key in self.options:
                 body[key] = self.options[key]
         response_format = self.options.get("response_format")
@@ -380,6 +385,7 @@ class OpenAICompatibleProvider:
             raw_metadata={
                 "finish_reason": first.get("finish_reason"),
                 "reasoning_present": isinstance(msg_dict.get("reasoning"), str) and bool(msg_dict.get("reasoning", "").strip()),
+                "seed": self.options.get("seed"),
             },
         )
 
@@ -400,8 +406,9 @@ class OllamaProvider:
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         generation_options: dict[str, Any] = {"temperature": self.options.get("temperature", 0)}
-        if "top_p" in self.options:
-            generation_options["top_p"] = self.options["top_p"]
+        for key in ("top_p", "seed"):
+            if key in self.options:
+                generation_options[key] = self.options[key]
         if "num_predict" in self.options:
             generation_options["num_predict"] = self.options["num_predict"]
         elif "max_tokens" in self.options:
@@ -440,7 +447,11 @@ class OllamaProvider:
             model_id=self.model,
             usage=usage,
             latency_seconds=latency,
-            raw_metadata={"done_reason": payload.get("done_reason"), "structured_output": "json_schema"},
+            raw_metadata={
+                "done_reason": payload.get("done_reason"),
+                "structured_output": "json_schema",
+                "seed": self.options.get("seed"),
+            },
         )
 
 
@@ -473,10 +484,9 @@ class LMStudioProvider:
                 "json_schema": {"name": "harness_decision", "strict": True, "schema": _DECISION_JSON_SCHEMA},
             },
         }
-        if "max_tokens" in self.options:
-            body["max_tokens"] = self.options["max_tokens"]
-        if "top_p" in self.options:
-            body["top_p"] = self.options["top_p"]
+        for key in ("max_tokens", "top_p", "seed"):
+            if key in self.options:
+                body[key] = self.options[key]
         started = monotonic()
         payload, request_id = _http_json(
             self.endpoint,
@@ -502,7 +512,11 @@ class LMStudioProvider:
             request_id=request_id or (payload.get("id") if isinstance(payload.get("id"), str) else None),
             usage=OpenAICompatibleProvider._usage(payload.get("usage")),
             latency_seconds=latency,
-            raw_metadata={"finish_reason": first.get("finish_reason"), "structured_output": "json_schema"},
+            raw_metadata={
+                "finish_reason": first.get("finish_reason"),
+                "structured_output": "json_schema",
+                "seed": self.options.get("seed"),
+            },
         )
 
 
@@ -611,18 +625,12 @@ class ModelGateway:
         return shutil.which(executable) is not None
 
     def preflight(self) -> dict[str, Any]:
-        """Validate every route that can execute before HarnessRuntime starts."""
         routes: list[dict[str, Any]] = []
         for alias in (self.default_model, *self.fallback_models):
             config = self.models[alias]
             validate_model_config_contract(config)
-            provider = self._provider(alias)  # resolves required secret refs in provider constructors
-            detail = {
-                "alias": alias,
-                "provider": config.provider,
-                "model": config.model,
-                "status": "ready",
-            }
+            provider = self._provider(alias)
+            detail = {"alias": alias, "provider": config.provider, "model": config.model, "status": "ready"}
             if isinstance(provider, CommandProvider):
                 executable = provider.argv[0]
                 if not self._executable_available(executable):
@@ -850,6 +858,8 @@ class ModelGateway:
             "decision_protocol": "harness-json-decision",
             "retry_policy": self.failure_policy.descriptor(),
             "command_environment_default": "minimal_allowlist",
+            "command_cwd_default": "temporary_directory",
+            "host_isolation": "process_boundary_not_sandbox",
             "models": {
                 alias: {
                     "provider": config.provider,
