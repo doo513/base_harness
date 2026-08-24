@@ -27,6 +27,7 @@ from .runtime_progress import RuntimeProgressMixin
 from .runtime_context import RuntimeContextMixin
 from .runtime_controller_state import RuntimeControllerStateMixin
 from .runtime_persistence import RuntimePersistenceMixin
+from .runtime_model_telemetry import RuntimeModelTelemetryMixin
 from .runtime_execution import RuntimeExecutionMixin
 
 
@@ -37,6 +38,7 @@ class HarnessRuntime(
     RuntimeContextMixin,
     RuntimeControllerStateMixin,
     RuntimePersistenceMixin,
+    RuntimeModelTelemetryMixin,
     RuntimeExecutionMixin,
 ):
     """Single-actor verified-state kernel with recovery, progress, context, and bounded retrieval governance."""
@@ -176,6 +178,8 @@ class HarnessRuntime(
             "retrieval_requests": 0,
             "retrieval_results": 0,
             "retrieval_items_admitted": 0,
+            "model_attempts": 0,
+            "model_protocol_lexical_repairs": 0,
         }
 
         if self.resume_mode:
