@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: a0dce1bc400eaa82ddb48e009d15b950db1eb652
+- Source commit: 898801dd71b9106467fe357daea1653254a1e313
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -69,5 +69,5 @@ E   ImportError: cannot import name '_deny_all_inline_config' from 'harness.open
 =========================== short test summary info ============================
 ERROR tests/test_opencode_model_only_boundary.py
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 error in 1.03s
+1 error in 0.99s
 ```
