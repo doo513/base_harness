@@ -10,11 +10,10 @@ class RuntimeModelTelemetryMixin:
     truth, grant progress, execute tools, or affect completion authority.
     """
 
-    def _record_model_boundary_telemetry(self) -> None:
+    def _record_model_boundary_telemetry(self, *, attempt: int) -> None:
         controller = self.controller
         compile_data = getattr(controller, "last_context_compile", None)
         decode_data = getattr(controller, "last_protocol_decode", None)
-        attempt = getattr(controller, "model_attempt_sequence", None)
 
         if isinstance(compile_data, dict):
             payload: dict[str, Any] = {
@@ -56,6 +55,11 @@ class RuntimeModelTelemetryMixin:
         result = super().step_once()
         after = getattr(controller, "model_attempt_sequence", None)
         if isinstance(after, int) and after != before:
-            self.metrics["model_attempts"] = int(self.metrics.get("model_attempts", 0)) + 1
-            self._record_model_boundary_telemetry()
+            # The controller-local sequence is only an invocation detector. The
+            # durable attempt ID comes from metrics because runtime_meta restores
+            # metrics across resume, while a new LLMController starts its local
+            # sequence at zero.
+            attempt = int(self.metrics.get("model_attempts", 0)) + 1
+            self.metrics["model_attempts"] = attempt
+            self._record_model_boundary_telemetry(attempt=attempt)
         return result
