@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 898801dd71b9106467fe357daea1653254a1e313
+- Source commit: 213cfdebce0ef668c281599bf493b9f51a461e19
 - Branch: develop
-- Result: **FAIL**
+- Result: **PASS**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      FAIL
+full-pytest                                      PASS
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,20 +54,11 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-
-==================================== ERRORS ====================================
-_________ ERROR collecting tests/test_opencode_model_only_boundary.py __________
-ImportError while importing test module '/home/runner/work/base_harness/base_harness/tests/test_opencode_model_only_boundary.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/test_opencode_model_only_boundary.py:4: in <module>
-    from harness.opencode_adapter import (
-E   ImportError: cannot import name '_deny_all_inline_config' from 'harness.opencode_adapter' (/home/runner/work/base_harness/base_harness/src/harness/opencode_adapter.py)
-=========================== short test summary info ============================
-ERROR tests/test_opencode_model_only_boundary.py
-!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 error in 0.99s
+........................................................................ [ 18%]
+............ssss..s..................................................... [ 37%]
+.................................................ss..................... [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 93%]
+........................                                                 [100%]
+377 passed, 7 skipped in 28.83s
 ```
