@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: 29e9a4d9e9ee8f3f5eeee3703e0b7ae2cedc3a74
+- Source commit: 622f8f1121a0d41993bdf217694e90c15690dd5d
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -54,20 +54,38 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
+....................F................................................... [ 18%]
+............ssss..s..................................................... [ 37%]
+..............................................ss........................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+.....................                                                    [100%]
+=================================== FAILURES ===================================
+______________ test_malformed_decision_becomes_failure_not_crash _______________
 
-==================================== ERRORS ====================================
-__________ ERROR collecting tests/test_local_model_protocol_compat.py __________
-ImportError while importing test module '/home/runner/work/base_harness/base_harness/tests/test_local_model_protocol_compat.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/test_local_model_protocol_compat.py:8: in <module>
-    from harness.core.controller import LLMController, _extract_json_object
-E   ImportError: cannot import name '_extract_json_object' from 'harness.core.controller' (/home/runner/work/base_harness/base_harness/src/harness/core/controller.py)
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_malformed_decision_become0')
+
+    def test_malformed_decision_becomes_failure_not_crash(tmp_path):
+        profile = SoftwareProfile(workspace=tmp_path, acceptance_commands=["false"])
+        controller = ScriptedController([
+            Decision("propose", {}),
+        ])
+        state = HarnessRuntime(
+            goal=profile.default_goal(),
+            profile=profile,
+            controller=controller,
+            run_dir=tmp_path / "run",
+            workspace=tmp_path,
+            budget=Budget(hard_max_steps=1),
+        ).run()
+        assert not state.completed
+>       assert any(f["kind"] == "implementation_error" for f in state.failures)
+E       assert False
+E        +  where False = any(<generator object test_malformed_decision_becomes_failure_not_crash.<locals>.<genexpr> at 0x7f28d2ca7100>)
+
+tests/test_hardening.py:76: AssertionError
 =========================== short test summary info ============================
-ERROR tests/test_local_model_protocol_compat.py
-!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 error in 1.14s
+FAILED tests/test_hardening.py::test_malformed_decision_becomes_failure_not_crash - assert False
+ +  where False = any(<generator object test_malformed_decision_becomes_failure_not_crash.<locals>.<genexpr> at 0x7f28d2ca7100>)
+1 failed, 373 passed, 7 skipped in 29.37s
 ```
