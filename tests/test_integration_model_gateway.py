@@ -1,5 +1,4 @@
 import json
-import os
 import shlex
 import sys
 
@@ -48,6 +47,10 @@ def _valid(provider_id="fake", model_id="m", reason="ok"):
         usage=ModelUsage(input_tokens=10, output_tokens=4, total_tokens=14),
         latency_seconds=0.1,
     )
+
+
+def _python_command(program: str) -> str:
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(program)}"
 
 
 def test_model_gateway_retries_retryable_error_then_succeeds():
@@ -101,9 +104,6 @@ def test_model_gateway_falls_back_only_after_common_policy_allows_it():
 
 def test_protocol_normalization_and_repair_are_gateway_wide_not_provider_specific():
     provider = FakeProvider("fake", [
-        '{not-used}',
-    ])
-    provider.outcomes = [
         ModelResponse(
             content='{"kind":"tool","payload":{"tool":"","args":{}}}',
             provider_id="fake",
@@ -114,7 +114,7 @@ def test_protocol_normalization_and_repair_are_gateway_wide_not_provider_specifi
             provider_id="fake",
             model_id="m",
         ),
-    ]
+    ])
     registry = ProviderRegistry()
     registry.register("fake", lambda config, resolver: provider)
     gateway = ModelGateway(
@@ -183,8 +183,7 @@ def test_single_command_gateway_uses_argv_execution_and_controller_wire_format()
         "assert 'system' in obj and 'user' in obj; "
         "print(json.dumps({'kind':'complete','payload':{'reason':'ok'}}))"
     )
-    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(program)}"
-    gateway = ModelGateway.single_command(command)
+    gateway = ModelGateway.single_command(_python_command(program))
     raw = gateway.complete(system="system", user="user")
     assert json.loads(raw) == {"kind": "complete", "payload": {"reason": "ok"}}
 
@@ -194,7 +193,7 @@ def test_command_provider_minimizes_parent_environment_by_default(monkeypatch):
     provider = CommandProvider(
         ModelConfig(
             provider="command",
-            command=f"{shlex.quote(sys.executable)} -c {shlex.quote('print(\"{}\")')}",
+            command=_python_command('print("{}")'),
         )
     )
     env = provider._environment()
@@ -207,7 +206,7 @@ def test_command_provider_explicit_environment_allowlist_is_narrow(monkeypatch):
     provider = CommandProvider(
         ModelConfig(
             provider="command",
-            command=f"{shlex.quote(sys.executable)} -c {shlex.quote('print(\"{}\")')}",
+            command=_python_command('print("{}")'),
             options={"command_env_allowlist": ["HARNESS_ALLOWED"]},
         )
     )
