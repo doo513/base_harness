@@ -6,19 +6,29 @@ from typing import Any
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
 
-from harness.core.controller import Decision
+from harness.model_protocol import DecisionProtocolError, decode_decision_text
 
 
 class OpenCodeAdapterError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "opencode_adapter_error",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.retryable = bool(retryable)
 
 
 DEFAULT_OPENCODE_AGENT = "harness-model"
+_INTERNAL_STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
+_ERROR_MARKER = "HARNESS_MODEL_ERROR:"
 
 
 @dataclass(frozen=True)
@@ -29,42 +39,17 @@ class OpenCodeRunResult:
     output_tokens: int | None
     reasoning_tokens: int | None
     event_count: int
-
-
-def _strip_fence(text: str) -> str:
-    value = text.strip()
-    match = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", value, flags=re.IGNORECASE)
-    return match.group(1).strip() if match else value
-
-
-def _canonical_decision(text: str) -> str:
-    raw = _strip_fence(text)
-    try:
-        obj = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise OpenCodeAdapterError(f"OpenCode text is not valid decision JSON: {exc.msg}") from exc
-    if not isinstance(obj, dict):
-        raise OpenCodeAdapterError("OpenCode decision must be a JSON object")
-    kind = str(obj.get("kind", ""))
-    payload = obj.get("payload", {})
-    decision = Decision(kind, payload)
-    try:
-        decision.validate()
-    except ValueError as exc:
-        raise OpenCodeAdapterError(f"OpenCode decision violates Harness protocol: {exc}") from exc
-    return json.dumps(
-        {"kind": decision.kind, "payload": decision.payload},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    protocol_repaired: bool = False
+    protocol_repair_kind: str | None = None
+    structured_output_tool_uses: int = 0
+    external_tool_uses: int = 0
 
 
 def _decision_transport_prompt(system: str, user: str) -> str:
     return (
         "HARNESS DECISION TRANSPORT MODE\n"
         "You are being used only as a model/decision transport for another verified-state Harness.\n"
-        "Do NOT use OpenCode tools, shell, file editing, web search, subagents, or workspace reads.\n"
+        "Do NOT use OpenCode shell, file, web, workspace, or subagent tools.\n"
         "A requested Harness tool action must be returned as JSON text; never execute it yourself.\n"
         "Return exactly one complete JSON object and no commentary.\n\n"
         "HARNESS SYSTEM CONTRACT:\n"
@@ -74,24 +59,29 @@ def _decision_transport_prompt(system: str, user: str) -> str:
     )
 
 
-def _deny_all_inline_config() -> str:
-    """Define one minimal primary agent and deny every OpenCode tool surface.
+def _deny_external_tools_inline_config() -> str:
+    """Define a minimal primary agent with no host-action authority.
 
-    The selected underlying model is still supplied by `opencode run --model`.
-    A custom primary agent avoids inheriting the built-in Plan agent's workflow
-    prompt, reducing OpenCode-specific behavioral bias in Harness experiments.
+    OpenCode Structured Output is an internal schema-validation mechanism. It is
+    explicitly allowed so a later structured-output transport can be A/B tested,
+    while every external/action tool remains denied. This is still application-
+    level permissioning, not an OS sandbox; the adapter also uses a temp cwd.
     """
+    permission = {
+        "*": "deny",
+        _INTERNAL_STRUCTURED_OUTPUT_TOOL: "allow",
+    }
     return json.dumps(
         {
-            "permission": "deny",
+            "permission": permission,
             "compaction": {"auto": True, "prune": True},
             "agent": {
                 DEFAULT_OPENCODE_AGENT: {
                     "description": "Decision-only model transport for base_harness",
                     "mode": "primary",
-                    "permission": {"*": "deny"},
+                    "permission": permission,
                     "prompt": (
-                        "Act only as a text model transport. Do not call tools or subagents. "
+                        "Act only as a text model transport. Do not call external tools or subagents. "
                         "Follow the user-provided Harness contract and return only the requested text."
                     ),
                 }
@@ -108,6 +98,8 @@ def _parse_jsonl(stdout: str) -> OpenCodeRunResult:
     output_tokens: int | None = None
     reasoning_tokens: int | None = None
     event_count = 0
+    structured_output_tool_uses = 0
+    external_tool_uses = 0
 
     for line_no, line in enumerate(stdout.splitlines(), start=1):
         if not line.strip():
@@ -115,9 +107,15 @@ def _parse_jsonl(stdout: str) -> OpenCodeRunResult:
         try:
             event = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise OpenCodeAdapterError(f"OpenCode JSONL line {line_no} is invalid: {exc.msg}") from exc
+            raise OpenCodeAdapterError(
+                f"OpenCode JSONL line {line_no} is invalid: {exc.msg}",
+                kind="invalid_response",
+            ) from exc
         if not isinstance(event, dict):
-            raise OpenCodeAdapterError(f"OpenCode JSONL line {line_no} is not an object")
+            raise OpenCodeAdapterError(
+                f"OpenCode JSONL line {line_no} is not an object",
+                kind="invalid_response",
+            )
         event_count += 1
         if isinstance(event.get("sessionID"), str):
             session_id = event["sessionID"]
@@ -126,12 +124,22 @@ def _parse_jsonl(stdout: str) -> OpenCodeRunResult:
         if event_type == "tool_use":
             part = event.get("part")
             tool = part.get("tool") if isinstance(part, dict) else None
+            if tool == _INTERNAL_STRUCTURED_OUTPUT_TOOL:
+                structured_output_tool_uses += 1
+                continue
+            external_tool_uses += 1
             raise OpenCodeAdapterError(
-                "OpenCode attempted a tool action inside the decision-only boundary"
-                + (f": {tool}" if tool else "")
+                "OpenCode attempted an external tool action inside the decision-only boundary"
+                + (f": {tool}" if tool else ""),
+                kind="protocol_boundary_violation",
+                retryable=False,
             )
         if event_type == "error":
-            raise OpenCodeAdapterError(f"OpenCode session error: {event.get('error')!r}")
+            raise OpenCodeAdapterError(
+                f"OpenCode session error: {event.get('error')!r}",
+                kind="provider_error",
+                retryable=True,
+            )
         if event_type == "text":
             part = event.get("part")
             value = part.get("text") if isinstance(part, dict) else None
@@ -151,17 +159,34 @@ def _parse_jsonl(stdout: str) -> OpenCodeRunResult:
 
     if not text_parts:
         raise OpenCodeAdapterError(
-            "OpenCode run produced no completed text event; JSONL output may be incomplete"
+            "OpenCode run produced no completed text event; JSONL output may be incomplete",
+            kind="protocol_truncated",
+            retryable=True,
         )
 
-    decision_json = _canonical_decision(text_parts[-1])
+    try:
+        decoded = decode_decision_text(
+            text_parts[-1],
+            allow_control_character_repair=True,
+        )
+    except DecisionProtocolError as exc:
+        raise OpenCodeAdapterError(
+            f"OpenCode decision violates Harness protocol: {exc}",
+            kind=exc.kind,
+            retryable=exc.retryable,
+        ) from exc
+
     return OpenCodeRunResult(
-        decision_json=decision_json,
+        decision_json=decoded.canonical_json,
         session_id=session_id,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         reasoning_tokens=reasoning_tokens,
         event_count=event_count,
+        protocol_repaired=decoded.lexical_repaired,
+        protocol_repair_kind=decoded.lexical_repair_kind,
+        structured_output_tool_uses=structured_output_tool_uses,
+        external_tool_uses=external_tool_uses,
     )
 
 
@@ -175,13 +200,13 @@ def run_opencode_decision(
     timeout_seconds: float = 180.0,
 ) -> OpenCodeRunResult:
     if not binary.strip():
-        raise OpenCodeAdapterError("OpenCode binary must not be empty")
+        raise OpenCodeAdapterError("OpenCode binary must not be empty", kind="configuration_error")
     if not model.strip():
-        raise OpenCodeAdapterError("OpenCode model must not be empty")
+        raise OpenCodeAdapterError("OpenCode model must not be empty", kind="configuration_error")
     if not agent.strip():
-        raise OpenCodeAdapterError("OpenCode agent must not be empty")
+        raise OpenCodeAdapterError("OpenCode agent must not be empty", kind="configuration_error")
     if timeout_seconds <= 0:
-        raise OpenCodeAdapterError("OpenCode timeout must be positive")
+        raise OpenCodeAdapterError("OpenCode timeout must be positive", kind="configuration_error")
 
     prompt = _decision_transport_prompt(system, user)
 
@@ -193,7 +218,7 @@ def run_opencode_decision(
         work_dir.mkdir()
 
         env = dict(os.environ)
-        env["OPENCODE_CONFIG_CONTENT"] = _deny_all_inline_config()
+        env["OPENCODE_CONFIG_CONTENT"] = _deny_external_tools_inline_config()
         env["OPENCODE_CONFIG_DIR"] = str(config_dir)
 
         argv = [
@@ -220,16 +245,37 @@ def run_opencode_decision(
                 shell=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise OpenCodeAdapterError("OpenCode run timed out") from exc
+            raise OpenCodeAdapterError(
+                "OpenCode run timed out",
+                kind="timeout",
+                retryable=True,
+            ) from exc
         except OSError as exc:
-            raise OpenCodeAdapterError(f"OpenCode failed to start: {exc}") from exc
+            raise OpenCodeAdapterError(
+                f"OpenCode failed to start: {exc}",
+                kind="execution_error",
+            ) from exc
 
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()[-2000:]
             raise OpenCodeAdapterError(
-                f"OpenCode exited with status {proc.returncode}: {detail}"
+                f"OpenCode exited with status {proc.returncode}: {detail}",
+                kind="execution_error",
             )
         return _parse_jsonl(proc.stdout)
+
+
+def _error_envelope(exc: OpenCodeAdapterError) -> str:
+    return _ERROR_MARKER + json.dumps(
+        {
+            "kind": exc.kind,
+            "message": str(exc),
+            "retryable": exc.retryable,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -249,11 +295,17 @@ def _main(argv: list[str] | None = None) -> int:
     try:
         request = json.load(sys.stdin)
         if not isinstance(request, dict):
-            raise OpenCodeAdapterError("Harness command request must be a JSON object")
+            raise OpenCodeAdapterError(
+                "Harness command request must be a JSON object",
+                kind="configuration_error",
+            )
         system = request.get("system")
         user = request.get("user")
         if not isinstance(system, str) or not isinstance(user, str):
-            raise OpenCodeAdapterError("Harness command request requires string system/user")
+            raise OpenCodeAdapterError(
+                "Harness command request requires string system/user",
+                kind="configuration_error",
+            )
         result = run_opencode_decision(
             system=system,
             user=user,
@@ -262,8 +314,15 @@ def _main(argv: list[str] | None = None) -> int:
             agent=args.agent,
             timeout_seconds=args.timeout,
         )
-    except (OpenCodeAdapterError, json.JSONDecodeError) as exc:
-        print(f"opencode adapter error: {exc}", file=sys.stderr)
+    except json.JSONDecodeError as exc:
+        wrapped = OpenCodeAdapterError(
+            f"Harness command request JSON is invalid: {exc.msg}",
+            kind="configuration_error",
+        )
+        print(_error_envelope(wrapped), file=sys.stderr)
+        return 2
+    except OpenCodeAdapterError as exc:
+        print(_error_envelope(exc), file=sys.stderr)
         return 2
 
     print(result.decision_json)
