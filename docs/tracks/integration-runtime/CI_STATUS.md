@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 622f8f1121a0d41993bdf217694e90c15690dd5d
+- Source commit: cf0f72014ffc88b0a68defc6a461733299406046
 - Branch: develop
-- Result: **FAIL**
+- Result: **PASS**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      FAIL
+full-pytest                                      PASS
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,38 +54,11 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-....................F................................................... [ 18%]
+........................................................................ [ 18%]
 ............ssss..s..................................................... [ 37%]
 ..............................................ss........................ [ 56%]
 ........................................................................ [ 75%]
 ........................................................................ [ 94%]
 .....................                                                    [100%]
-=================================== FAILURES ===================================
-______________ test_malformed_decision_becomes_failure_not_crash _______________
-
-tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_malformed_decision_become0')
-
-    def test_malformed_decision_becomes_failure_not_crash(tmp_path):
-        profile = SoftwareProfile(workspace=tmp_path, acceptance_commands=["false"])
-        controller = ScriptedController([
-            Decision("propose", {}),
-        ])
-        state = HarnessRuntime(
-            goal=profile.default_goal(),
-            profile=profile,
-            controller=controller,
-            run_dir=tmp_path / "run",
-            workspace=tmp_path,
-            budget=Budget(hard_max_steps=1),
-        ).run()
-        assert not state.completed
->       assert any(f["kind"] == "implementation_error" for f in state.failures)
-E       assert False
-E        +  where False = any(<generator object test_malformed_decision_becomes_failure_not_crash.<locals>.<genexpr> at 0x7f28d2ca7100>)
-
-tests/test_hardening.py:76: AssertionError
-=========================== short test summary info ============================
-FAILED tests/test_hardening.py::test_malformed_decision_becomes_failure_not_crash - assert False
- +  where False = any(<generator object test_malformed_decision_becomes_failure_not_crash.<locals>.<genexpr> at 0x7f28d2ca7100>)
-1 failed, 373 passed, 7 skipped in 29.37s
+374 passed, 7 skipped in 27.04s
 ```
