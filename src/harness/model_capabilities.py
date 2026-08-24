@@ -6,49 +6,53 @@ from urllib.parse import urlparse
 import argparse
 import json
 
+from harness.model_protocol import OutputContract, OutputEnforcement
 
+
+# These defaults describe the capability actually consumed by the current
+# Harness route, not every feature the underlying vendor/model might expose.
 _FEATURE_DEFAULTS: dict[str, dict[str, bool]] = {
     "command": {
-        "structured_output": True,
+        "structured_output": False,
         "native_tool_calling": False,
         "streaming": False,
         "vision": False,
         "reasoning": False,
     },
     "openai": {
-        "structured_output": True,
-        "native_tool_calling": True,
-        "streaming": True,
+        "structured_output": False,
+        "native_tool_calling": False,
+        "streaming": False,
         "vision": False,
         "reasoning": False,
     },
     "openai-compatible": {
-        "structured_output": True,
-        "native_tool_calling": True,
-        "streaming": True,
+        "structured_output": False,
+        "native_tool_calling": False,
+        "streaming": False,
         "vision": False,
         "reasoning": False,
     },
     "ollama": {
         "structured_output": True,
         "native_tool_calling": False,
-        "streaming": True,
+        "streaming": False,
         "vision": False,
         "reasoning": True,
     },
     "lm-studio": {
         "structured_output": True,
-        "native_tool_calling": True,
-        "streaming": True,
+        "native_tool_calling": False,
+        "streaming": False,
         "vision": False,
         "reasoning": False,
     },
 }
 
 _ADAPTER_FEATURES: dict[str, dict[str, bool]] = {
-    # The OpenCode bridge consumes OpenCode's JSONL internally and exposes only
-    # one validated Harness decision. OpenCode tools are denied by the adapter,
-    # therefore native tool calling is intentionally false at this boundary.
+    # The current OpenCode CLI bridge validates model text after generation and
+    # exposes only one canonical Harness decision. It does not grant OpenCode
+    # native/action tool authority.
     "opencode": {
         "structured_output": True,
         "native_tool_calling": False,
@@ -65,6 +69,9 @@ _CAPABILITY_OPTION_KEYS = {
     "vision": "capability_vision",
     "reasoning": "capability_reasoning",
 }
+
+_OUTPUT_CONTRACT_VALUES = {item.value for item in OutputContract}
+_OUTPUT_ENFORCEMENT_VALUES = {item.value for item in OutputEnforcement}
 
 
 def _positive_int(value: Any) -> int | None:
@@ -85,7 +92,68 @@ def _loopback(endpoint: Any) -> bool | None:
     return host in {"localhost", "127.0.0.1", "::1"}
 
 
-def _feature_profile(provider: str, adapter: str | None, options: dict[str, Any]) -> tuple[dict[str, bool], str]:
+def _output_profile(
+    provider: str,
+    adapter: str | None,
+    options: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    if adapter == "opencode":
+        contract = OutputContract.JSON.value
+        enforcement = OutputEnforcement.POSTHOC_VALIDATED.value
+        source = "opencode_cli_text_adapter_contract"
+    elif provider in {"ollama", "lm-studio"}:
+        contract = OutputContract.JSON_SCHEMA.value
+        enforcement = OutputEnforcement.PROVIDER_NATIVE.value
+        source = "provider_native_schema_contract"
+    elif provider in {"openai", "openai-compatible"}:
+        response_format = options.get("response_format")
+        if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+            contract = OutputContract.JSON_SCHEMA.value
+            enforcement = OutputEnforcement.PROVIDER_NATIVE.value
+            source = "configured_response_format"
+        elif (
+            isinstance(response_format, dict)
+            and response_format.get("type") == "json_object"
+        ) or options.get("json_mode") is True:
+            contract = OutputContract.JSON.value
+            enforcement = OutputEnforcement.PROVIDER_NATIVE.value
+            source = "configured_json_mode"
+        else:
+            contract = OutputContract.TEXT.value
+            enforcement = OutputEnforcement.PROMPT_ONLY.value
+            source = "unconstrained_text_route"
+    else:
+        contract = OutputContract.TEXT.value
+        enforcement = OutputEnforcement.PROMPT_ONLY.value
+        source = "generic_text_route"
+
+    explicit_contract = options.get("output_contract")
+    explicit_enforcement = options.get("output_enforcement")
+    overridden = False
+    if isinstance(explicit_contract, str) and explicit_contract in _OUTPUT_CONTRACT_VALUES:
+        contract = explicit_contract
+        overridden = True
+    if isinstance(explicit_enforcement, str) and explicit_enforcement in _OUTPUT_ENFORCEMENT_VALUES:
+        enforcement = explicit_enforcement
+        overridden = True
+    if overridden:
+        source += "+config_override"
+
+    return {
+        "contract": contract,
+        "enforcement": enforcement,
+        "canonical_protocol": "harness-json-decision",
+        "bounded_lexical_repair": ["raw_control_character"],
+        "semantic_repair": "forbidden",
+    }, source
+
+
+def _feature_profile(
+    provider: str,
+    adapter: str | None,
+    options: dict[str, Any],
+    output: dict[str, Any],
+) -> tuple[dict[str, bool], str]:
     key = adapter or provider
     defaults = _ADAPTER_FEATURES.get(key) or _FEATURE_DEFAULTS.get(provider) or {
         "structured_output": False,
@@ -95,6 +163,10 @@ def _feature_profile(provider: str, adapter: str | None, options: dict[str, Any]
         "reasoning": False,
     }
     features = dict(defaults)
+    # A configured output contract stronger than text means the current route
+    # consumes structured output even if the generic provider default does not.
+    if output["contract"] in {OutputContract.JSON.value, OutputContract.JSON_SCHEMA.value, OutputContract.TOOL_CALL.value}:
+        features["structured_output"] = True
     source = "adapter_contract" if adapter in _ADAPTER_FEATURES else (
         "provider_contract" if provider in _FEATURE_DEFAULTS else "unknown_provider_default"
     )
@@ -117,9 +189,13 @@ class ModelRouteProfile:
     model: str | None
     endpoint: str | None
     execution_location: str
+    wrapper_layers: tuple[str, ...]
     features: dict[str, bool]
+    input_contract: dict[str, Any]
+    output_contract: dict[str, Any]
     constraints: dict[str, Any]
     feature_source: str
+    output_source: str
 
     def dump(self) -> dict[str, Any]:
         return {
@@ -129,9 +205,13 @@ class ModelRouteProfile:
             "model": self.model,
             "endpoint": self.endpoint,
             "execution_location": self.execution_location,
+            "wrapper_layers": list(self.wrapper_layers),
             "features": dict(self.features),
+            "input": dict(self.input_contract),
+            "output": dict(self.output_contract),
             "constraints": dict(self.constraints),
             "feature_source": self.feature_source,
+            "output_source": self.output_source,
             "model_tier": None,
             "model_size_class": None,
         }
@@ -143,16 +223,19 @@ def _profile_from_route(alias: str, route: dict[str, Any]) -> ModelRouteProfile:
     options = dict(options) if isinstance(options, dict) else {}
     adapter_raw = options.get("adapter")
     adapter = str(adapter_raw).strip().lower() if isinstance(adapter_raw, str) and adapter_raw.strip() else None
-    features, feature_source = _feature_profile(provider, adapter, options)
+    output, output_source = _output_profile(provider, adapter, options)
+    features, feature_source = _feature_profile(provider, adapter, options, output)
 
     endpoint = route.get("endpoint") if isinstance(route.get("endpoint"), str) else None
     local = _loopback(endpoint)
-    if adapter == "opencode" or provider in {"ollama", "lm-studio", "command"}:
+    if adapter == "opencode" or provider == "command":
         execution_location = "local_process"
     elif local is True:
         execution_location = "local_endpoint"
     elif local is False:
         execution_location = "remote_endpoint"
+    elif provider in {"ollama", "lm-studio"}:
+        execution_location = "local_endpoint"
     else:
         execution_location = "unspecified"
 
@@ -163,15 +246,25 @@ def _profile_from_route(alias: str, route: dict[str, Any]) -> ModelRouteProfile:
         or _positive_int(options.get("max_tokens"))
     )
     safety_margin = _positive_int(options.get("context_safety_margin_tokens"))
+    effective_input_budget = None
+    if context_window is not None and output_reserve is not None and safety_margin is not None:
+        candidate = context_window - output_reserve - safety_margin
+        effective_input_budget = candidate if candidate > 0 else None
 
-    constraints = {
+    input_contract = {
         "context_window": context_window,
         "reserved_output_tokens": output_reserve,
         "context_safety_margin_tokens": safety_margin,
+        "effective_input_budget": effective_input_budget,
+        "context_compiler": "token-aware-working-context",
+    }
+    constraints = {
+        **input_contract,
         "timeout_seconds": route.get("timeout_seconds"),
         "decision_protocol": "harness-json-decision",
-        "tool_execution_boundary": "harness_only" if adapter == "opencode" else "canonical_decision_then_harness",
+        "tool_execution_boundary": "harness_only",
     }
+    wrappers = ("opencode",) if adapter == "opencode" else ()
     return ModelRouteProfile(
         alias=alias,
         provider=provider,
@@ -179,19 +272,18 @@ def _profile_from_route(alias: str, route: dict[str, Any]) -> ModelRouteProfile:
         model=(str(route.get("model")) if route.get("model") is not None else None),
         endpoint=endpoint,
         execution_location=execution_location,
+        wrapper_layers=wrappers,
         features=features,
+        input_contract=input_contract,
+        output_contract=output,
         constraints=constraints,
         feature_source=feature_source,
+        output_source=output_source,
     )
 
 
 def inspect_model_capabilities(model_gateway: Any) -> dict[str, Any]:
-    """Describe model-route features/constraints without assigning intelligence tiers.
-
-    This is deliberately not a benchmark or a quality classifier. Static fields
-    describe the configured transport surface. Runtime counters are reported as
-    aggregate observations only and never converted into a model grade.
-    """
+    """Describe route contracts/observations without assigning intelligence tiers."""
     descriptor_fn = getattr(model_gateway, "descriptor", None)
     if not callable(descriptor_fn):
         raise ValueError("model gateway does not expose descriptor()")
@@ -239,7 +331,7 @@ def inspect_model_capabilities(model_gateway: Any) -> dict[str, Any]:
         "policy": {
             "model_tiering": "disabled",
             "intelligence_classification": "none",
-            "adaptation_basis": "declared_features_configured_constraints_observed_failures",
+            "adaptation_basis": "route_input_output_contracts_plus_observed_failures",
         },
         "default_model": descriptor.get("default_model"),
         "routes": profiles,
@@ -248,7 +340,7 @@ def inspect_model_capabilities(model_gateway: Any) -> dict[str, Any]:
 
 
 def _main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Inspect configured model capabilities without assigning model tiers.")
+    parser = argparse.ArgumentParser(description="Inspect configured model route contracts without assigning model tiers.")
     parser.add_argument("config", help="Harness TOML config path")
     args = parser.parse_args(argv)
 
