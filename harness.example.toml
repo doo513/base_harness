@@ -73,17 +73,20 @@ context_safety_margin_tokens = 256
 [models.opencode]
 provider = "command"
 model = "opencode/YOUR_MODEL_ID"
-command = "python -m harness.opencode_adapter --model opencode/YOUR_MODEL_ID --agent plan"
+command = "python -m harness.opencode_adapter --model opencode/YOUR_MODEL_ID --agent harness-model"
 timeout_seconds = 240
 
 [models.opencode.options]
 adapter = "opencode"
 catalog_provider = "opencode"
 catalog_model_id = "YOUR_MODEL_ID"
-reserved_output_tokens = 1024
-context_safety_margin_tokens = 256
-# context_window and catalog_explicitly_free are filled by the selector when
-# those fields are explicitly available in the OpenCode catalog metadata.
+opencode_agent = "harness-model"
+reserved_output_tokens = 2048
+context_safety_margin_tokens = 2048
+context_safety_margin_source = "opencode_adapter_overhead_guard"
+# The selector fills context_window and adjusts reserves using the selected
+# model's catalog limits. catalog_explicitly_free is written only when the
+# catalog explicitly reports zero input and output cost.
 
 # Unknown/custom providers can declare transport features explicitly without
 # assigning a model intelligence tier. Supported override keys include:
