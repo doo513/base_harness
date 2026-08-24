@@ -55,6 +55,8 @@ def test_model_opencode_browses_catalog_and_persists_selected_route(tmp_path, mo
     assert route["model"] == "opencode/free-model"
     assert route["options"]["catalog_explicitly_free"] is True
     assert route["options"]["context_window"] == 131072
+    assert route["options"]["opencode_agent"] == "harness-model"
+    assert route["options"]["context_safety_margin_source"] == "opencode_adapter_overhead_guard"
     assert any("opencode/free-model" in note for note in notes)
 
 
@@ -90,6 +92,7 @@ def test_non_opencode_model_argument_uses_existing_model_handler(monkeypatch):
 def test_install_selector_composes_existing_tui_without_replacing_runtime(monkeypatch):
     monkeypatch.setattr(tui_entry, "_INSTALLED", False)
     monkeypatch.setattr(tui_entry.legacy, "_models", tui_entry._ORIGINAL_MODELS)
+    monkeypatch.setattr(tui_entry.legacy, "_help", tui_entry._ORIGINAL_HELP)
     monkeypatch.setattr(
         tui_entry.conversation,
         "_ConversationCompleter",
@@ -105,5 +108,6 @@ def test_install_selector_composes_existing_tui_without_replacing_runtime(monkey
     tui_entry.install_opencode_model_selector()
 
     assert tui_entry.legacy._models is tui_entry._models_with_opencode
+    assert tui_entry.legacy._help is tui_entry._help_with_opencode
     assert tui_entry.conversation._ConversationCompleter is tui_entry._OpenCodeCompleter
     assert "OpenCode" in tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
