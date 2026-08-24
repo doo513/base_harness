@@ -12,6 +12,8 @@ import sys
 import tempfile
 import tomllib
 
+from harness.opencode_adapter import DEFAULT_OPENCODE_AGENT
+
 
 class OpenCodeSelectionError(RuntimeError):
     pass
@@ -100,7 +102,7 @@ def _metadata_to_info(ref: str, metadata: dict[str, Any] | None) -> OpenCodeMode
 
 
 def parse_opencode_models_verbose(stdout: str) -> tuple[OpenCodeModelInfo, ...]:
-    """Parse the documented `model-ref` + pretty JSON sequence from `opencode models --verbose`."""
+    """Parse the `model-ref` + pretty JSON sequence from `opencode models --verbose`."""
     lines = [_strip_ansi(line).rstrip() for line in stdout.splitlines()]
     items: list[OpenCodeModelInfo] = []
     index = 0
@@ -215,13 +217,30 @@ def _remove_model_route(text: str, alias: str) -> str:
     return "".join(output).rstrip() + "\n"
 
 
+def _output_reserve(model: OpenCodeModelInfo) -> int:
+    if model.output_limit is not None:
+        return max(256, min(2048, model.output_limit))
+    return 2048
+
+
+def _adapter_safety_margin(model: OpenCodeModelInfo) -> int:
+    """Reserve space for OpenCode's own transport/system envelope.
+
+    This is deliberately conservative metadata, not an assertion of exact
+    OpenCode prompt-token overhead. Actual provider usage remains telemetry.
+    """
+    if model.context_window is None:
+        return 2048
+    return min(4096, max(512, model.context_window // 16))
+
+
 def configure_opencode_model(
     config_path: str | Path,
     *,
     model: OpenCodeModelInfo,
     alias: str = "opencode",
     binary: str = "opencode",
-    agent: str = "plan",
+    agent: str = DEFAULT_OPENCODE_AGENT,
     timeout_seconds: float = 240.0,
     make_default: bool = True,
 ) -> Path:
@@ -262,6 +281,8 @@ def configure_opencode_model(
         "--timeout",
         f"{float(timeout_seconds):g}",
     ])
+    output_reserve = _output_reserve(model)
+    safety_margin = _adapter_safety_margin(model)
     block = [
         "",
         f"[models.{alias}]",
@@ -276,8 +297,9 @@ def configure_opencode_model(
         f"catalog_model_id = {json.dumps(model.model_id)}",
         f"opencode_binary = {json.dumps(binary)}",
         f"opencode_agent = {json.dumps(agent)}",
-        "reserved_output_tokens = 1024",
-        "context_safety_margin_tokens = 256",
+        f"reserved_output_tokens = {output_reserve}",
+        f"context_safety_margin_tokens = {safety_margin}",
+        'context_safety_margin_source = "opencode_adapter_overhead_guard"',
     ]
     if model.name:
         block.append(f"catalog_name = {json.dumps(model.name)}")
