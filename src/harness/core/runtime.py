@@ -14,7 +14,7 @@ from .tools import ActionRuntime
 from .security import Principal, Capability, CapabilityPolicy, SecurityConfig, SecurityLayout, SecurityViolation
 from .sandbox import NetworkPolicy
 from .verification import VerifierChain
-from .failures import Failure, FailureKind, FailureRouter, RecoveryAction
+from .failures import Failure, FailureContext, FailureKind, FailureRouter, RecoveryAction
 from .budget import Budget
 from .progress import ProgressPolicy
 from .context import ContextPolicy, ContextProjector
@@ -261,6 +261,12 @@ class HarnessRuntime(
         atomic_write_json(self.run_dir / "metrics.json", data)
 
     def fail(self, failure: Failure) -> None:
+        if failure.context is None and failure.action == "model_boundary":
+            candidate = getattr(self.controller, "last_failure_context", None)
+            if isinstance(candidate, FailureContext) and candidate.kind is failure.kind:
+                failure.context = candidate
+                failure.retry_safe = candidate.retryable
+
         generation = int(self.state.strategy_generation)
         previous = sum(
             1
@@ -284,6 +290,7 @@ class HarnessRuntime(
             "recommended_recovery": recovery.value,
             "retry_safe": bool(failure.retry_safe),
             "target": failure.action,
+            "failure_context": failure.context.dump() if failure.context is not None else None,
             "recovery_transition_id": transition.transition_id,
         }
         self.state.failures.append(record)
