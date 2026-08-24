@@ -177,6 +177,7 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
         self.model = model
         self.last_context_compile: dict[str, Any] | None = None
         self.last_protocol_decode: dict[str, Any] | None = None
+        self.model_attempt_sequence = 0
 
     def _complete(self, *, system: str, user: str) -> str:
         try:
@@ -193,6 +194,10 @@ When project_memory.enabled is true, cross-run lessons may be staged only as mem
             ) from exc
 
     def decide(self, goal, state, context):
+        self.model_attempt_sequence += 1
+        # Never let a failed attempt inherit a successful decode record from the
+        # previous turn. Context telemetry is refreshed immediately below.
+        self.last_protocol_decode = None
         compiled = compile_context_for_model(
             model=self.model,
             system=self.SYSTEM,
