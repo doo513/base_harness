@@ -120,7 +120,6 @@ def _models_with_opencode(state, session, argument: str = "") -> None:
                 model=selected,
                 alias="opencode",
                 binary="opencode",
-                agent="plan",
                 timeout_seconds=240,
                 make_default=True,
             )
