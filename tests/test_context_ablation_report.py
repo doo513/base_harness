@@ -1,11 +1,11 @@
 from harness.context_ablation_report import compare_context_runs, summarize_run_records
 
 
-def _event(kind, telemetry=None, **payload):
+def _event(event_kind, telemetry=None, **payload):
     body = dict(payload)
     if telemetry is not None:
         body["telemetry"] = telemetry
-    return {"kind": kind, "payload": body}
+    return {"kind": event_kind, "payload": body}
 
 
 def test_run_summary_separates_context_protocol_and_failure_observations():
