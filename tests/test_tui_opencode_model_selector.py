@@ -89,9 +89,21 @@ def test_non_opencode_model_argument_uses_existing_model_handler(monkeypatch):
 
 def test_install_selector_composes_existing_tui_without_replacing_runtime(monkeypatch):
     monkeypatch.setattr(tui_entry, "_INSTALLED", False)
-    original = tui_entry.legacy._models
+    monkeypatch.setattr(tui_entry.legacy, "_models", tui_entry._ORIGINAL_MODELS)
+    monkeypatch.setattr(
+        tui_entry.conversation,
+        "_ConversationCompleter",
+        tui_entry._ORIGINAL_COMPLETER,
+    )
+    original_description = tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
+    monkeypatch.setitem(
+        tui_entry.conversation._COMMAND_DESCRIPTIONS,
+        "/model",
+        original_description,
+    )
+
     tui_entry.install_opencode_model_selector()
+
     assert tui_entry.legacy._models is tui_entry._models_with_opencode
     assert tui_entry.conversation._ConversationCompleter is tui_entry._OpenCodeCompleter
     assert "OpenCode" in tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
-    tui_entry.legacy._models = original
