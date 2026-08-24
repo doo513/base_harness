@@ -10,6 +10,8 @@ from .verification import VerificationLevel, VerifierChain
 from .failures import Failure, FailureKind
 from .retrieval import RetrievalContractError, RetrievalUnavailable
 from .agent_control import AgentControlError
+from .controller import ControllerBoundaryError
+from harness.model_protocol import DecisionProtocolError
 
 
 class RuntimeExecutionMixin:
@@ -290,7 +292,7 @@ class RuntimeExecutionMixin:
                 )
             except AgentControlError as exc:
                 self.fail(Failure(
-                    FailureKind.NO_PROGRESS,
+                    FailureKind.ACTOR_WORKFLOW_ERROR,
                     f"actor workflow plan rejected: {exc}",
                     action="agent_plan",
                     signature_key="integration:agent_control:invalid_plan",
@@ -307,7 +309,7 @@ class RuntimeExecutionMixin:
                 )
             except AgentControlError as exc:
                 self.fail(Failure(
-                    FailureKind.NO_PROGRESS,
+                    FailureKind.ACTOR_WORKFLOW_ERROR,
                     f"actor workflow task update rejected: {exc}",
                     action="agent_task",
                     signature_key="integration:agent_control:invalid_task_update",
@@ -478,6 +480,24 @@ class RuntimeExecutionMixin:
                 f"controller context/state integrity failure: {exc}",
                 action="controller_context",
                 signature_key="stage8:context_retrieval_integrity",
+            ))
+            return False
+        except ControllerBoundaryError as exc:
+            self.fail(Failure(
+                exc.failure_kind,
+                str(exc),
+                action="model_boundary",
+                retry_safe=exc.retry_safe,
+                signature_key=exc.signature_key,
+            ))
+            return False
+        except DecisionProtocolError as exc:
+            self.fail(Failure(
+                FailureKind.MODEL_PROTOCOL_ERROR,
+                f"controller decision protocol failed: {exc}",
+                action="model_boundary",
+                retry_safe=True,
+                signature_key=f"model-protocol:{exc.kind}",
             ))
             return False
         except Exception as exc:
