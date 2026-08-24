@@ -35,10 +35,10 @@ class BaseRuntime:
 
 
 class Runtime(RuntimeModelTelemetryMixin, BaseRuntime):
-    def __init__(self):
+    def __init__(self, *, prior_attempts=0):
         self.controller = FakeController()
         self.metrics = {
-            "model_attempts": 0,
+            "model_attempts": prior_attempts,
             "model_protocol_lexical_repairs": 0,
         }
         self.rows = []
@@ -63,6 +63,19 @@ def test_model_attempt_emits_context_protocol_and_gateway_diagnostics():
     ]
     assert all(payload["authority"] == "diagnostic_only" for _, payload in runtime.rows)
     assert all(payload["attempt"] == 1 for _, payload in runtime.rows)
+
+
+def test_resume_restored_metric_owns_durable_attempt_number():
+    # A freshly reconstructed controller starts its local invocation sequence at
+    # zero, while runtime_meta may restore seven earlier model attempts.
+    runtime = Runtime(prior_attempts=7)
+    assert runtime.controller.model_attempt_sequence == 0
+
+    assert runtime.step_once() is False
+
+    assert runtime.controller.model_attempt_sequence == 1
+    assert runtime.metrics["model_attempts"] == 8
+    assert all(payload["attempt"] == 8 for _, payload in runtime.rows)
 
 
 def test_recovery_only_step_does_not_duplicate_model_telemetry():
