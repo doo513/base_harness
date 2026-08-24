@@ -236,10 +236,8 @@ class Failure:
 
     @property
     def signature(self) -> str:
-        # Recovery acts on repeat identity, so the default biases against false
-        # grouping. Numeric values can be semantically meaningful (401 vs 500,
-        # exit 1 vs 2) and are preserved. Callers that know which fields are
-        # volatile may provide an explicit stable signature_key.
+        # call_id is deliberately excluded: it is diagnostic identity, not
+        # semantic repeat identity. Otherwise every retry would look novel.
         identity = self.signature_key
         if identity is None and self.context is not None:
             identity = "|".join([
@@ -248,7 +246,6 @@ class Failure:
                 self.context.route_alias or "",
                 self.context.provider_id or "",
                 self.context.model_id or "",
-                self.context.call_id or "",
                 self.context.stderr_digest or "",
                 re.sub(r"\s+", " ", self.context.message.strip().lower()),
             ])
@@ -363,7 +360,7 @@ class FailureRouter:
         descriptor = self.policy.descriptor()
         descriptor.update({
             "repeat_limit": self.repeat_limit,
-            "failure_signature_policy": "kind+action+context-or-explicit-key",
+            "failure_signature_policy": "kind+action+context-without-call-id-or-explicit-key",
             "repeat_scope": "current_strategy_generation",
         })
         return descriptor
