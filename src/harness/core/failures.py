@@ -12,6 +12,9 @@ class FailureKind(str, Enum):
     ENV_ERROR = "env_error"
     MISSING_INFO = "missing_info"
     HYPOTHESIS_REFUTED = "hypothesis_refuted"
+    MODEL_PROVIDER_ERROR = "model_provider_error"
+    MODEL_PROTOCOL_ERROR = "model_protocol_error"
+    ACTOR_WORKFLOW_ERROR = "actor_workflow_error"
     IMPLEMENTATION_ERROR = "implementation_error"
     NO_PROGRESS = "no_progress"
     STRATEGY_EXHAUSTED = "strategy_exhausted"
@@ -118,6 +121,12 @@ class FailureRouter:
         FailureKind.ENV_ERROR: RecoveryAction.RETRY,
         FailureKind.MISSING_INFO: RecoveryAction.OBSERVE,
         FailureKind.HYPOTHESIS_REFUTED: RecoveryAction.ROLLBACK,
+        # Provider retry/fallback happens inside ModelGateway first. If the
+        # failure reaches Runtime, RETRY is allowed only when the boundary marks
+        # it retry_safe; otherwise route() conservatively degrades it to OBSERVE.
+        FailureKind.MODEL_PROVIDER_ERROR: RecoveryAction.RETRY,
+        FailureKind.MODEL_PROTOCOL_ERROR: RecoveryAction.REPAIR,
+        FailureKind.ACTOR_WORKFLOW_ERROR: RecoveryAction.REPLAN,
         FailureKind.IMPLEMENTATION_ERROR: RecoveryAction.REPAIR,
         FailureKind.NO_PROGRESS: RecoveryAction.REPLAN,
         FailureKind.STRATEGY_EXHAUSTED: RecoveryAction.ESCALATE,
