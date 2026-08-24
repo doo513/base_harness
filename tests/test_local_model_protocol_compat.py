@@ -5,7 +5,8 @@ import urllib.request
 import pytest
 
 from harness.config import ModelConfig, SecretResolver
-from harness.core.controller import LLMController, _extract_json_object
+from harness.core.controller import ControllerBoundaryError, LLMController, _extract_json_object
+from harness.core.failures import FailureKind
 from harness.model_gateway import ModelRequest, OpenAICompatibleProvider, ProviderError
 
 
@@ -91,7 +92,7 @@ def test_ollama_reasoning_only_response_is_retryable_empty_response(monkeypatch)
     assert "reasoning was present" in str(exc_info.value)
 
 
-def test_controller_extracts_fenced_json_and_retries_one_empty_actor_response():
+def test_controller_extracts_fenced_json_but_does_not_own_empty_response_retry():
     fenced = "```json\n{\"kind\":\"complete\",\"payload\":{\"reason\":\"ok\"}}\n```"
     assert _extract_json_object(fenced)["kind"] == "complete"
 
@@ -99,18 +100,19 @@ def test_controller_extracts_fenced_json_and_retries_one_empty_actor_response():
     controller = LLMController(model)
     state = SimpleNamespace(agent_control=SimpleNamespace(tasks={}))
 
-    decision = controller.decide("goal", state, {})
-    assert decision.kind == "complete"
-    assert model.calls == 2
+    with pytest.raises(ControllerBoundaryError) as caught:
+        controller.decide("goal", state, {})
+    assert caught.value.failure_kind is FailureKind.MODEL_PROTOCOL_ERROR
+    assert model.calls == 1
 
 
-def test_task_auto_promotion_only_applies_before_a_plan_exists():
+def test_task_decision_is_not_semantically_promoted_by_controller():
     raw_task = '{"kind":"task","payload":{"id":"task-01","status":"active","note":"inspect"}}'
 
     empty_state = SimpleNamespace(agent_control=SimpleNamespace(tasks={}))
-    promoted = LLMController(_SequenceModel([raw_task])).decide("goal", empty_state, {})
-    assert promoted.kind == "plan"
-    assert promoted.payload["tasks"][0]["id"] == "task-01"
+    decision = LLMController(_SequenceModel([raw_task])).decide("goal", empty_state, {})
+    assert decision.kind == "task"
+    assert decision.payload["id"] == "task-01"
 
     planned_state = SimpleNamespace(agent_control=SimpleNamespace(tasks={"known": object()}))
     preserved = LLMController(_SequenceModel([raw_task])).decide("goal", planned_state, {})
