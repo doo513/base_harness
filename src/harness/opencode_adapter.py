@@ -18,6 +18,9 @@ class OpenCodeAdapterError(RuntimeError):
     pass
 
 
+DEFAULT_OPENCODE_AGENT = "harness-model"
+
+
 @dataclass(frozen=True)
 class OpenCodeRunResult:
     decision_json: str
@@ -60,7 +63,7 @@ def _canonical_decision(text: str) -> str:
 def _decision_transport_prompt(system: str, user: str) -> str:
     return (
         "HARNESS DECISION TRANSPORT MODE\n"
-        "You are being used only as a decision transport for another verified-state Harness.\n"
+        "You are being used only as a model/decision transport for another verified-state Harness.\n"
         "Do NOT use OpenCode tools, shell, file editing, web search, subagents, or workspace reads.\n"
         "A requested Harness tool action must be returned as JSON text; never execute it yourself.\n"
         "Return exactly one complete JSON object and no commentary.\n\n"
@@ -72,12 +75,27 @@ def _decision_transport_prompt(system: str, user: str) -> str:
 
 
 def _deny_all_inline_config() -> str:
-    # OPENCODE_CONFIG_CONTENT has higher precedence than project/.opencode config
-    # in the documented config order. A single deny value applies to all tools.
+    """Define one minimal primary agent and deny every OpenCode tool surface.
+
+    The selected underlying model is still supplied by `opencode run --model`.
+    A custom primary agent avoids inheriting the built-in Plan agent's workflow
+    prompt, reducing OpenCode-specific behavioral bias in Harness experiments.
+    """
     return json.dumps(
         {
             "permission": "deny",
             "compaction": {"auto": True, "prune": True},
+            "agent": {
+                DEFAULT_OPENCODE_AGENT: {
+                    "description": "Decision-only model transport for base_harness",
+                    "mode": "primary",
+                    "permission": {"*": "deny"},
+                    "prompt": (
+                        "Act only as a text model transport. Do not call tools or subagents. "
+                        "Follow the user-provided Harness contract and return only the requested text."
+                    ),
+                }
+            },
         },
         separators=(",", ":"),
     )
@@ -136,8 +154,6 @@ def _parse_jsonl(stdout: str) -> OpenCodeRunResult:
             "OpenCode run produced no completed text event; JSONL output may be incomplete"
         )
 
-    # The transport contract asks for one decision. Prefer the last completed
-    # text block because OpenCode may emit earlier informational text parts.
     decision_json = _canonical_decision(text_parts[-1])
     return OpenCodeRunResult(
         decision_json=decision_json,
@@ -155,7 +171,7 @@ def run_opencode_decision(
     user: str,
     binary: str,
     model: str,
-    agent: str = "plan",
+    agent: str = DEFAULT_OPENCODE_AGENT,
     timeout_seconds: float = 180.0,
 ) -> OpenCodeRunResult:
     if not binary.strip():
@@ -222,7 +238,11 @@ def _main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--binary", default="opencode", help="OpenCode executable name/path")
     parser.add_argument("--model", required=True, help="OpenCode model in provider/model form")
-    parser.add_argument("--agent", default="plan", help="OpenCode agent; plan is the safe default")
+    parser.add_argument(
+        "--agent",
+        default=DEFAULT_OPENCODE_AGENT,
+        help="OpenCode agent; harness-model is the minimal decision-only default",
+    )
     parser.add_argument("--timeout", type=float, default=180.0)
     args = parser.parse_args(argv)
 
