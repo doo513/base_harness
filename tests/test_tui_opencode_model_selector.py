@@ -92,22 +92,37 @@ def test_non_opencode_model_argument_uses_existing_model_handler(monkeypatch):
 def test_install_selector_composes_existing_tui_without_replacing_runtime(monkeypatch):
     monkeypatch.setattr(tui_entry, "_INSTALLED", False)
     monkeypatch.setattr(tui_entry.legacy, "_models", tui_entry._ORIGINAL_MODELS)
+    monkeypatch.setattr(tui_entry.legacy, "_connect", tui_entry._ORIGINAL_CONNECT)
     monkeypatch.setattr(tui_entry.legacy, "_help", tui_entry._ORIGINAL_HELP)
+    monkeypatch.setattr(
+        tui_entry.conversation,
+        "_ensure_model_ready",
+        tui_entry._ORIGINAL_ENSURE_MODEL_READY,
+    )
     monkeypatch.setattr(
         tui_entry.conversation,
         "_ConversationCompleter",
         tui_entry._ORIGINAL_COMPLETER,
     )
-    original_description = tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
+    original_model_description = tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
+    original_connect_description = tui_entry.conversation._COMMAND_DESCRIPTIONS["/connect"]
     monkeypatch.setitem(
         tui_entry.conversation._COMMAND_DESCRIPTIONS,
         "/model",
-        original_description,
+        original_model_description,
+    )
+    monkeypatch.setitem(
+        tui_entry.conversation._COMMAND_DESCRIPTIONS,
+        "/connect",
+        original_connect_description,
     )
 
     tui_entry.install_opencode_model_selector()
 
     assert tui_entry.legacy._models is tui_entry._models_with_opencode
+    assert tui_entry.legacy._connect is tui_entry._connect_with_opencode
     assert tui_entry.legacy._help is tui_entry._help_with_opencode
+    assert tui_entry.conversation._ensure_model_ready is tui_entry._ensure_model_ready_with_opencode
     assert tui_entry.conversation._ConversationCompleter is tui_entry._OpenCodeCompleter
     assert "OpenCode" in tui_entry.conversation._COMMAND_DESCRIPTIONS["/model"]
+    assert "OpenCode" in tui_entry.conversation._COMMAND_DESCRIPTIONS["/connect"]
