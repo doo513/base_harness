@@ -4,6 +4,7 @@ import json
 
 from .context_compiler import compile_context_for_model
 from .failures import FailureKind
+from harness.model_error_envelope import extract_embedded_model_error
 from harness.model_protocol import (
     DECISION_KINDS,
     DecisionProtocolError,
@@ -113,23 +114,27 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
 
 
 def _provider_failure_kind(exc: Exception) -> tuple[FailureKind, bool, str | None]:
-    """Translate provider-facing error metadata without importing provider code.
-
-    The controller intentionally depends only on the small ``kind``/``retryable``
-    exception surface. This avoids making the Kernel runtime depend on one model
-    gateway implementation while still distinguishing protocol from transport.
-    """
+    """Translate provider-facing error metadata without provider-specific imports."""
     raw_kind = getattr(exc, "kind", None)
     kind = str(raw_kind or "")
     message = str(exc)
-    # ModelGateway may wrap the final provider kind into the error message. Keep
-    # this compatibility path until every adapter exports typed exceptions.
+    retryable = bool(getattr(exc, "retryable", False))
+
+    # Cooperating command adapters can preserve typed model/protocol failures in
+    # stderr. CommandProvider may wrap the child exit as execution_error, so the
+    # explicit marker has precedence over that outer transport classification.
+    embedded = extract_embedded_model_error(message)
+    if embedded is not None:
+        kind = embedded.kind
+        retryable = embedded.retryable
+
+    # Compatibility path for ModelGateway wrappers created before typed final
+    # errors were exposed as attributes.
     if not kind and "last=protocol_" in message:
         fragment = message.split("last=", 1)[1].split(":", 1)[0]
         kind = fragment.strip()
-    retryable = bool(getattr(exc, "retryable", False))
-    if kind.startswith("protocol_"):
-        return FailureKind.MODEL_PROTOCOL_ERROR, True, f"model-protocol:{kind}"
+    if kind.startswith("protocol_") or kind == "protocol_boundary_violation":
+        return FailureKind.MODEL_PROTOCOL_ERROR, retryable, f"model-protocol:{kind}"
     return FailureKind.MODEL_PROVIDER_ERROR, retryable, (
         f"model-provider:{kind}" if kind else "model-provider:untyped"
     )
