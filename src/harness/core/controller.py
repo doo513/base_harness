@@ -38,7 +38,14 @@ class Decision:
     payload: dict[str, Any]
 
     def validate(self) -> None:
-        validate_decision(self.kind, self.payload)
+        # Preserve the historical Controller contract: arbitrary/custom
+        # Controllers that emit an invalid Decision raise ValueError and remain
+        # Harness integration failures. LLMController separately translates
+        # model-output decoder failures into typed MODEL_PROTOCOL_ERROR.
+        try:
+            validate_decision(self.kind, self.payload)
+        except DecisionProtocolError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class Controller(Protocol):
