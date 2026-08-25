@@ -1,8 +1,8 @@
 # Integration Runtime CI Status
 
-- Source commit: 3c11cdb9114e8a673e39b854e2e278270f57de5e
+- Source commit: d9830cd75cf311124bfbfaaba39d80590e6f4894
 - Branch: develop
-- Result: **PASS**
+- Result: **FAIL**
 - Runner: ubuntu-latest
 - Python: 3.11
 - Install gate: success
@@ -15,7 +15,7 @@ cli-module                                       PASS
 tui-module                                       PASS
 cli-console                                      PASS
 tui-console                                      PASS
-full-pytest                                      PASS
+full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
 stage04-semantic                                 PASS
@@ -54,11 +54,152 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-........................................................................ [ 16%]
+.............F.FF....................................................... [ 16%]
 ........................................ssss..s......................... [ 33%]
 ........................................................................ [ 50%]
 ..................ss.................................................... [ 67%]
 ........................................................................ [ 84%]
 .................................................................        [100%]
-418 passed, 7 skipped in 30.31s
+=================================== FAILURES ===================================
+_ test_context_compiler_folds_additive_context_and_preserves_authority_boundaries _
+
+    def test_context_compiler_folds_additive_context_and_preserves_authority_boundaries():
+        model = DescriptorModel()
+        context = _large_context()
+        before = copy.deepcopy(context)
+    
+>       result = compile_context_for_model(
+            model=model,
+            system=LLMController.SYSTEM,
+            context=context,
+        )
+
+tests/test_context_compiler.py:242: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = <test_context_compiler.DescriptorModel object at 0x7fe48f32d090>
+system = 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n'
+context = {'schema_version': 'context-projection-v2', 'projection': {'policy': {'verbose': 'pppppppppppppppppppppppppppppppppppp...trusted_tool', 'trust': 'verified_fact', 'instruction_authority': 'none', ...}, ...}, 'superseded_fact_keys': []}, ...}
+
+    def compile_context_for_model(*, model: Any, system: str, context: Any) -> ContextCompileResult:
+        """Create the model working set without mutating durable ContextProjection."""
+        visible = copy.deepcopy(dict(context)) if isinstance(context, dict) else {}
+        source_estimated = estimate_tokens(system) + estimate_tokens({"context": visible})
+        budget = resolve_model_context_budget(model)
+    
+        if budget is None:
+            return ContextCompileResult(
+                context=visible,
+                mode="passthrough",
+                source_estimated_input_tokens=source_estimated,
+                compiled_estimated_input_tokens=source_estimated,
+                budget=None,
+            )
+    
+        system_tokens = estimate_tokens(system)
+        if system_tokens >= budget.max_input_tokens:
+            raise ContextBudgetError(
+                f"system prompt estimated={system_tokens} exceeds max_input={budget.max_input_tokens}"
+            )
+    
+        for level in range(len(_LEVELS)):
+            compiled = _build(visible, level)
+            estimated = system_tokens + estimate_tokens({"context": compiled})
+            if estimated <= budget.max_input_tokens:
+                return ContextCompileResult(
+                    context=compiled,
+                    mode="selective",
+                    source_estimated_input_tokens=source_estimated,
+                    compiled_estimated_input_tokens=estimated,
+                    budget=budget,
+                    level=level,
+                )
+    
+>       raise ContextBudgetError(
+            "mandatory working context cannot fit selected model route: "
+            f"max_input={budget.max_input_tokens}, context_window={budget.context_window}"
+        )
+E       harness.core.context_compiler.ContextBudgetError: mandatory working context cannot fit selected model route: max_input=2816, context_window=4096
+
+src/harness/core/context_compiler.py:543: ContextBudgetError
+_____ test_llm_controller_uses_compiled_context_without_duplicate_raw_goal _____
+
+    def test_llm_controller_uses_compiled_context_without_duplicate_raw_goal():
+        model = DescriptorModel()
+        controller = LLMController(model)
+        context = _large_context()
+        state = SimpleNamespace(agent_control=SimpleNamespace(tasks={}))
+    
+>       decision = controller.decide("raw-goal-object", state, context)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_context_compiler.py:286: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/harness/core/controller.py:214: in decide
+    compiled = compile_context_for_model(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = <test_context_compiler.DescriptorModel object at 0x7fe48f2b0b90>
+system = 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n'
+context = {'schema_version': 'context-projection-v2', 'projection': {'policy': {'verbose': 'pppppppppppppppppppppppppppppppppppp...trusted_tool', 'trust': 'verified_fact', 'instruction_authority': 'none', ...}, ...}, 'superseded_fact_keys': []}, ...}
+
+    def compile_context_for_model(*, model: Any, system: str, context: Any) -> ContextCompileResult:
+        """Create the model working set without mutating durable ContextProjection."""
+        visible = copy.deepcopy(dict(context)) if isinstance(context, dict) else {}
+        source_estimated = estimate_tokens(system) + estimate_tokens({"context": visible})
+        budget = resolve_model_context_budget(model)
+    
+        if budget is None:
+            return ContextCompileResult(
+                context=visible,
+                mode="passthrough",
+                source_estimated_input_tokens=source_estimated,
+                compiled_estimated_input_tokens=source_estimated,
+                budget=None,
+            )
+    
+        system_tokens = estimate_tokens(system)
+        if system_tokens >= budget.max_input_tokens:
+            raise ContextBudgetError(
+                f"system prompt estimated={system_tokens} exceeds max_input={budget.max_input_tokens}"
+            )
+    
+        for level in range(len(_LEVELS)):
+            compiled = _build(visible, level)
+            estimated = system_tokens + estimate_tokens({"context": compiled})
+            if estimated <= budget.max_input_tokens:
+                return ContextCompileResult(
+                    context=compiled,
+                    mode="selective",
+                    source_estimated_input_tokens=source_estimated,
+                    compiled_estimated_input_tokens=estimated,
+                    budget=budget,
+                    level=level,
+                )
+    
+>       raise ContextBudgetError(
+            "mandatory working context cannot fit selected model route: "
+            f"max_input={budget.max_input_tokens}, context_window={budget.context_window}"
+        )
+E       harness.core.context_compiler.ContextBudgetError: mandatory working context cannot fit selected model route: max_input=2816, context_window=4096
+
+src/harness/core/context_compiler.py:543: ContextBudgetError
+_____ test_controller_system_contract_is_small_enough_for_4k_local_routes ______
+
+    def test_controller_system_contract_is_small_enough_for_4k_local_routes():
+        # Regression guard against silently re-growing static Actor instructions until
+        # they consume most of a 4096-token local route.
+>       assert estimate_tokens(LLMController.SYSTEM) < 800
+E       assert 830 < 800
+E        +  where 830 = estimate_tokens('You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n')
+E        +    where 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n' = LLMController.SYSTEM
+
+tests/test_context_compiler.py:304: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_context_compiler.py::test_context_compiler_folds_additive_context_and_preserves_authority_boundaries - harness.core.context_compiler.ContextBudgetError: mandatory working context cannot fit selected model route: max_input=2816, context_window=4096
+FAILED tests/test_context_compiler.py::test_llm_controller_uses_compiled_context_without_duplicate_raw_goal - harness.core.context_compiler.ContextBudgetError: mandatory working context cannot fit selected model route: max_input=2816, context_window=4096
+FAILED tests/test_context_compiler.py::test_controller_system_contract_is_small_enough_for_4k_local_routes - assert 830 < 800
+ +  where 830 = estimate_tokens('You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n')
+ +    where 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n' = LLMController.SYSTEM
+3 failed, 415 passed, 7 skipped in 27.85s
 ```
