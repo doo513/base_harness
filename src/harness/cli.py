@@ -10,6 +10,7 @@ from harness.mcp_gateway import MCPError, MCPGateway
 from harness.plugin_gateway import PluginError, PluginGateway
 from harness.profile_composition import ProfileCompositionError, augment_profile_tools
 from harness.project_memory import ProjectMemoryError, ProjectMemoryStore
+from harness.experience_memory import ExperienceTrustPolicy
 from harness.task_contracts import EvidenceArtifactTaskProfile
 from harness.core.controller import DirectController, LLMController
 from harness.core.runtime import HarnessRuntime
@@ -131,6 +132,13 @@ def main():
                 config.memory.root,
                 project_id=project_id,
                 workspace_root=workspace_contract.root,
+                trust_policy=ExperienceTrustPolicy(
+                    reproduced_min_families=config.memory.reproduced_min_families,
+                    robust_min_families=config.memory.robust_min_families,
+                    robust_min_environments=config.memory.robust_min_environments,
+                    soft_contradictions_per_demotion=config.memory.soft_contradictions_per_demotion,
+                    stale_after_days=config.memory.stale_after_days,
+                ),
             )
             memory_retrieval_gateway = memory_store.snapshot_gateway()
         except (ProjectMemoryError, OSError, ValueError) as exc:
@@ -274,7 +282,18 @@ def main():
             runtime.log("model.preflight", {**model_preflight, "authority": "diagnostic_only"})
         state = runtime.run()
         if memory_store is not None:
-            memory_publish_report = memory_store.publish_from_state(state, source_run_id=runtime.run_id)
+            evaluation_contract = profile.evaluation_contract()
+            memory_publish_report = memory_store.publish_from_state(
+                state,
+                source_run_id=runtime.run_id,
+                goal_contract=goal,
+                verifier_descriptor={
+                    "profile": getattr(profile, "name", type(profile).__name__),
+                    "evaluation_contract": (
+                        evaluation_contract.dump() if evaluation_contract is not None else None
+                    ),
+                },
+            )
     except ResumeConflict as exc:
         action = (
             "use --resume with this run directory"

@@ -21,6 +21,12 @@ require_oracle_isolation = false
 enabled = false
 root = "../.verified-state-harness-memory"
 # project_id = "my-project"
+# Trust tiers are derived from independent content-addressed evidence families.
+reproduced_min_families = 2
+robust_min_families = 3
+robust_min_environments = 2
+soft_contradictions_per_demotion = 2
+stale_after_days = 180
 
 [models.primary]
 provider = "openai-compatible"

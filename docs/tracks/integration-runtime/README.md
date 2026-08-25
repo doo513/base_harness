@@ -72,6 +72,8 @@ See:
 
 The integration track is no longer blocked on basic runtime plumbing. Follow-up work should be driven by real runs and benchmarks rather than adding breadth speculatively. Current known gaps include interactive persisted MCP approval, stronger Windows isolation, broader native providers/MCP transport, plugin isolation, semantic context ranking, richer memory lifecycle, domain-depth expansion, progress tuning, and repeated matched real-provider performance evaluation.
 
+The active cross-run lifecycle extension is specified in `EVIDENCE_MEMORY_LIFECYCLE_V2.md`; it preserves the Stage-08 untrusted retrieval boundary and remains pending validation evidence.
+
 ## Branch baseline
 
 - implementation branch: `develop`

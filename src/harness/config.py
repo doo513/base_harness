@@ -122,6 +122,11 @@ class MemoryConfig:
     enabled: bool = False
     root: str | None = None
     project_id: str | None = None
+    reproduced_min_families: int = 2
+    robust_min_families: int = 3
+    robust_min_environments: int = 2
+    soft_contradictions_per_demotion: int = 2
+    stale_after_days: int = 180
 
     def __post_init__(self) -> None:
         if not isinstance(self.enabled, bool):
@@ -130,6 +135,19 @@ class MemoryConfig:
             raise ConfigError("enabled project memory requires memory.root")
         if self.project_id is not None and (not isinstance(self.project_id, str) or not self.project_id.strip()):
             raise ConfigError("memory.project_id must be a non-empty string when provided")
+        integer_fields = (
+            "reproduced_min_families",
+            "robust_min_families",
+            "robust_min_environments",
+            "soft_contradictions_per_demotion",
+            "stale_after_days",
+        )
+        for name in integer_fields:
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ConfigError(f"memory.{name} must be a positive integer")
+        if self.robust_min_families < self.reproduced_min_families:
+            raise ConfigError("memory.robust_min_families cannot be lower than reproduced_min_families")
 
 
 @dataclass(frozen=True)
@@ -207,6 +225,11 @@ class HarnessConfig:
                 "enabled": self.memory.enabled,
                 "root": self.memory.root,
                 "project_id": self.memory.project_id,
+                "reproduced_min_families": self.memory.reproduced_min_families,
+                "robust_min_families": self.memory.robust_min_families,
+                "robust_min_environments": self.memory.robust_min_environments,
+                "soft_contradictions_per_demotion": self.memory.soft_contradictions_per_demotion,
+                "stale_after_days": self.memory.stale_after_days,
             },
             "security": dict(self.security),
         }
@@ -335,7 +358,12 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         ))
 
     memory_raw = _expect_mapping(data.get("memory"), "memory")
-    memory_unknown = sorted(set(memory_raw) - {"enabled", "root", "project_id"})
+    memory_fields = {
+        "enabled", "root", "project_id", "reproduced_min_families",
+        "robust_min_families", "robust_min_environments",
+        "soft_contradictions_per_demotion", "stale_after_days",
+    }
+    memory_unknown = sorted(set(memory_raw) - memory_fields)
     if memory_unknown:
         raise ConfigError("unknown memory config keys: " + ", ".join(memory_unknown))
     memory_root = memory_raw.get("root")
@@ -344,10 +372,22 @@ def harness_config_from_mapping(raw: Mapping[str, Any]) -> HarnessConfig:
         raise ConfigError("memory.root must be a string")
     if project_id is not None and not isinstance(project_id, str):
         raise ConfigError("memory.project_id must be a string")
+
+    def memory_integer(name: str, default: int) -> int:
+        value = memory_raw.get(name, default)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ConfigError(f"memory.{name} must be an integer")
+        return value
+
     memory = MemoryConfig(
         enabled=_expect_bool(memory_raw.get("enabled"), "memory.enabled", default=False),
         root=memory_root,
         project_id=project_id,
+        reproduced_min_families=memory_integer("reproduced_min_families", 2),
+        robust_min_families=memory_integer("robust_min_families", 3),
+        robust_min_environments=memory_integer("robust_min_environments", 2),
+        soft_contradictions_per_demotion=memory_integer("soft_contradictions_per_demotion", 2),
+        stale_after_days=memory_integer("stale_after_days", 180),
     )
 
     profile = data.get("profile", "demo")

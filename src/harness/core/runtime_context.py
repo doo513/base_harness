@@ -166,12 +166,15 @@ class RuntimeContextMixin:
             "trust": "untrusted_project_memory",
             "instruction_authority": "none",
             "write_protocol": (
-                "propose memory_candidate.<label> with exact kind/content/tags and registered evidence_refs; "
-                "publication occurs post-run"
+                "propose memory_candidate.<label> using experience-case-candidate-v2 SRARE fields, "
+                "structured applicability, recording_class/event_kind, and registered evidence_refs; "
+                "publication occurs post-run into an append-only event ledger"
                 if memory_enabled
                 else None
             ),
             "read_protocol": "Stage-08 retrieval only" if memory_enabled else None,
+            "retrieval_role": "verification_candidate_only" if memory_enabled else None,
+            "current_direct_evidence_required": True if memory_enabled else None,
             "progress_authority": False,
             "completion_authority": False,
         }
