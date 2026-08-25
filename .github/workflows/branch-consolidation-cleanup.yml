@@ -1,0 +1,34 @@
+name: One-time branch consolidation cleanup
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/branch-consolidation-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  delete-obsolete-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete obsolete branch refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(
+            "environment-foundation-review"
+            "environment-foundation-v1"
+            "p1-memory-v2"
+            "__noop_should_not_create"
+            "work/p0-foundation"
+          )
+
+          for branch in "${branches[@]}"; do
+            echo "Deleting ${branch}"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+          done
