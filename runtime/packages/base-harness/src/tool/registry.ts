@@ -55,6 +55,8 @@ import { ModelV2 } from "@base-harness/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@base-harness/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { HarnessContractTool } from "./harness-contract"
+import { assertHarnessContractSubmitted } from "./harness-contract-state"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (
@@ -115,6 +117,7 @@ const layer = Layer.effect(
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const harnessContract = yield* HarnessContractTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -220,6 +223,7 @@ const layer = Layer.effect(
           todo: Tool.init(todo),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
+          contract: Tool.init(harnessContract),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
@@ -231,6 +235,7 @@ const layer = Layer.effect(
           custom,
           builtin: [
             tool.invalid,
+            tool.contract,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
@@ -332,7 +337,13 @@ const layer = Layer.effect(
               .join("\n"),
             parameters: output.parameters,
             jsonSchema,
-            execute: tool.execute,
+            execute: (
+              args: Parameters<typeof tool.execute>[0],
+              context: Parameters<typeof tool.execute>[1],
+            ) => {
+              assertHarnessContractSubmitted(context.sessionID, tool.id)
+              return tool.execute(args, context)
+            },
             formatValidationError: tool.formatValidationError,
           }
         }),

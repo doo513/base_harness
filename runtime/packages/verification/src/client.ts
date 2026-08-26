@@ -1,6 +1,9 @@
 import { delimiter, dirname, resolve } from "node:path"
 import {
   SIDECAR_PROTOCOL_VERSION,
+  type ActionCloseInput,
+  type ActionOpenInput,
+  type GoalContract,
   type ObserveActionInput,
   type OpenRunInput,
   type ProtocolEnvelope,
@@ -37,6 +40,10 @@ const inactiveStatus = (runId: string, scopeId: string): VerificationStatus => (
   runId,
   scopeId,
   rootScopeId: scopeId,
+  contractStatus: "missing",
+  criterionResults: [],
+  claimResults: [],
+  evidenceFamilies: [],
   evidenceRefs: [],
   candidateRefs: [],
   readyRef: null,
@@ -53,8 +60,21 @@ const asStatus = (
   ...current,
   ...value,
   state: typeof value.state === "string" ? (value.state as VerificationStatus["state"]) : current.state,
-  evidenceRefs: Array.isArray(value.evidenceRefs) ? (value.evidenceRefs as VerificationStatus["evidenceRefs"]) : current.evidenceRefs,
-  candidateRefs: Array.isArray(value.candidateRefs) ? (value.candidateRefs as VerificationStatus["candidateRefs"]) : current.candidateRefs,
+  criterionResults: Array.isArray(value.criterionResults)
+    ? (value.criterionResults as VerificationStatus["criterionResults"])
+    : current.criterionResults,
+  claimResults: Array.isArray(value.claimResults)
+    ? (value.claimResults as VerificationStatus["claimResults"])
+    : current.claimResults,
+  evidenceFamilies: Array.isArray(value.evidenceFamilies)
+    ? (value.evidenceFamilies as VerificationStatus["evidenceFamilies"])
+    : current.evidenceFamilies,
+  evidenceRefs: Array.isArray(value.evidenceRefs)
+    ? (value.evidenceRefs as VerificationStatus["evidenceRefs"])
+    : current.evidenceRefs,
+  candidateRefs: Array.isArray(value.candidateRefs)
+    ? (value.candidateRefs as VerificationStatus["candidateRefs"])
+    : current.candidateRefs,
 })
 
 function defaultCommand(): string[] {
@@ -152,19 +172,73 @@ export class ProcessVerificationClient implements VerificationClient {
   }
 
   async open(input: OpenRunInput): Promise<VerificationStatus> {
-    return this.statusRequest("run.open", {
-      workspace: input.workspace,
-      goalContract: input.goalContract,
-    }, input.scopeId)
+    return this.statusRequest(
+      "run.open",
+      {
+        workspace: input.workspace,
+        goalSources: input.goalSources,
+        ...(input.goalContract ? { goalContract: input.goalContract } : {}),
+      },
+      input.scopeId,
+    )
   }
 
   async openScope(scopeId: string, parentScopeId: string): Promise<VerificationStatus> {
     return this.statusRequest("scope.open", { parentScopeId }, scopeId)
   }
 
-  async observe(input: ObserveActionInput): Promise<VerificationStatus> {
+  async proposeContract(contract: GoalContract, scopeId = this.rootScopeId): Promise<VerificationStatus> {
+    return this.statusRequest("contract.propose", { contract }, scopeId)
+  }
+
+  async amendContract(contract: GoalContract, scopeId = this.rootScopeId): Promise<VerificationStatus> {
+    return this.statusRequest("contract.amend", { contract }, scopeId)
+  }
+
+  async openAction(input: ActionOpenInput): Promise<{ actionId: string; status: VerificationStatus }> {
+    const scopeId = input.scopeId ?? this.rootScopeId
+    const actionId = input.actionId ?? this.runId + ":action:" + String(++this.sequence)
+    const executionId = input.executionId ?? actionId + ":execution"
+    const claimIds =
+      input.claimIds ??
+      this.current.goalContract?.claims.map((claim) => claim.claimId) ??
+      []
+    const status = await this.statusRequest(
+      "action.open",
+      {
+        actionId,
+        executionId,
+        claimIds,
+        tool: input.tool,
+        input: input.input,
+        startedAt: input.startedAt,
+      },
+      scopeId,
+    )
+    if (status.outcome === "repair" || status.outcome === "blocked" || status.outcome === "needs_input") {
+      throw new VerificationClientError(
+        status.failureKind ?? "verification_failed",
+        status.failedCriterion ?? "Verifier rejected action.open",
+      )
+    }
+    return { actionId, status }
+  }
+
+  async closeAction(input: ActionCloseInput): Promise<VerificationStatus> {
     const { scopeId = this.rootScopeId, ...payload } = input
-    return this.statusRequest("action.observe", payload, scopeId)
+    return this.statusRequest("action.close", payload, scopeId)
+  }
+
+  async observe(input: ObserveActionInput): Promise<VerificationStatus> {
+    const opened = await this.openAction(input)
+    return this.closeAction({
+      scopeId: input.scopeId,
+      actionId: opened.actionId,
+      status: input.status,
+      output: input.output,
+      error: input.error,
+      metadata: input.metadata,
+    })
   }
 
   async verify(
@@ -184,12 +258,12 @@ export class ProcessVerificationClient implements VerificationClient {
 
   async dispose(): Promise<void> {
     if (this.disposed) return
-    this.disposed = true
     try {
       if (this.current.state !== "closed") await this.close()
     } catch {
       // A crashed verifier is already fail-closed.
     }
+    this.disposed = true
     this.input.end()
     await Promise.race([
       this.process.exited,
@@ -229,7 +303,7 @@ export class ProcessVerificationClient implements VerificationClient {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         void this.fail("harness_verifier_timeout", "Verifier did not respond before the protocol deadline.")
-        reject(new Error("Verifier request timed out: " + type))
+        reject(new VerificationClientError("harness_verifier_timeout", "Verifier request timed out: " + type))
       }, this.timeoutMs)
       this.pending.set(id, {
         resolve: (value) => resolveRequest(value as T),
@@ -263,7 +337,7 @@ export class ProcessVerificationClient implements VerificationClient {
   private async readStderr(): Promise<void> {
     const reader = this.errorOutput.getReader()
     while (!(await reader.read()).done) {
-      // stderr is intentionally not promoted to evidence or user-visible Ready.
+      // stderr has no evidence or Ready authority.
     }
   }
 
@@ -292,8 +366,7 @@ export class ProcessVerificationClient implements VerificationClient {
     }
     if (envelope.type === "failure") {
       const message = typeof payload.message === "string" ? payload.message : "Verifier rejected the protocol request"
-      const failureKind =
-        typeof payload.failureKind === "string" ? payload.failureKind : "harness_protocol_error"
+      const failureKind = typeof payload.failureKind === "string" ? payload.failureKind : "harness_protocol_error"
       pending.reject(new VerificationClientError(failureKind, message))
       this.update(asStatus(payload, this.current))
       return
@@ -304,10 +377,7 @@ export class ProcessVerificationClient implements VerificationClient {
   private async watchExit(): Promise<void> {
     const code = await this.process.exited
     if (!this.disposed && code !== 0) {
-      await this.fail(
-        "harness_verifier_unavailable",
-        "Verifier exited unexpectedly with code " + String(code) + ".",
-      )
+      await this.fail("harness_verifier_unavailable", "Verifier exited unexpectedly with code " + String(code) + ".")
     }
   }
 

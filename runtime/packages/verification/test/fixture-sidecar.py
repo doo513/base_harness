@@ -1,73 +1,72 @@
+from __future__ import annotations
+
 import json
 import sys
 
-mode = sys.argv[1] if len(sys.argv) > 1 else "ready"
+
+mode = sys.argv[1] if len(sys.argv) > 1 else "normal"
+status = {
+    "state": "open",
+    "goal": "fixture",
+    "rootScopeId": "root",
+    "contractStatus": "accepted",
+    "criterionResults": [],
+    "claimResults": [],
+    "evidenceFamilies": [],
+    "evidenceRefs": [],
+    "candidateRefs": [],
+    "readyRef": None,
+    "maxSameFailureRepairs": 2,
+}
 
 for line in sys.stdin:
     request = json.loads(line)
     if mode == "crash":
-        raise SystemExit(17)
+        raise SystemExit(7)
     if mode == "malformed":
         print("{not-json", flush=True)
         continue
+    version = 999 if mode == "version-mismatch" else 2
     request_type = request["type"]
+    payload = dict(status)
     if request_type == "hello":
-        payload = {"protocolVersion": 1}
+        payload = {"protocolVersion": version}
     elif request_type == "run.open":
-        payload = {
-            "state": "open",
-            "goal": request["payload"]["goalContract"]["goal"],
-            "runId": request["runId"],
-            "scopeId": request["scopeId"],
-            "rootScopeId": request["scopeId"],
-            "evidenceRefs": [],
-            "candidateRefs": [],
-            "readyRef": None,
-            "maxSameFailureRepairs": 2,
-        }
-    elif request_type == "action.observe":
-        payload = {
-            "state": "observing",
-            "runId": request["runId"],
-            "scopeId": request["scopeId"],
-            "rootScopeId": "root",
-            "evidenceRefs": [],
-            "candidateRefs": [],
-            "readyRef": None,
-            "maxSameFailureRepairs": 2,
-        }
+        status.update(
+            {
+                "runId": request["runId"],
+                "scopeId": request["scopeId"],
+                "rootScopeId": request["scopeId"],
+                "goalContract": request["payload"].get("goalContract"),
+            }
+        )
+        payload = dict(status)
+    elif request_type == "action.close":
+        status["candidateRefs"] = [
+            {
+                "artifactType": "action_observation",
+                "sha256": "a" * 64,
+                "path": "/fixture/candidate",
+                "trust": "untrusted_execution_observation",
+            }
+        ]
+        payload = dict(status)
     elif request_type == "verify.request":
-        payload = {
-            "state": "ready",
-            "outcome": "ready",
-            "runId": request["runId"],
-            "scopeId": request["scopeId"],
-            "rootScopeId": "root",
-            "evidenceRefs": [],
-            "candidateRefs": [],
-            "readyRef": {
-                "artifactType": "ready",
-                "sha256": "fixture",
-                "path": "fixture",
-                "trust": "verifier_attested",
-            },
-            "maxSameFailureRepairs": 2,
+        ready = {
+            "artifactType": "ready_attestation",
+            "sha256": "b" * 64,
+            "path": "/fixture/ready",
+            "trust": "verifier_attested",
         }
-    else:
-        payload = {
-            "state": "closed",
-            "runId": request["runId"],
-            "scopeId": request["scopeId"],
-            "rootScopeId": "root",
-            "evidenceRefs": [],
-            "candidateRefs": [],
-            "readyRef": None,
-            "maxSameFailureRepairs": 2,
-        }
+        status.update({"state": "ready", "outcome": "ready", "readyRef": ready})
+        payload = dict(status)
+    elif request_type == "run.close":
+        status["state"] = "closed"
+        payload = dict(status)
     print(
         json.dumps(
             {
-                "version": 2 if mode == "version-mismatch" else 1,
+                "version": version,
                 "id": request["id"],
                 "runId": request["runId"],
                 "scopeId": request["scopeId"],

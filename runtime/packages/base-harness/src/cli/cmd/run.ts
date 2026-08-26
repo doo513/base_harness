@@ -833,17 +833,19 @@ export const RunCommand = effectCmd({
         if (!interactive) {
           const verificationPrompt =
             args.message.join(" ").trim() || args.command || "Complete the requested run"
+          const verificationSource = goalSource(
+            verificationPrompt,
+            "headless-" + sessionID,
+            "user_message",
+          )
           const headlessVerification = args.attach
             ? undefined
             : await createVerificationClient({
                 runId: "run-" + sessionID,
                 scopeId: sessionID,
                 workspace: process.cwd(),
-                goalContract: {
-                  goal: verificationPrompt,
-                  acceptance: ["The requested run passes independent workspace checks."],
-                  constraints: ["Only verifier-attested evidence may issue Ready."],
-                },
+                goalSources: [verificationSource],
+                goalContract: createGoalContract(verificationSource),
               })
           let verificationFinalized = false
           const events = await client.event.subscribe()
@@ -1055,4 +1057,8 @@ export async function runMini(input: MiniCommandInput) {
     demo: input.demo ?? false,
   })
 }
-import { createVerificationClient } from "@base-harness/verification"
+import {
+  createGoalContract,
+  createVerificationClient,
+  goalSource,
+} from "@base-harness/verification"

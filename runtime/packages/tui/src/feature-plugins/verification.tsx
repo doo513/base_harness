@@ -1,6 +1,9 @@
 import {
   classifyRuntimeFailure,
+  goalSource,
+  materializeProposal,
   createVerificationClient,
+  type GoalContractProposal,
   type ProcessVerificationClient,
   type VerificationStatus,
 } from "@base-harness/verification"
@@ -16,6 +19,9 @@ const initialStatus = (): VerificationStatus => ({
   rootScopeId: "",
   evidenceRefs: [],
   candidateRefs: [],
+  criterionResults: [],
+  claimResults: [],
+  evidenceFamilies: [],
   readyRef: null,
   maxSameFailureRepairs: 2,
 })
@@ -90,6 +96,10 @@ function VerificationPanel(props: { status: VerificationStatus; overlay?: boolea
         Evidence {String(props.status.evidenceRefs.length)} / Candidates{" "}
         {String(props.status.candidateRefs.length)}
       </text>
+      <text fg="#a8b3c7">
+        Criteria {String(props.status.criterionResults.filter((item) => item.result === "verified").length)}
+        /{String(props.status.criterionResults.length)} · Families {String(props.status.evidenceFamilies.length)}
+      </text>
       <Show when={props.status.failedCriterion}>
         <text fg="#e6b566">Criterion {props.status.failedCriterion}</text>
       </Show>
@@ -140,6 +150,8 @@ const tui: TuiPlugin = async (api) => {
   const rootScopeId = () => activeRootScopeId || status().rootScopeId || "root"
   const session = () => api.state.session.get(rootScopeId())
   const goal = () => session()?.title?.trim() || "Complete the current base-harness session"
+  const currentSource = () =>
+    goalSource(goal(), "session-" + rootScopeId(), "session_title")
 
   const ensureClient = async (): Promise<ProcessVerificationClient> => {
     if (client) return client
@@ -150,11 +162,7 @@ const tui: TuiPlugin = async (api) => {
         runId,
         scopeId,
         workspace: api.state.path.directory,
-        goalContract: {
-          goal: goal(),
-          acceptance: ["Requested workspace behavior is independently verified."],
-          constraints: ["Only the root GoalContract may receive Ready."],
-        },
+        goalSources: [currentSource()],
       }).then((value) => {
         client = value
         openedScopes.add(scopeId)
@@ -292,6 +300,11 @@ const tui: TuiPlugin = async (api) => {
     observedTool = true
     observationChain = observationChain.then(async () => {
       const verifier = await ensureClient()
+      if (tool.tool === "harness_contract") {
+        const proposal = tool.input as GoalContractProposal
+        await verifier.proposeContract(materializeProposal(currentSource(), proposal))
+        return
+      }
       if (!openedScopes.has(tool.sessionId)) {
         const parent = api.state.session.get(tool.sessionId)?.parentID
         const parentScopeId = parent && openedScopes.has(parent) ? parent : rootScopeId()
