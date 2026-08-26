@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://base-harness.local/schema/base-harness.json",
+  "title": "base-harness configuration",
+  "type": "object",
+  "properties": {
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["adaptive", "always", "manual"],
+          "default": "adaptive"
+        },
+        "auto": {
+          "type": "boolean",
+          "default": true
+        },
+        "maxSameFailureRepairs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "command"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "type": "string",
+                "default": "."
+              },
+              "timeoutSeconds": {
+                "type": "number",
+                "minimum": 1,
+                "default": 120
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

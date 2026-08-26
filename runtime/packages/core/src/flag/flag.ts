@@ -1,0 +1,78 @@
+import { Config } from "effect"
+
+export function truthy(key: string) {
+  const value = process.env[key]?.toLowerCase()
+  return value === "true" || value === "1"
+}
+
+const copy = process.env["BASE_HARNESS_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
+const fff = process.env["BASE_HARNESS_DISABLE_FFF"]
+
+function enabledByExperimental(key: string) {
+  return process.env[key] === undefined ? truthy("BASE_HARNESS_EXPERIMENTAL") : truthy(key)
+}
+
+export const Flag = {
+  OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
+  OTEL_EXPORTER_OTLP_HEADERS: process.env["OTEL_EXPORTER_OTLP_HEADERS"],
+
+  BASE_HARNESS_AUTO_HEAP_SNAPSHOT: truthy("BASE_HARNESS_AUTO_HEAP_SNAPSHOT"),
+  BASE_HARNESS_GIT_BASH_PATH: process.env["BASE_HARNESS_GIT_BASH_PATH"],
+  BASE_HARNESS_CONFIG: process.env["BASE_HARNESS_CONFIG"],
+  BASE_HARNESS_CONFIG_CONTENT: process.env["BASE_HARNESS_CONFIG_CONTENT"],
+  BASE_HARNESS_DISABLE_AUTOUPDATE: truthy("BASE_HARNESS_DISABLE_AUTOUPDATE"),
+  BASE_HARNESS_ALWAYS_NOTIFY_UPDATE: truthy("BASE_HARNESS_ALWAYS_NOTIFY_UPDATE"),
+  BASE_HARNESS_DISABLE_PRUNE: truthy("BASE_HARNESS_DISABLE_PRUNE"),
+  BASE_HARNESS_DISABLE_TERMINAL_TITLE: truthy("BASE_HARNESS_DISABLE_TERMINAL_TITLE"),
+  BASE_HARNESS_SHOW_TTFD: truthy("BASE_HARNESS_SHOW_TTFD"),
+  BASE_HARNESS_DISABLE_AUTOCOMPACT: truthy("BASE_HARNESS_DISABLE_AUTOCOMPACT"),
+  BASE_HARNESS_DISABLE_MODELS_FETCH: truthy("BASE_HARNESS_DISABLE_MODELS_FETCH"),
+  BASE_HARNESS_DISABLE_MOUSE: truthy("BASE_HARNESS_DISABLE_MOUSE"),
+  BASE_HARNESS_FAKE_VCS: process.env["BASE_HARNESS_FAKE_VCS"],
+  BASE_HARNESS_SERVER_PASSWORD: process.env["BASE_HARNESS_SERVER_PASSWORD"],
+  BASE_HARNESS_SERVER_USERNAME: process.env["BASE_HARNESS_SERVER_USERNAME"],
+  BASE_HARNESS_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("BASE_HARNESS_DISABLE_FFF"),
+
+  // Experimental
+  BASE_HARNESS_EXPERIMENTAL_FILEWATCHER: Config.boolean("BASE_HARNESS_EXPERIMENTAL_FILEWATCHER").pipe(
+    Config.withDefault(false),
+  ),
+  BASE_HARNESS_EXPERIMENTAL_DISABLE_FILEWATCHER: Config.boolean("BASE_HARNESS_EXPERIMENTAL_DISABLE_FILEWATCHER").pipe(
+    Config.withDefault(false),
+  ),
+  BASE_HARNESS_EXPERIMENTAL_DISABLE_COPY_ON_SELECT:
+    copy === undefined ? process.platform === "win32" : truthy("BASE_HARNESS_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
+  BASE_HARNESS_MODELS_URL: process.env["BASE_HARNESS_MODELS_URL"],
+  BASE_HARNESS_MODELS_PATH: process.env["BASE_HARNESS_MODELS_PATH"],
+  BASE_HARNESS_DB: process.env["BASE_HARNESS_DB"],
+
+  BASE_HARNESS_WORKSPACE_ID: process.env["BASE_HARNESS_WORKSPACE_ID"],
+  BASE_HARNESS_EXPERIMENTAL_WORKSPACES: enabledByExperimental("BASE_HARNESS_EXPERIMENTAL_WORKSPACES"),
+
+  // Evaluated at access time (not module load) because tests, the CLI, and
+  // external tooling set these env vars at runtime.
+  get BASE_HARNESS_DISABLE_PROJECT_CONFIG() {
+    return truthy("BASE_HARNESS_DISABLE_PROJECT_CONFIG")
+  },
+  get BASE_HARNESS_EXPERIMENTAL_REFERENCES() {
+    return enabledByExperimental("BASE_HARNESS_EXPERIMENTAL_REFERENCES")
+  },
+  get BASE_HARNESS_TUI_CONFIG() {
+    return process.env["BASE_HARNESS_TUI_CONFIG"]
+  },
+  get BASE_HARNESS_CONFIG_DIR() {
+    return process.env["BASE_HARNESS_CONFIG_DIR"]
+  },
+  get BASE_HARNESS_PURE() {
+    return truthy("BASE_HARNESS_PURE")
+  },
+  get BASE_HARNESS_PERMISSION() {
+    return process.env["BASE_HARNESS_PERMISSION"]
+  },
+  get BASE_HARNESS_PLUGIN_META_FILE() {
+    return process.env["BASE_HARNESS_PLUGIN_META_FILE"]
+  },
+  get BASE_HARNESS_CLIENT() {
+    return process.env["BASE_HARNESS_CLIENT"] ?? "cli"
+  },
+}

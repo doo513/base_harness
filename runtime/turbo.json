@@ -1,0 +1,36 @@
+{
+  "$schema": "https://v2-8-13.turborepo.dev/schema.json",
+  "globalEnv": ["CI", "BASE_HARNESS_DISABLE_SHARE"],
+  "globalPassThroughEnv": ["CI", "BASE_HARNESS_DISABLE_SHARE"],
+  "tasks": {
+    "typecheck": {},
+    "build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
+    "opencode#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "passThroughEnv": ["*"]
+    },
+    "@base-harness/core#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@base-harness/function#test": {
+      "outputs": []
+    },
+    "@base-harness/app#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@base-harness/ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@base-harness/session-ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    }
+  }
+}

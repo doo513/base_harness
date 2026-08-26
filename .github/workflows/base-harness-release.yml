@@ -1,0 +1,49 @@
+name: base-harness release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+          - os: ubuntu-latest
+            target: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python verifier build dependencies
+        run: python -m pip install -e . pytest pyinstaller
+      - name: Install execution-core dependencies
+        working-directory: runtime
+        run: bun install --frozen-lockfile
+      - name: Verify Python sidecar
+        run: python -m pytest -q tests/test_verified_sidecar.py
+      - name: Verify TypeScript protocol package
+        working-directory: runtime/packages/verification
+        run: bun test
+      - name: Typecheck execution core
+        working-directory: runtime
+        run: bun run typecheck
+      - name: Build execution core
+        working-directory: runtime
+        run: bun run build:release ${{ matrix.target }}
+      - name: Package standalone verifier and ZIP
+        run: python runtime/script/package-release.py --target ${{ matrix.target }} --repo .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: base-harness-${{ matrix.target }}
+          path: runtime/dist/base-harness-${{ matrix.target }}.zip
