@@ -10,8 +10,9 @@ import {
 import type { TuiCommand, TuiPlugin } from "@base-harness/plugin/tui"
 import type { BuiltinTuiPlugin } from "./builtins"
 import { createSignal, Show } from "solid-js"
+import { useSync } from "../context/sync"
 
-const initialStatus = (): VerificationStatus => ({
+const initialStatus = (maxSameFailureRepairs = 2): VerificationStatus => ({
   state: "inactive",
   goal: "",
   runId: "",
@@ -23,7 +24,7 @@ const initialStatus = (): VerificationStatus => ({
   claimResults: [],
   evidenceFamilies: [],
   readyRef: null,
-  maxSameFailureRepairs: 2,
+  maxSameFailureRepairs,
 })
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -121,7 +122,12 @@ function VerificationPanel(props: { status: VerificationStatus; overlay?: boolea
 }
 
 const tui: TuiPlugin = async (api) => {
-  const [status, setStatus] = createSignal(initialStatus())
+  const sync = useSync()
+  const verificationConfig = () => sync.data.config.verification
+  const maxSameFailureRepairs = () => verificationConfig()?.maxSameFailureRepairs ?? 2
+  const automaticVerificationEnabled = () =>
+    verificationConfig()?.mode !== "manual" && verificationConfig()?.auto !== false
+  const [status, setStatus] = createSignal(initialStatus(maxSameFailureRepairs()))
   const [overlay, setOverlay] = createSignal(false)
   const activeTools = new Set<string>()
   const openedScopes = new Set<string>()
@@ -143,7 +149,7 @@ const tui: TuiPlugin = async (api) => {
       client = undefined
       clientPromise = undefined
       openedScopes.clear()
-      setStatus(initialStatus())
+      setStatus(initialStatus(maxSameFailureRepairs()))
     }
     activeRootScopeId = root
   }
@@ -329,6 +335,7 @@ const tui: TuiPlugin = async (api) => {
     if (!eventSessionId) return
     selectRootScope(eventSessionId)
     if (eventSessionId !== rootScopeId() || state?.type !== "idle") return
+    if (!automaticVerificationEnabled()) return
     if (!observedTool || activeTools.size > 0) return
     observedTool = false
     void verify("automatic")

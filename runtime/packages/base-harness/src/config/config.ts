@@ -52,6 +52,13 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
 function normalizeLoadedConfig(data: unknown) {
   if (!isRecord(data)) return data
   const copy = { ...data }
+  if (isRecord(copy.verification)) {
+    const allowed = new Set(["mode", "auto", "maxSameFailureRepairs"])
+    const unsupported = Object.keys(copy.verification).filter((key) => !allowed.has(key))
+    if (unsupported.length > 0) {
+      throw new Error("Unsupported verification setting(s): " + unsupported.sort().join(", "))
+    }
+  }
   const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
   if (!hadLegacy) return copy
   delete copy.theme

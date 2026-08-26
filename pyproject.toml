@@ -3,10 +3,12 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "verified-state-harness"
-version = "0.10.0"
+name = "base-harness-verifier"
+version = "2.0.0"
+description = "Fail-closed Base Harness V2 verification sidecar"
+readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["prompt-toolkit>=3.0,<4"]
+dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -15,9 +17,9 @@ dev = ["pytest>=8"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 
-[tool.setuptools.package-data]
-"harness.skills" = ["*/SKILL.md"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["harness"]
 
 [project.scripts]
-verified-harness = "harness.cli:main"
 base-harness-verifier = "harness.verified_sidecar:main"

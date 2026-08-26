@@ -1121,7 +1121,7 @@ async function load(input: {
   }
 }
 
-export function createLegacyTuiPluginHost(): TuiPluginHost {
+export function createTuiPluginHost(): TuiPluginHost {
   return {
     start: init,
     dispose,

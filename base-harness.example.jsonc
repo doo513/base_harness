@@ -1,0 +1,15 @@
+{
+  "$schema": "https://base-harness.local/config.json",
+  "model": "openai/your-model",
+  "verification": {
+    "mode": "adaptive",
+    "auto": true,
+    "maxSameFailureRepairs": 2
+  },
+  "provider": {
+    "openai": {
+      "options": { "apiKey": "{env:OPENAI_API_KEY}" }
+    }
+  },
+  "mcp": {}
+}

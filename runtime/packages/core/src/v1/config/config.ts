@@ -29,9 +29,24 @@ const LogLevelRef = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate
   description: "Log level",
 })
 
+export const Verification = Schema.Struct({
+  mode: Schema.optional(Schema.Literals(["adaptive", "manual"])).annotate({
+    description: "Adaptive verification after observed actions, or manual verification only",
+  }),
+  auto: Schema.optional(Schema.Boolean).annotate({
+    description: "Request verification automatically when an acted-on root session becomes idle",
+  }),
+  maxSameFailureRepairs: Schema.optional(NonNegativeInt).annotate({
+    description: "Maximum automatic repair attempts for one failure fingerprint before blocking",
+  }),
+})
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
+  }),
+  verification: Schema.optional(Verification).annotate({
+    description: "Base Harness V2 independent verification policy",
   }),
   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),

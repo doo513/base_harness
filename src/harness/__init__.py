@@ -1,1 +1,3 @@
-__version__ = "0.10.0"
+"""Base Harness V2 verifier package."""
+
+__version__ = "2.0.0"
