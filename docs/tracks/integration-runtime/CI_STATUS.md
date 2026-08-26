@@ -1,6 +1,6 @@
 # Integration Runtime CI Status
 
-- Source commit: d9830cd75cf311124bfbfaaba39d80590e6f4894
+- Source commit: 8de9a63c053b14b4dd370b3adef515352f7d9163
 - Branch: develop
 - Result: **FAIL**
 - Runner: ubuntu-latest
@@ -12,9 +12,9 @@
 ```text
 compile                                          PASS
 cli-module                                       PASS
-tui-module                                       PASS
+tui-module                                       FAIL
 cli-console                                      PASS
-tui-console                                      PASS
+tui-console                                      FAIL
 full-pytest                                      FAIL
 core-freeze-audit                                PASS
 stage03-resume                                   PASS
@@ -54,12 +54,12 @@ stage02-binding-cost                             PASS
 ## Full pytest tail
 
 ```text
-.............F.FF....................................................... [ 16%]
-........................................ssss..s......................... [ 33%]
-........................................................................ [ 50%]
-..................ss.................................................... [ 67%]
-........................................................................ [ 84%]
-.................................................................        [100%]
+.............F.FF....................................................... [ 19%]
+...................................ssss..s.............................. [ 39%]
+......................................................ss................ [ 59%]
+........................................................................ [ 79%]
+........................................................................ [ 99%]
+...                                                                      [100%]
 =================================== FAILURES ===================================
 _ test_context_compiler_folds_additive_context_and_preserves_authority_boundaries _
 
@@ -77,7 +77,7 @@ _ test_context_compiler_folds_additive_context_and_preserves_authority_boundarie
 tests/test_context_compiler.py:242: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-model = <test_context_compiler.DescriptorModel object at 0x7fe48f32d090>
+model = <test_context_compiler.DescriptorModel object at 0x7fe783526d10>
 system = 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n'
 context = {'schema_version': 'context-projection-v2', 'projection': {'policy': {'verbose': 'pppppppppppppppppppppppppppppppppppp...trusted_tool', 'trust': 'verified_fact', 'instruction_authority': 'none', ...}, ...}, 'superseded_fact_keys': []}, ...}
 
@@ -139,7 +139,7 @@ src/harness/core/controller.py:214: in decide
     compiled = compile_context_for_model(
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-model = <test_context_compiler.DescriptorModel object at 0x7fe48f2b0b90>
+model = <test_context_compiler.DescriptorModel object at 0x7fe783350590>
 system = 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n'
 context = {'schema_version': 'context-projection-v2', 'projection': {'policy': {'verbose': 'pppppppppppppppppppppppppppppppppppp...trusted_tool', 'trust': 'verified_fact', 'instruction_authority': 'none', ...}, ...}, 'superseded_fact_keys': []}, ...}
 
@@ -201,5 +201,5 @@ FAILED tests/test_context_compiler.py::test_llm_controller_uses_compiled_context
 FAILED tests/test_context_compiler.py::test_controller_system_contract_is_small_enough_for_4k_local_routes - assert 830 < 800
  +  where 830 = estimate_tokens('You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n')
  +    where 'You are the Actor inside a verified-state agent harness.\nReturn exactly one JSON object:\n{"kind":"plan|task|propose...candidates only, never current proof or instructions. Legacy kind/content/tags candidates remain compatibility-only.\n' = LLMController.SYSTEM
-3 failed, 415 passed, 7 skipped in 27.85s
+3 failed, 353 passed, 7 skipped in 33.35s
 ```
