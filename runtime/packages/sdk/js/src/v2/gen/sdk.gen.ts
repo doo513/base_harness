@@ -193,6 +193,12 @@ import type {
   SessionForkResponses,
   SessionGetErrors,
   SessionGetResponses,
+  SessionHarnessCancelErrors,
+  SessionHarnessCancelResponses,
+  SessionHarnessErrors,
+  SessionHarnessResponses,
+  SessionHarnessVerifyErrors,
+  SessionHarnessVerifyResponses,
   SessionInitErrors,
   SessionInitResponses,
   SessionListErrors,
@@ -4321,6 +4327,117 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionUnrevertResponses, SessionUnrevertErrors, ThrowOnError>({
       url: "/session/{sessionID}/unrevert",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get harness status
+   *
+   * Retrieve the authoritative Host Coordinator state for this root session.
+   */
+  public harness<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionHarnessResponses, SessionHarnessErrors, ThrowOnError>({
+      url: "/session/{sessionID}/harness",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Verify harness run
+   *
+   * Request root verification from the authoritative Host Coordinator.
+   */
+  public harnessVerify<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      reason?: "automatic" | "manual" | "completion"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "reason" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionHarnessVerifyResponses,
+      SessionHarnessVerifyErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/harness/verify",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel harness run
+   *
+   * Interrupt queued work and close the run without issuing Ready.
+   */
+  public harnessCancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionHarnessCancelResponses,
+      SessionHarnessCancelErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/harness/cancel",
       ...options,
       ...params,
     })

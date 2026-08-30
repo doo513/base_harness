@@ -13,6 +13,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@base-harness/core/session"
 import * as SessionExecutionLocal from "@base-harness/core/session/execution/local"
 import { locationServiceMapLayer } from "@base-harness/core/location-services"
+import { GlobalSecretRegistry } from "@base-harness/core/secret-registry"
 
 import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
@@ -634,9 +635,10 @@ const layer: Layer.Layer<
 
     const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        const persisted = GlobalSecretRegistry.snapshot().redact(structuredClone(part)) as T
         yield* events.publish(SessionV1.Event.PartUpdated, {
           sessionID: part.sessionID,
-          part: structuredClone(part),
+          part: persisted,
           time: Date.now(),
         })
         return part

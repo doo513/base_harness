@@ -26,7 +26,7 @@ for line in sys.stdin:
     if mode == "malformed":
         print("{not-json", flush=True)
         continue
-    version = 999 if mode == "version-mismatch" else 2
+    version = 999 if mode == "version-mismatch" else 4
     request_type = request["type"]
     payload = dict(status)
     if request_type == "hello":
@@ -51,7 +51,50 @@ for line in sys.stdin:
             }
         ]
         payload = dict(status)
+    elif request_type == "scope.open":
+        payload = {
+            **status,
+            "scopeId": request["scopeId"],
+            "scopeKind": request["payload"].get("kind", "work_unit"),
+        }
+    elif request_type == "candidate.attach":
+        status["candidate"] = request["payload"]["candidate"]
+        payload = dict(status)
+    elif request_type == "scope.reopen":
+        status.pop("candidate", None)
+        payload = dict(status)
+    elif request_type == "candidate.commit":
+        status["candidateCommitted"] = True
+        payload = dict(status)
     elif request_type == "verify.request":
+        if request["scopeId"] != status["rootScopeId"]:
+            candidate = status.get("candidate", {})
+            payload = {
+                **status,
+                "state": "open",
+                "scopeId": request["scopeId"],
+                "outcome": "scope_verified",
+                "readyRef": None,
+                "scopeAttestation": {
+                    "candidateId": candidate.get("candidateId", "fixture-candidate"),
+                    "candidateRevision": candidate.get("revision", 1),
+                    "patchHash": candidate.get("patchHash", "c" * 64),
+                },
+            }
+            print(
+                json.dumps(
+                    {
+                        "version": version,
+                        "id": request["id"],
+                        "runId": request["runId"],
+                        "scopeId": request["scopeId"],
+                        "type": "response",
+                        "payload": payload,
+                    }
+                ),
+                flush=True,
+            )
+            continue
         ready = {
             "artifactType": "ready_attestation",
             "sha256": "b" * 64,

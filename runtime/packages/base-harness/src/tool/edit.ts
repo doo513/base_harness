@@ -18,6 +18,7 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@base-harness/core/fs-util"
 import * as Bom from "@/util/bom"
+import * as Orchestration from "@base-harness/core/orchestration"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -77,10 +78,14 @@ export const EditTool = Tool.define(
           }
 
           const instance = yield* InstanceState.context
-          const filePath = path.isAbsolute(params.filePath)
+          const logicalFilePath = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.join(instance.directory, params.filePath)
-          yield* assertExternalDirectoryEffect(ctx, filePath)
+          yield* assertExternalDirectoryEffect(ctx, logicalFilePath)
+          const target = yield* Effect.promise(() =>
+            Orchestration.resolveWrite(ctx.sessionID, instance.worktree, logicalFilePath),
+          )
+          const filePath = target.physicalPath
 
           let diff = ""
           let contentOld = ""
@@ -101,10 +106,10 @@ export const EditTool = Tool.define(
                 diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
                 yield* ctx.ask({
                   permission: "edit",
-                  patterns: [path.relative(instance.worktree, filePath)],
+                  patterns: [path.relative(instance.worktree, logicalFilePath)],
                   always: ["*"],
                   metadata: {
-                    filepath: filePath,
+                    filepath: logicalFilePath,
                     diff,
                   },
                 })
@@ -112,11 +117,13 @@ export const EditTool = Tool.define(
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
                 }
-                yield* events.publish(FileSystem.Event.Edited, { file: filePath })
-                yield* events.publish(Watcher.Event.Updated, {
-                  file: filePath,
-                  event: "add",
-                })
+                if (!target.overlay) {
+                  yield* events.publish(FileSystem.Event.Edited, { file: logicalFilePath })
+                  yield* events.publish(Watcher.Event.Updated, {
+                    file: logicalFilePath,
+                    event: "add",
+                  })
+                }
                 return
               }
 
@@ -144,10 +151,10 @@ export const EditTool = Tool.define(
               )
               yield* ctx.ask({
                 permission: "edit",
-                patterns: [path.relative(instance.worktree, filePath)],
+                patterns: [path.relative(instance.worktree, logicalFilePath)],
                 always: ["*"],
                 metadata: {
-                  filepath: filePath,
+                  filepath: logicalFilePath,
                   diff,
                 },
               })
@@ -156,11 +163,13 @@ export const EditTool = Tool.define(
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
               }
-              yield* events.publish(FileSystem.Event.Edited, { file: filePath })
-              yield* events.publish(Watcher.Event.Updated, {
-                file: filePath,
-                event: "change",
-              })
+              if (!target.overlay) {
+                yield* events.publish(FileSystem.Event.Edited, { file: logicalFilePath })
+                yield* events.publish(Watcher.Event.Updated, {
+                  file: logicalFilePath,
+                  event: "change",
+                })
+              }
               diff = trimDiff(
                 createTwoFilesPatch(
                   filePath,
@@ -179,7 +188,7 @@ export const EditTool = Tool.define(
             if (change.removed) deletions += change.count || 0
           }
           const filediff: Snapshot.FileDiff = {
-            file: filePath,
+            file: logicalFilePath,
             patch: diff,
             additions,
             deletions,
@@ -206,7 +215,7 @@ export const EditTool = Tool.define(
               diff,
               filediff,
             },
-            title: `${path.relative(instance.worktree, filePath)}`,
+            title: `${path.relative(instance.worktree, logicalFilePath)}`,
             output,
           }
         }),

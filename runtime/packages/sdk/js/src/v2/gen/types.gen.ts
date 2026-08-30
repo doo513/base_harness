@@ -93,6 +93,7 @@ export type Event =
   | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
+  | EventHarnessStatus
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -1600,6 +1601,14 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
+    | {
+        id: string
+        type: "harness.status"
+        properties: {
+          sessionID: string
+          status: unknown
+        }
+      }
     | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
@@ -1885,6 +1894,16 @@ export type AttachmentConfig = {
 
 export type Config = {
   $schema?: string
+  verification?: {
+    profile?: "fast" | "adaptive" | "strict"
+    trigger?: "auto" | "manual"
+    maxSameFailureRepairs?: number
+  }
+  orchestration?: {
+    mode?: "adaptive" | "manual"
+    exploration?: "adaptive" | "always" | "manual"
+    maxParallelWorkUnits?: number
+  }
   shell?: string
   logLevel?: LogLevel
   server?: ServerConfig
@@ -2941,6 +2960,7 @@ export type V2Event =
   | WorktreeFailed
   | ServerConnected
   | GlobalDisposed
+  | HarnessStatus
 
 export type V2EventStream = string
 
@@ -6105,6 +6125,24 @@ export type GlobalDisposed = {
   }
 }
 
+export type HarnessStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "harness.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    status: unknown
+  }
+}
+
 export type QuestionV2Request = {
   id: string
   sessionID: string
@@ -7049,6 +7087,15 @@ export type EventGlobalDisposed = {
   type: "global.disposed"
   properties: {
     [key: string]: unknown
+  }
+}
+
+export type EventHarnessStatus = {
+  id: string
+  type: "harness.status"
+  properties: {
+    sessionID: string
+    status: unknown
   }
 }
 
@@ -10403,6 +10450,104 @@ export type PermissionRespondResponses = {
 }
 
 export type PermissionRespondResponse = PermissionRespondResponses[keyof PermissionRespondResponses]
+
+export type SessionHarnessData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/harness"
+}
+
+export type SessionHarnessErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionHarnessError = SessionHarnessErrors[keyof SessionHarnessErrors]
+
+export type SessionHarnessResponses = {
+  /**
+   * Harness coordinator status
+   */
+  200: unknown
+}
+
+export type SessionHarnessVerifyData = {
+  body?: {
+    reason?: "automatic" | "manual" | "completion"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/harness/verify"
+}
+
+export type SessionHarnessVerifyErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionHarnessVerifyError = SessionHarnessVerifyErrors[keyof SessionHarnessVerifyErrors]
+
+export type SessionHarnessVerifyResponses = {
+  /**
+   * Harness verification status
+   */
+  200: unknown
+}
+
+export type SessionHarnessCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/harness/cancel"
+}
+
+export type SessionHarnessCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionHarnessCancelError = SessionHarnessCancelErrors[keyof SessionHarnessCancelErrors]
+
+export type SessionHarnessCancelResponses = {
+  /**
+   * Interrupted harness status
+   */
+  200: unknown
+}
 
 export type PartDeleteData = {
   body?: never

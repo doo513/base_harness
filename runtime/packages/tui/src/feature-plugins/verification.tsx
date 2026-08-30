@@ -1,30 +1,55 @@
-import {
-  classifyRuntimeFailure,
-  goalSource,
-  materializeProposal,
-  createVerificationClient,
-  type GoalContractProposal,
-  type ProcessVerificationClient,
-  type VerificationStatus,
-} from "@base-harness/verification"
 import type { TuiCommand, TuiPlugin } from "@base-harness/plugin/tui"
 import type { BuiltinTuiPlugin } from "./builtins"
 import { createSignal, Show } from "solid-js"
 import { useSync } from "../context/sync"
 
-const initialStatus = (maxSameFailureRepairs = 2): VerificationStatus => ({
-  state: "inactive",
-  goal: "",
+type WorkerStatus = {
+  workUnitId: string
+  title: string
+  state: string
+  scopeId?: string
+  repairCount: number
+}
+
+type HarnessStatus = {
+  sessionID: string
+  runId: string
+  goal: string
+  phase: string
+  workers: WorkerStatus[]
+  activeCount: number
+  queuedCount: number
+  outcome?: string
+  verificationState: string
+  configuredProfile?: "fast" | "adaptive" | "strict"
+  effectiveProfile?: "fast" | "adaptive" | "strict"
+  assuranceLevel?: "fast" | "adaptive" | "strict"
+  failureKind?: string | null
+  failedCriterion?: string | null
+  missingEvidence: string[]
+  repairCount: number
+  maxSameFailureRepairs: number
+  evidenceCount: number
+  candidateCount: number
+  readyEligible: boolean
+  message?: string
+}
+
+const initialStatus = (maxSameFailureRepairs = 2): HarnessStatus => ({
+  sessionID: "",
   runId: "",
-  scopeId: "",
-  rootScopeId: "",
-  evidenceRefs: [],
-  candidateRefs: [],
-  criterionResults: [],
-  claimResults: [],
-  evidenceFamilies: [],
-  readyRef: null,
+  goal: "",
+  phase: "inactive",
+  workers: [],
+  activeCount: 0,
+  queuedCount: 0,
+  verificationState: "inactive",
+  missingEvidence: [],
+  repairCount: 0,
   maxSameFailureRepairs,
+  evidenceCount: 0,
+  candidateCount: 0,
+  readyEligible: false,
 })
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -32,50 +57,16 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined
 
-const text = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined
+const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
 
-const toolState = (
-  event: unknown,
-): {
-  sessionId: string
-  callId: string
-  tool: string
-  status: string
-  input?: unknown
-  output?: unknown
-  error?: unknown
-} | undefined => {
-  const value = record(event)
-  if (value?.type !== "message.part.updated") return
-  const properties = record(value.properties)
-  const part = record(properties?.part)
-  if (part?.type !== "tool") return
-  const state = record(part.state)
-  const status = text(state?.status)
-  const callId = text(part.callID) ?? text(part.id)
-  const sessionId = text(part.sessionID) ?? text(properties?.sessionID)
-  const tool = text(part.tool)
-  if (!status || !callId || !sessionId || !tool) return
-  return {
-    sessionId,
-    callId,
-    tool,
-    status,
-    input: state?.input,
-    output: state?.output,
-    error: state?.error,
-  }
-}
-
-const outcomeColor = (status: VerificationStatus): string => {
-  if (status.state === "ready") return "#78c091"
-  if (status.state === "repair") return "#e6b566"
-  if (status.state === "blocked" || status.state === "failure") return "#e06c75"
+const outcomeColor = (status: HarnessStatus): string => {
+  if (status.outcome === "ready" || status.phase === "ready") return "#78c091"
+  if (status.phase === "repair" || status.outcome === "repair" || status.outcome === "repair_exhausted") return "#e6b566"
+  if (status.phase === "blocked" || status.phase === "interrupted" || status.outcome === "failure") return "#e06c75"
   return "#7aa2c8"
 }
 
-function VerificationPanel(props: { status: VerificationStatus; overlay?: boolean }) {
+function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) {
   return (
     <box
       flexDirection="column"
@@ -89,17 +80,18 @@ function VerificationPanel(props: { status: VerificationStatus; overlay?: boolea
       width={props.overlay ? Math.min(process.stdout.columns ?? 80, 64) : undefined}
     >
       <text fg={outcomeColor(props.status)}>
-        <b>VERIFIED STATE</b> {props.status.state.toUpperCase()}
+        <b>VERIFIED STATE</b> {props.status.phase.toUpperCase()}
+        {props.status.phase === "ready"
+          ? ` (${props.status.assuranceLevel ?? props.status.effectiveProfile ?? "adaptive"})`
+          : ""}
       </text>
       <text fg="#a8b3c7">Goal</text>
-      <text>{props.status.goal || "Waiting for the first session goal"}</text>
+      <text>{props.status.goal || "Waiting for the Host Coordinator"}</text>
       <text fg="#a8b3c7">
-        Evidence {String(props.status.evidenceRefs.length)} / Candidates{" "}
-        {String(props.status.candidateRefs.length)}
+        Workers {String(props.status.activeCount)} active / {String(props.status.queuedCount)} queued / {String(props.status.workers.length)} total
       </text>
       <text fg="#a8b3c7">
-        Criteria {String(props.status.criterionResults.filter((item) => item.result === "verified").length)}
-        /{String(props.status.criterionResults.length)} · Families {String(props.status.evidenceFamilies.length)}
+        Evidence {String(props.status.evidenceCount)} / Candidates {String(props.status.candidateCount)}
       </text>
       <Show when={props.status.failedCriterion}>
         <text fg="#e6b566">Criterion {props.status.failedCriterion}</text>
@@ -107,12 +99,11 @@ function VerificationPanel(props: { status: VerificationStatus; overlay?: boolea
       <Show when={props.status.failureKind}>
         <text fg="#e06c75">FailureKind {props.status.failureKind}</text>
       </Show>
-      <Show when={(props.status.missingEvidence?.length ?? 0) > 0}>
-        <text>{props.status.missingEvidence?.join(" | ")}</text>
+      <Show when={props.status.missingEvidence.length > 0}>
+        <text>{props.status.missingEvidence.join(" | ")}</text>
       </Show>
       <text fg="#a8b3c7">
-        Repairs {String(props.status.repairCount ?? 0)} /{" "}
-        {String(props.status.maxSameFailureRepairs)}
+        Repairs {String(props.status.repairCount)} / {String(props.status.maxSameFailureRepairs)}
       </text>
       <Show when={props.overlay}>
         <text fg="#778399">Run /harness again to close</text>
@@ -121,22 +112,28 @@ function VerificationPanel(props: { status: VerificationStatus; overlay?: boolea
   )
 }
 
+type SessionHarnessClient = {
+  harness(input: { sessionID: string; directory?: string }): Promise<unknown>
+  harnessVerify(input: { sessionID: string; directory?: string; reason: "automatic" | "manual" | "completion" }): Promise<unknown>
+  harnessCancel(input: { sessionID: string; directory?: string }): Promise<unknown>
+}
+
 const tui: TuiPlugin = async (api) => {
   const sync = useSync()
-  const verificationConfig = () => sync.data.config.verification
-  const maxSameFailureRepairs = () => verificationConfig()?.maxSameFailureRepairs ?? 2
-  const automaticVerificationEnabled = () =>
-    verificationConfig()?.mode !== "manual" && verificationConfig()?.auto !== false
-  const [status, setStatus] = createSignal(initialStatus(maxSameFailureRepairs()))
+  const maxRepairs = () => sync.data.config.verification?.maxSameFailureRepairs ?? 2
+  const automatic = () => sync.data.config.verification?.trigger !== "manual"
+  const [status, setStatus] = createSignal(initialStatus(maxRepairs()))
   const [overlay, setOverlay] = createSignal(false)
-  const activeTools = new Set<string>()
-  const openedScopes = new Set<string>()
-  let observedTool = false
-  let client: ProcessVerificationClient | undefined
-  let clientPromise: Promise<ProcessVerificationClient> | undefined
-  let observationChain: Promise<unknown> = Promise.resolve()
   let activeRootScopeId = ""
+  let fetchedRootScopeId = ""
+  let verificationPending = false
 
+  const client = api.client.session as unknown as SessionHarnessClient
+  const unwrap = (value: unknown): HarnessStatus => {
+    const outer = record(value)
+    if (outer?.error) throw new Error(text(record(outer.error)?.message) ?? "Harness API request failed")
+    return (outer?.data ?? value) as HarnessStatus
+  }
   const selectRootScope = (sessionId: string) => {
     let root = sessionId
     let current = api.state.session.get(root)
@@ -144,87 +141,49 @@ const tui: TuiPlugin = async (api) => {
       root = current.parentID
       current = api.state.session.get(root)
     }
-    if (activeRootScopeId && activeRootScopeId !== root && client) {
-      void client.dispose()
-      client = undefined
-      clientPromise = undefined
-      openedScopes.clear()
-      setStatus(initialStatus(maxSameFailureRepairs()))
-    }
     activeRootScopeId = root
   }
-  const rootScopeId = () => activeRootScopeId || status().rootScopeId || "root"
-  const session = () => api.state.session.get(rootScopeId())
-  const goal = () => session()?.title?.trim() || "Complete the current base-harness session"
-  const currentSource = () =>
-    goalSource(goal(), "session-" + rootScopeId(), "session_title")
-
-  const ensureClient = async (): Promise<ProcessVerificationClient> => {
-    if (client) return client
-    if (!clientPromise) {
-      const scopeId = rootScopeId()
-      const runId = "tui-" + scopeId
-      clientPromise = createVerificationClient({
-        runId,
-        scopeId,
-        workspace: api.state.path.directory,
-        goalSources: [currentSource()],
-      }).then((value) => {
-        client = value
-        openedScopes.add(scopeId)
-        value.subscribe(setStatus)
-        return value
-      })
-    }
-    return clientPromise
+  const rootScopeId = () => activeRootScopeId || status().sessionID
+  const refresh = async () => {
+    if (!rootScopeId()) return
+    setStatus(
+      unwrap(
+        await client.harness({
+          sessionID: rootScopeId(),
+          directory: api.state.path.directory,
+        }),
+      ),
+    )
   }
-
-  const notify = (title: string, message: string, variant = "info") => {
-    api.ui.toast({
-      title,
-      message,
-      variant: variant as "info" | "success" | "warning" | "error",
-    })
-  }
-
-  const injectRepair = async (result: VerificationStatus) => {
-    if (result.outcome !== "repair") return
-    const prompt = [
-      "Verifier rejected completion. Repair only the specified scope; do not rebuild the full plan.",
-      "FailureKind: " + (result.failureKind ?? "verification_failed"),
-      "Failed criterion: " + (result.failedCriterion ?? "unknown"),
-      "Missing evidence: " + (result.missingEvidence?.join("; ") || "none reported"),
-      "Repair scope: " + (result.repairScope ?? "current change"),
-      "Repair count: " + String(result.repairCount ?? 0),
-    ].join("\n")
-    const id = rootScopeId()
-    await api.client.session.prompt({
-      sessionID: id,
-      directory: api.state.path.directory,
-      parts: [{ type: "text", text: prompt }],
-    })
-  }
-
+  const notify = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info") =>
+    api.ui.toast({ title, message, variant })
   const verify = async (reason: "automatic" | "manual") => {
+    if (!rootScopeId() || verificationPending) return
+    verificationPending = true
     try {
-      await observationChain
-      const verifier = await ensureClient()
-      const result = await verifier.verify(reason)
-      if (result.outcome === "ready") notify("Ready", "Independent verification passed.", "success")
-      if (result.outcome === "blocked") {
-        notify(
-          "Verification blocked",
-          result.message ?? "The same failure fingerprint exceeded its repair limit.",
-          "error",
-        )
-      }
-      await injectRepair(result)
-    } catch (error) {
-      notify(
-        "Verifier unavailable",
-        error instanceof Error ? error.message : String(error),
-        "error",
+      const next = unwrap(
+        await client.harnessVerify({
+          sessionID: rootScopeId(),
+          directory: api.state.path.directory,
+          reason,
+        }),
       )
+      setStatus(next)
+      if (next.outcome === "ready") {
+        notify(
+          `Ready (${next.assuranceLevel ?? next.effectiveProfile ?? "adaptive"})`,
+          "Independent Host verification passed.",
+          "success",
+        )
+      } else if (next.outcome === "repair" || next.outcome === "repair_exhausted") {
+        notify("Verification repair", next.message ?? "The owning worker is being repaired locally.", "warning")
+      } else if (next.phase === "blocked" || next.outcome === "failure") {
+        notify("Verification blocked", next.message ?? "Ready was not issued.", "error")
+      }
+    } catch (error) {
+      notify("Coordinator unavailable", error instanceof Error ? error.message : String(error), "error")
+    } finally {
+      verificationPending = false
     }
   }
 
@@ -232,10 +191,13 @@ const tui: TuiPlugin = async (api) => {
     {
       value: "harness.toggle",
       title: "Harness status",
-      description: "Toggle the verification overlay",
+      description: "Toggle the Host Coordinator overlay",
       slash: { name: "harness" },
       category: "Harness",
-      onSelect: () => setOverlay((value) => !value),
+      onSelect: () => {
+        setOverlay((value) => !value)
+        void refresh()
+      },
     },
     {
       value: "harness.goal",
@@ -243,12 +205,12 @@ const tui: TuiPlugin = async (api) => {
       description: "Show the active root goal",
       slash: { name: "goal" },
       category: "Harness",
-      onSelect: () => notify("GoalContract", status().goal || goal()),
+      onSelect: () => notify("GoalContract", status().goal || "No active Host run"),
     },
     {
       value: "harness.verify",
       title: "Verify now",
-      description: "Request independent verification",
+      description: "Request Host Coordinator verification",
       slash: { name: "verify" },
       category: "Harness",
       onSelect: () => void verify("manual"),
@@ -259,14 +221,7 @@ const tui: TuiPlugin = async (api) => {
       description: "Show trusted evidence and candidate counts",
       slash: { name: "evidence" },
       category: "Harness",
-      onSelect: () =>
-        notify(
-          "Evidence",
-          String(status().evidenceRefs.length) +
-            " trusted / " +
-            String(status().candidateRefs.length) +
-            " candidates",
-        ),
+      onSelect: () => notify("Evidence", `${status().evidenceCount} trusted / ${status().candidateCount} candidates`),
     },
   ])
 
@@ -275,16 +230,15 @@ const tui: TuiPlugin = async (api) => {
     slots: {
       sidebar_content: (_context, props) => {
         selectRootScope(props.session_id)
+        if (fetchedRootScopeId !== rootScopeId()) {
+          fetchedRootScopeId = rootScopeId()
+          void refresh()
+        }
         return <VerificationPanel status={status()} />
       },
       app: () => (
         <Show when={overlay()}>
-          <box
-            position="absolute"
-            top={2}
-            right={2}
-            zIndex={100}
-          >
+          <box position="absolute" top={2} right={2} zIndex={100}>
             <VerificationPanel status={status()} overlay />
           </box>
         </Show>
@@ -292,78 +246,22 @@ const tui: TuiPlugin = async (api) => {
     },
   })
 
-  api.event.on("message.part.updated", (event) => {
-    const tool = toolState(event)
-    if (!tool) return
-    selectRootScope(tool.sessionId)
-    const key = tool.sessionId + ":" + tool.callId
-    if (tool.status === "pending" || tool.status === "running") {
-      activeTools.add(key)
-      return
-    }
-    if (tool.status !== "completed" && tool.status !== "error") return
-    activeTools.delete(key)
-    observedTool = true
-    observationChain = observationChain.then(async () => {
-      const verifier = await ensureClient()
-      if (tool.tool === "harness_contract") {
-        const proposal = tool.input as GoalContractProposal
-        await verifier.proposeContract(materializeProposal(currentSource(), proposal))
-        return
-      }
-      if (!openedScopes.has(tool.sessionId)) {
-        const parent = api.state.session.get(tool.sessionId)?.parentID
-        const parentScopeId = parent && openedScopes.has(parent) ? parent : rootScopeId()
-        await verifier.openScope(tool.sessionId, parentScopeId)
-        openedScopes.add(tool.sessionId)
-      }
-      await verifier.observe({
-        scopeId: tool.sessionId,
-        tool: tool.tool,
-        status: tool.status === "completed" ? "completed" : "error",
-        input: tool.input,
-        output: tool.output,
-        error: tool.error,
-      })
-    })
+  const events = api.event as unknown as {
+    on(type: string, handler: (event: { properties?: unknown }) => void): void
+  }
+  events.on("harness.status", (event) => {
+    const properties = record(event.properties)
+    const next = record(properties?.status) as unknown as HarnessStatus | undefined
+    if (!next || (rootScopeId() && next.sessionID !== rootScopeId())) return
+    setStatus(next)
   })
-
-  api.event.on("session.status", (event) => {
-    const properties = event.properties
+  events.on("session.status", (event) => {
+    const properties = record(event.properties)
     const eventSessionId = text(properties?.sessionID)
     const state = record(properties?.status)
     if (!eventSessionId) return
     selectRootScope(eventSessionId)
-    if (eventSessionId !== rootScopeId() || state?.type !== "idle") return
-    if (!automaticVerificationEnabled()) return
-    if (!observedTool || activeTools.size > 0) return
-    observedTool = false
-    void verify("automatic")
-  })
-
-  api.event.on("session.error", (event) => {
-    const eventSessionId = event.properties.sessionID
-    if (!eventSessionId) return
-    selectRootScope(eventSessionId)
-    observedTool = true
-    observationChain = observationChain.then(async () => {
-      const verifier = await ensureClient()
-      if (!openedScopes.has(eventSessionId)) {
-        const parent = api.state.session.get(eventSessionId)?.parentID
-        const parentScopeId = parent && openedScopes.has(parent) ? parent : rootScopeId()
-        await verifier.openScope(eventSessionId, parentScopeId)
-        openedScopes.add(eventSessionId)
-      }
-      await verifier.observe({
-        scopeId: eventSessionId,
-        tool: "model",
-        status: "error",
-        error: event.properties.error,
-        metadata: {
-          failureKind: classifyRuntimeFailure(event.properties.error),
-        },
-      })
-    })
+    if (eventSessionId === rootScopeId() && state?.type === "idle" && automatic()) void verify("automatic")
   })
 }
 

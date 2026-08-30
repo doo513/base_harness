@@ -3,10 +3,12 @@ import {
   SIDECAR_PROTOCOL_VERSION,
   type ActionCloseInput,
   type ActionOpenInput,
+  type CandidateManifest,
   type GoalContract,
   type ObserveActionInput,
   type OpenRunInput,
   type ProtocolEnvelope,
+  type ScopeAttestation,
   type VerificationClient,
   type VerificationStatus,
 } from "./types"
@@ -183,8 +185,12 @@ export class ProcessVerificationClient implements VerificationClient {
     )
   }
 
-  async openScope(scopeId: string, parentScopeId: string): Promise<VerificationStatus> {
-    return this.statusRequest("scope.open", { parentScopeId }, scopeId)
+  async openScope(
+    scopeId: string,
+    parentScopeId: string,
+    options: { kind?: import("./types").VerificationScopeKind; assignedClaimIds?: string[] } = {},
+  ): Promise<VerificationStatus> {
+    return this.statusRequest("scope.open", { parentScopeId, ...options }, scopeId)
   }
 
   async proposeContract(contract: GoalContract, scopeId = this.rootScopeId): Promise<VerificationStatus> {
@@ -244,8 +250,21 @@ export class ProcessVerificationClient implements VerificationClient {
   async verify(
     reason: "automatic" | "manual" | "completion",
     scopeId = this.rootScopeId,
+    target: { claimIds?: string[]; criterionIds?: string[] } = {},
   ): Promise<VerificationStatus> {
-    return this.statusRequest("verify.request", { reason }, scopeId)
+    return this.statusRequest("verify.request", { reason, ...target }, scopeId)
+  }
+
+  async attachCandidate(candidate: CandidateManifest): Promise<VerificationStatus> {
+    return this.statusRequest("candidate.attach", { candidate }, candidate.scopeId)
+  }
+
+  async commitCandidate(attestation: ScopeAttestation, scopeId = this.rootScopeId): Promise<VerificationStatus> {
+    return this.statusRequest("candidate.commit", { attestation }, scopeId)
+  }
+
+  async reopenScope(scopeId: string): Promise<VerificationStatus> {
+    return this.statusRequest("scope.reopen", {}, scopeId)
   }
 
   async status(scopeId = this.rootScopeId): Promise<VerificationStatus> {

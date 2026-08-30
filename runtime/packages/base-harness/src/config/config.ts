@@ -49,15 +49,32 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
   return merged
 }
 
+let warnedLegacyVerification = false
+
 function normalizeLoadedConfig(data: unknown) {
   if (!isRecord(data)) return data
   const copy = { ...data }
   if (isRecord(copy.verification)) {
-    const allowed = new Set(["mode", "auto", "maxSameFailureRepairs"])
-    const unsupported = Object.keys(copy.verification).filter((key) => !allowed.has(key))
+    const legacy = "mode" in copy.verification || "auto" in copy.verification
+    const verification = { ...copy.verification }
+    if (verification.profile === undefined && verification.mode === "adaptive") verification.profile = "adaptive"
+    if (verification.trigger === undefined) {
+      verification.trigger = verification.mode === "manual" || verification.auto === false ? "manual" : "auto"
+    }
+    delete verification.mode
+    delete verification.auto
+    if (legacy && !warnedLegacyVerification) {
+      warnedLegacyVerification = true
+      console.warn(
+        "Deprecated verification.mode/auto settings were normalized to verification.profile/trigger; update base-harness.jsonc.",
+      )
+    }
+    const allowed = new Set(["profile", "trigger", "maxSameFailureRepairs"])
+    const unsupported = Object.keys(verification).filter((key) => !allowed.has(key))
     if (unsupported.length > 0) {
       throw new Error("Unsupported verification setting(s): " + unsupported.sort().join(", "))
     }
+    copy.verification = verification
   }
   const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
   if (!hadLegacy) return copy

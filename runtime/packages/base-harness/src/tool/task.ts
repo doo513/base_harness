@@ -1,4 +1,12 @@
 import * as Tool from "./tool"
+import {
+  closeExplorationBudget,
+  EXPLORATION_DENIED_TOOLS,
+  explorationInstruction,
+  normalizeExplorationRequest,
+  openExplorationBudget,
+  type ExplorationRequest,
+} from "./exploration-budget"
 import DESCRIPTION from "./task.txt"
 import { ToolJsonSchema } from "./json-schema"
 import { SessionV1 } from "@base-harness/core/v1/session"
@@ -11,6 +19,8 @@ import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
+import * as Orchestration from "@base-harness/core/orchestration"
+import { Coordinator } from "@base-harness/coordinator"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@base-harness/core/database/database"
@@ -49,6 +59,18 @@ const BaseParameterFields = {
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  work_unit_id: Schema.optional(Schema.String).annotate({
+    description: "Required for implementation subagents when an accepted harness_workgraph is active",
+  }),
+  exploration: Schema.optional(
+    Schema.Struct({
+      thoroughness: Schema.Literals(["quick", "standard", "deep"]),
+      maxToolCalls: Schema.optional(Schema.Number),
+      maxFiles: Schema.optional(Schema.Number),
+    }),
+  ).annotate({
+    description: "Structured exploration budget. Only valid for the explore subagent.",
+  }),
 }
 
 const BaseParameters = Schema.Struct(BaseParameterFields)
@@ -94,6 +116,15 @@ export const TaskTool = Tool.define(
       ctx: Tool.Context,
     ) {
       const cfg = yield* config.get()
+      if (
+        params.subagent_type !== "explore" &&
+        Coordinator.isManagedWorkGraph(ctx.sessionID) &&
+        ctx.extra?.coordinatorDispatch !== true
+      ) {
+        return yield* Effect.fail(
+          new Error("Implementation WorkUnits are dispatched by the Host Coordinator after harness_workgraph acceptance"),
+        )
+      }
       const runInBackground = params.background === true
       if (runInBackground && !flags.experimentalBackgroundSubagents) {
         return yield* Effect.fail(
@@ -132,6 +163,16 @@ export const TaskTool = Tool.define(
       if (!next) {
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
+      if (params.exploration && params.subagent_type !== "explore") {
+        return yield* Effect.fail(new Error("exploration parameters are only valid for the explore subagent"))
+      }
+      const exploration =
+        params.subagent_type === "explore"
+          ? normalizeExplorationRequest(
+              (params.exploration ?? { thoroughness: "standard" }) as ExplorationRequest,
+            )
+          : undefined
+      const taskPrompt = exploration ? `${params.prompt}\n\n${explorationInstruction(exploration)}` : params.prompt
 
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
@@ -141,6 +182,15 @@ export const TaskTool = Tool.define(
         subagent: next,
       })
       const childToolDenies = [
+        ...(exploration
+          ? EXPLORATION_DENIED_TOOLS.map(
+              (permission) => ({
+                permission,
+                pattern: "*" as const,
+                action: "deny" as const,
+              }),
+            )
+          : []),
         ...(next.permission.some((rule) => rule.permission === "todowrite")
           ? []
           : [{ permission: "todowrite" as const, pattern: "*" as const, action: "deny" as const }]),
@@ -170,6 +220,17 @@ export const TaskTool = Tool.define(
             ),
           ],
         }))
+      if (exploration) openExplorationBudget(nextSession.id, exploration)
+
+      const assignment = Orchestration.startChild({
+        parentSessionID: ctx.sessionID,
+        sessionID: nextSession.id,
+        subagentType: params.subagent_type,
+        workUnitId: params.work_unit_id,
+      })
+      if (params.work_unit_id) {
+        Coordinator.registerWorkerScope(ctx.sessionID, nextSession.id, params.work_unit_id)
+      }
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -186,6 +247,9 @@ export const TaskTool = Tool.define(
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
         model,
+        scopeKind: assignment.kind,
+        ...("workUnitId" in assignment && assignment.workUnitId ? { workUnitId: assignment.workUnitId } : {}),
+        ...(assignment.claimIds.length ? { claimIds: assignment.claimIds } : {}),
         ...(runInBackground ? { background: true } : {}),
       }
 
@@ -197,8 +261,8 @@ export const TaskTool = Tool.define(
       const ops = ctx.extra?.promptOps as TaskPromptOps
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
-      const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
+      const runTaskCore = Effect.fn("TaskTool.runTask")(function* () {
+        const parts = yield* ops.resolvePromptParts(taskPrompt)
         const result = yield* ops.prompt({
           messageID: MessageID.ascending(),
           sessionID: nextSession.id,
@@ -223,6 +287,15 @@ export const TaskTool = Tool.define(
         }
         return result.parts.findLast((item) => item.type === "text")?.text ?? ""
       })
+      const runTask = () =>
+        runTaskCore().pipe(
+          Effect.onExit((exit) =>
+            Effect.gen(function* () {
+              yield* Effect.promise(() => Coordinator.finishWorker(nextSession.id, Exit.isSuccess(exit)))
+              if (exploration) closeExplorationBudget(nextSession.id)
+            }),
+          ),
+        )
 
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error",
@@ -356,6 +429,80 @@ export const TaskTool = Tool.define(
             ),
           ),
       )
+    })
+
+    const coordinatorBridge = yield* EffectBridge.make()
+    Coordinator.registerWorkerExecutor((request) => {
+      const source = request.context as Tool.Context
+      const coordinatorContext: Tool.Context = {
+        ...source,
+        extra: {
+          ...source.extra,
+          bypassAgentCheck: true,
+          coordinatorDispatch: true,
+        },
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      return coordinatorBridge
+        .promise(
+          run(
+            {
+              description: request.unit.title,
+              prompt: request.repairPrompt ?? request.unit.instructions,
+              subagent_type: request.unit.agentType ?? "general",
+              task_id: request.taskID,
+              work_unit_id: request.unit.id,
+              background: false,
+            },
+            coordinatorContext,
+          ),
+        )
+        .then((result) => ({
+          sessionID: String(result.metadata.sessionId),
+          output: result.output,
+        }))
+    })
+    Coordinator.registerIntegrationExecutor((request) => {
+      const source = request.context as Tool.Context & {
+        promptOps?: TaskPromptOps
+        model?: SessionPrompt.PromptInput["model"]
+        variant?: string
+      }
+      const ops = source.promptOps ?? (source.extra?.promptOps as TaskPromptOps | undefined)
+      const model = source.model ?? (source.extra?.model as SessionPrompt.PromptInput["model"])
+      const variant = source.variant ?? (source.extra?.variant as string | undefined)
+      if (!ops) return Promise.reject(new Error("Root integration requires promptOps in the WorkGraph context"))
+      if (!model) return Promise.reject(new Error("Root integration requires the inherited model in its context"))
+      return coordinatorBridge
+        .promise(
+          Effect.gen(function* () {
+            const integrationPrompt = request.repairPrompt ?? [
+              "All Coordinator WorkUnits were independently verified and committed.",
+              "Perform root integration only. Do not recreate the WorkGraph or rerun completed workers.",
+              `Integration-owned paths: ${request.integrationPaths.join(", ") || "none"}`,
+              `Integration requests: ${request.integrationRequests.join("; ") || "none"}`,
+              "Resolve shared exports/configuration, run the required build or tests, and finish the root task.",
+            ].join("\n")
+            const parts = yield* ops.resolvePromptParts(integrationPrompt)
+            const result = yield* ops.prompt({
+              messageID: MessageID.ascending(),
+              sessionID: request.rootSessionID as SessionID,
+              model,
+              variant,
+              agent: source.agent,
+              parts,
+            })
+            if (result.info.role === "assistant" && result.info.error) {
+              return yield* Effect.fail(new Error("Root integration model response failed"))
+            }
+            const failed = result.parts.findLast((item) => item.type === "tool" && item.state.status === "error")
+            if (failed?.type === "tool" && failed.state.status === "error") {
+              return yield* Effect.fail(new Error(`Root integration tool failed: ${failed.state.error}`))
+            }
+          }),
+        )
+        .then(() => undefined)
     })
 
     return {

@@ -4,6 +4,7 @@ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@base-harness/core/schema"
 import { Global } from "@base-harness/core/global"
 import { FSUtil } from "@base-harness/core/fs-util"
+import { GlobalSecretRegistry } from "@base-harness/core/secret-registry"
 
 export const OAUTH_DUMMY_KEY = "opencode-oauth-dummy-key"
 
@@ -35,6 +36,12 @@ export class WellKnown extends Schema.Class<WellKnown>("WellKnownAuth")({
 export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
 export type Info = Schema.Schema.Type<typeof Info>
 
+const register = (providerID: string, info: Info) => {
+  if (info.type === "oauth") GlobalSecretRegistry.register([info.access, info.refresh], `auth:${providerID}`)
+  if (info.type === "api") GlobalSecretRegistry.register(info.key, `auth:${providerID}`)
+  if (info.type === "wellknown") GlobalSecretRegistry.register([info.key, info.token], `auth:${providerID}`)
+}
+
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
@@ -58,12 +65,16 @@ const layer = Layer.effect(
     const all = Effect.fn("Auth.all")(function* () {
       if (process.env.BASE_HARNESS_AUTH_CONTENT) {
         try {
-          return JSON.parse(process.env.BASE_HARNESS_AUTH_CONTENT)
+          const result = JSON.parse(process.env.BASE_HARNESS_AUTH_CONTENT) as Record<string, Info>
+          for (const [providerID, info] of Object.entries(result)) register(providerID, info)
+          return result
         } catch (err) {}
       }
 
       const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>
-      return Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
+      const result = Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
+      for (const [providerID, info] of Object.entries(result)) register(providerID, info)
+      return result
     })
 
     const get = Effect.fn("Auth.get")(function* (providerID: string) {
@@ -71,6 +82,7 @@ const layer = Layer.effect(
     })
 
     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
+      register(key, info)
       const norm = key.replace(/\/+$/, "")
       const data = yield* all()
       if (norm !== key) delete data[key]

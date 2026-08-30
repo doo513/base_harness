@@ -30,15 +30,21 @@ const LogLevelRef = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate
 })
 
 export const Verification = Schema.Struct({
-  mode: Schema.optional(Schema.Literals(["adaptive", "manual"])).annotate({
-    description: "Adaptive verification after observed actions, or manual verification only",
+  profile: Schema.optional(Schema.Literals(["fast", "adaptive", "strict"])).annotate({
+    description: "Verification assurance profile; the harness may only escalate this level",
   }),
-  auto: Schema.optional(Schema.Boolean).annotate({
-    description: "Request verification automatically when an acted-on root session becomes idle",
+  trigger: Schema.optional(Schema.Literals(["auto", "manual"])).annotate({
+    description: "Request verification automatically at idle, or only when explicitly requested",
   }),
   maxSameFailureRepairs: Schema.optional(NonNegativeInt).annotate({
-    description: "Maximum automatic repair attempts for one failure fingerprint before blocking",
+    description: "Maximum automatic repair attempts for one failure fingerprint before exhausting that repair path",
   }),
+})
+
+export const Orchestration = Schema.Struct({
+  mode: Schema.optional(Schema.Literals(["adaptive", "manual"])),
+  exploration: Schema.optional(Schema.Literals(["adaptive", "always", "manual"])),
+  maxParallelWorkUnits: Schema.optional(PositiveInt),
 })
 
 export const Info = Schema.Struct({
@@ -47,6 +53,9 @@ export const Info = Schema.Struct({
   }),
   verification: Schema.optional(Verification).annotate({
     description: "Base Harness V2 independent verification policy",
+  }),
+  orchestration: Schema.optional(Orchestration).annotate({
+    description: "Adaptive exploration, bounded WorkUnit execution, and targeted repair policy",
   }),
   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),

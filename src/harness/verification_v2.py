@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 4
 DEFAULT_MAX_SAME_FAILURE_REPAIRS = 2
 MAX_CAPTURE_CHARS = 32_000
 STRENGTH = {"structural": 1, "execution": 2, "behavioral": 3, "external_oracle": 4}
@@ -34,7 +34,10 @@ FAILURE_KINDS = {
     "model_protocol_error",
     "tool_execution_error",
     "implementation_error",
+    "workspace_conflict",
+    "verifier_error",
     "harness_error",
+    "unknown_failure",
     "harness_protocol_error",
     "harness_protocol_version_mismatch",
     "harness_verifier_error",
@@ -45,7 +48,14 @@ FAILURE_KINDS = {
     "verification_failed",
 }
 SECRET_KEY = re.compile(
-    r"(authorization|api[-_]?key|token|secret|password|cookie|credential)",
+    r"(authorization|api[-_]?key|token|secret|password|cookie|credential|cred|비밀|인증)",
+    re.IGNORECASE,
+)
+SECRET_VALUE = re.compile(
+    r"(?:bearer|basic)(?:\s|%20)+[A-Za-z0-9._~+/%=-]{8,}"
+    r"|AIza[0-9A-Za-z_-]{20,}"
+    r"|(?:sk|ghp|github_pat|xox[baprs])[-_][0-9A-Za-z_-]{12,}"
+    r"|-----BEGIN(?:%20|\s)+(?:RSA(?:%20|\s+))?PRIVATE(?:%20|\s+)KEY-----",
     re.IGNORECASE,
 )
 
@@ -85,6 +95,8 @@ def atomic_json(path: Path, value: Any) -> None:
 def redact(value: Any, key: str = "") -> Any:
     if SECRET_KEY.search(key):
         return "[REDACTED]"
+    if isinstance(value, str):
+        return SECRET_VALUE.sub("[REDACTED]", value)
     if isinstance(value, dict):
         return {str(item_key): redact(item, str(item_key)) for item_key, item in value.items()}
     if isinstance(value, list):
@@ -231,8 +243,12 @@ class VerifierSpec:
 class ScopeState:
     scope_id: str
     parent_scope_id: str | None
+    kind: str = "work_unit"
+    assigned_claim_ids: list[str] = field(default_factory=list)
     actions: list[dict[str, Any]] = field(default_factory=list)
     pending: dict[str, dict[str, Any]] = field(default_factory=dict)
+    candidate: dict[str, Any] | None = None
+    committed_candidate_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -254,6 +270,7 @@ class RunState:
     repair_counts: dict[str, int] = field(default_factory=dict)
     ready_ref: dict[str, Any] | None = None
     runtime_failure: dict[str, Any] | None = None
+    candidates: dict[str, dict[str, Any]] = field(default_factory=dict)
     status: str = "open"
     event_hash: str = "0" * 64
     event_sequence: int = 0
@@ -487,7 +504,80 @@ class VerificationEngine:
 
     def _verification_config(self, run: RunState) -> dict[str, Any]:
         value = run.config.get("verification", {})
-        return value if isinstance(value, dict) else {}
+        if not isinstance(value, dict):
+            return {}
+        normalized = dict(value)
+        profile = normalized.get("profile")
+        if profile not in {"fast", "adaptive", "strict"}:
+            legacy_mode = normalized.get("mode")
+            profile = legacy_mode if legacy_mode in {"fast", "adaptive", "strict"} else "adaptive"
+        trigger = normalized.get("trigger")
+        if trigger not in {"auto", "manual"}:
+            trigger = "manual" if normalized.get("mode") == "manual" or normalized.get("auto") is False else "auto"
+        normalized["profile"] = profile
+        normalized["trigger"] = trigger
+        return normalized
+
+    def _assurance_metadata(self, run: RunState) -> dict[str, Any]:
+        rank = {"fast": 0, "adaptive": 1, "strict": 2}
+        configured = str(self._verification_config(run).get("profile", "adaptive"))
+        effective = configured
+        reasons: list[str] = []
+
+        def escalate(profile: str, reason: str) -> None:
+            nonlocal effective
+            if rank[profile] > rank[effective]:
+                effective = profile
+                reasons.append(reason)
+
+        contract = run.goal_contract or {}
+        for criterion in contract.get("criteria", []):
+            if not isinstance(criterion, dict):
+                continue
+            risk = criterion.get("risk", "medium")
+            if risk in {"high", "critical"}:
+                escalate("strict", "criterion:" + str(criterion.get("criterionId", "unknown")) + ":" + str(risk))
+            elif risk == "medium":
+                escalate("adaptive", "criterion:" + str(criterion.get("criterionId", "unknown")) + ":medium")
+        for scope in run.scopes.values():
+            for action in [*scope.actions, *scope.pending.values()]:
+                if action.get("tool") in {"bash", "shell", "argv", "task"}:
+                    escalate("adaptive", "action:" + str(action.get("tool")))
+        mutating_paths: set[str] = set()
+        for scope in run.scopes.values():
+            for action in [*scope.actions, *scope.pending.values()]:
+                tool = str(action.get("tool", ""))
+                if tool not in {"write", "edit", "apply_patch"}:
+                    continue
+                action_input = action.get("input")
+                action_input = action_input if isinstance(action_input, dict) else {}
+                candidate = next(
+                    (
+                        action_input.get(name)
+                        for name in ("filePath", "filepath", "path", "file")
+                        if isinstance(action_input.get(name), str)
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    escalate("adaptive", "action:" + tool + ":unknown_scope")
+                    continue
+                normalized = str(candidate).replace("\\", "/").lower()
+                mutating_paths.add(normalized)
+                if any(marker in normalized for marker in (".env", "credential", "secret", "auth", "token")):
+                    escalate("strict", "sensitive_path:" + normalized)
+                elif normalized.endswith(
+                    ("package.json", "pyproject.toml", "requirements.txt", ".lock", ".lockb", ".jsonc")
+                ):
+                    escalate("adaptive", "configuration_path:" + normalized)
+        if len(mutating_paths) > 1:
+            escalate("adaptive", "multiple_mutating_paths")
+        return {
+            "configuredProfile": configured,
+            "effectiveProfile": effective,
+            "assuranceLevel": effective,
+            "escalationReasons": reasons,
+        }
 
     def _verifiers(self, run: RunState) -> dict[str, VerifierSpec]:
         raw = self._verification_config(run).get("verifiers", [])
@@ -765,12 +855,17 @@ class VerificationEngine:
                 "scopes": {
                     key: {
                         "parentScopeId": value.parent_scope_id,
+                        "kind": value.kind,
+                        "assignedClaimIds": value.assigned_claim_ids,
                         "actionCount": len(value.actions),
                         "pendingActionCount": len(value.pending),
+                        "candidateId": value.candidate.get("candidateId") if value.candidate else None,
+                        "committedCandidateIds": value.committed_candidate_ids,
                     }
                     for key, value in run.scopes.items()
                 },
                 "candidateRefs": run.candidate_refs,
+                "candidates": {key: redact(value) for key, value in run.candidates.items()},
                 "evidenceRefs": run.evidence_refs,
                 "evidenceFamilies": run.evidence_families,
                 "criterionResults": run.criterion_results,
@@ -778,6 +873,7 @@ class VerificationEngine:
                 "readyRef": run.ready_ref,
                 "runtimeFailure": run.runtime_failure,
                 "repairCounts": run.repair_counts,
+                "assurance": self._assurance_metadata(run),
                 "eventHead": run.event_hash,
                 "updatedAt": utc_now(),
             },
@@ -790,6 +886,8 @@ class VerificationEngine:
             "runId": run.run_id,
             "scopeId": scope_id,
             "rootScopeId": run.root_scope_id,
+            "scopeKind": run.scopes.get(scope_id).kind if scope_id in run.scopes else None,
+            "assignedClaimIds": run.scopes.get(scope_id).assigned_claim_ids if scope_id in run.scopes else [],
             "contractStatus": run.contract_status,
             "goalContract": run.goal_contract,
             "criterionResults": run.criterion_results,
@@ -799,6 +897,8 @@ class VerificationEngine:
             "candidateRefs": run.candidate_refs,
             "readyRef": run.ready_ref,
             "runtimeFailure": run.runtime_failure,
+            **self._assurance_metadata(run),
+            "readyEligible": run.status == "ready",
             "maxSameFailureRepairs": int(
                 self._verification_config(run).get(
                     "maxSameFailureRepairs",
@@ -808,29 +908,71 @@ class VerificationEngine:
         }
 
     @staticmethod
-    def _classify_failure(payload: dict[str, Any]) -> dict[str, Any]:
+    def _validate_failure_envelope(
+        run: RunState,
+        scope_id: str,
+        action_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         metadata = payload.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
-        declared = metadata.get("failureKind")
-        if declared in FAILURE_KINDS:
-            kind = str(declared)
-        else:
-            rendered = json.dumps(redact(payload), ensure_ascii=False).lower()
-            if any(marker in rendered for marker in ("rate limit", "quota", "authentication", "api key", "provider")):
-                kind = "model_provider_error"
-            elif any(marker in rendered for marker in ("invalid json", "structured output", "response format")):
-                kind = "model_protocol_error"
-            elif str(payload.get("tool", "")) == "model":
-                kind = "model_protocol_error"
-            else:
-                kind = "tool_execution_error"
-        critical = kind in {"integrity_error", "persistence_error", "harness_protocol_error"}
+        envelope = metadata.get("failureEnvelope")
+        if not isinstance(envelope, dict):
+            raise ProtocolError("error action requires a host-generated FailureEnvelope")
+        if envelope.get("version") != 1:
+            raise ProtocolError("unsupported FailureEnvelope version")
+        if envelope.get("runId") != run.run_id or envelope.get("scopeId") != scope_id:
+            raise ProtocolError("FailureEnvelope run or scope does not match the action")
+        if envelope.get("actionId") is not None and envelope.get("actionId") != action_id:
+            raise ProtocolError("FailureEnvelope actionId does not match the action")
+        kind = envelope.get("kind")
+        source = envelope.get("source")
+        producer = envelope.get("producer")
+        if kind not in {
+            "model_provider_error",
+            "model_protocol_error",
+            "tool_execution_error",
+            "implementation_error",
+            "workspace_conflict",
+            "verifier_error",
+            "harness_error",
+            "unknown_failure",
+        }:
+            raise ProtocolError("FailureEnvelope has an unknown kind")
+        allowed = {
+            "model_gateway": ({"model", "provider"}, {"model_provider_error", "model_protocol_error", "unknown_failure"}),
+            "tool_host": ({"tool"}, {"tool_execution_error", "implementation_error", "unknown_failure"}),
+            "orchestrator": (
+                {"workspace", "harness"},
+                {"workspace_conflict", "implementation_error", "harness_error", "unknown_failure"},
+            ),
+            "verifier_sidecar": ({"verifier"}, {"verifier_error", "unknown_failure"}),
+        }
+        if producer not in allowed or source not in allowed[producer][0] or kind not in allowed[producer][1]:
+            raise ProtocolError("FailureEnvelope producer, source and kind are inconsistent")
+        if envelope.get("classificationSource") not in {"typed", "status", "provider_code", "heuristic"}:
+            raise ProtocolError("FailureEnvelope classificationSource is invalid")
+        if envelope.get("confidence") not in {"high", "medium", "low"}:
+            raise ProtocolError("FailureEnvelope confidence is invalid")
+        if kind == "unknown_failure" and (
+            envelope.get("classificationSource") != "heuristic"
+            or envelope.get("confidence") != "low"
+            or envelope.get("retryable") is not False
+        ):
+            raise ProtocolError("unknown FailureEnvelope must be low-confidence, heuristic and non-retryable")
+        if not isinstance(envelope.get("phase"), str) or not envelope.get("phase"):
+            raise ProtocolError("FailureEnvelope phase is required")
+        if redact(envelope) != envelope:
+            raise ProtocolError("FailureEnvelope contains unredacted secret material")
+        retryable = bool(envelope.get("retryable")) and kind != "unknown_failure"
+        terminal = bool(envelope.get("terminal"))
         return {
             "failureKind": kind,
-            "severity": "critical" if critical else "error",
+            "failureEnvelope": envelope,
+            "severity": "critical" if terminal else "error",
             "blocking": True,
-            "retryable": kind not in {"integrity_error", "persistence_error"},
-            "terminal": critical,
+            "retryable": retryable,
+            "terminal": terminal,
         }
 
     def _run_verifier(self, run: RunState, spec: VerifierSpec) -> dict[str, Any]:
@@ -1051,12 +1193,24 @@ class VerificationEngine:
         failure_kind: str = "verification_failed",
         details: list[dict[str, Any]] | None = None,
         needs_input: bool = False,
+        repairable: bool = True,
     ) -> dict[str, Any]:
+        envelope = next(
+            (
+                item.get("failureEnvelope")
+                for item in (details or [])
+                if isinstance(item, dict) and isinstance(item.get("failureEnvelope"), dict)
+            ),
+            {},
+        )
         body = {
             "failureKind": failure_kind,
+            "code": envelope.get("code"),
+            "source": envelope.get("source"),
+            "phase": envelope.get("phase"),
+            "scopeId": scope_id,
             "failedCriterion": failed_criterion,
-            "missingEvidence": sorted(missing_evidence),
-            "details": details or [],
+            "repairScope": repair_scope,
         }
         fingerprint = canonical_hash(body)
         count = run.repair_counts.get(fingerprint, 0) + 1
@@ -1067,8 +1221,12 @@ class VerificationEngine:
                 DEFAULT_MAX_SAME_FAILURE_REPAIRS,
             )
         )
-        outcome = "needs_input" if needs_input else ("blocked" if count > maximum else "repair")
-        run.status = outcome
+        outcome = (
+            "needs_input"
+            if needs_input
+            else ("repair_exhausted" if not repairable or count > maximum else "repair")
+        )
+        run.status = "open" if outcome == "repair_exhausted" else outcome
         run.ready_ref = None
         rejection = {
             "outcome": outcome,
@@ -1076,7 +1234,9 @@ class VerificationEngine:
             "failedCriterion": failed_criterion,
             "missingEvidence": missing_evidence,
             "repairScope": repair_scope,
+            "repairScopeId": self._repair_scope_id(run, scope_id, missing_evidence, details or []),
             "repairCount": count,
+            "repairable": repairable and count <= maximum,
             "failureFingerprint": fingerprint,
             "details": details or [],
         }
@@ -1084,6 +1244,29 @@ class VerificationEngine:
         self._event(run, "verification.rejected", {"reference": reference, **rejection})
         self._manifest(run)
         return {**self._status(run, scope_id), **rejection}
+
+    @staticmethod
+    def _repair_scope_id(
+        run: RunState,
+        requested_scope_id: str,
+        missing: list[str],
+        details: list[Any],
+    ) -> str:
+        if requested_scope_id != run.root_scope_id:
+            return requested_scope_id
+        if run.runtime_failure and isinstance(run.runtime_failure.get("scopeId"), str):
+            return str(run.runtime_failure["scopeId"])
+        claim_ids = {item.split(":", 1)[0] for item in missing if ":" in item}
+        for detail in details:
+            if isinstance(detail, dict):
+                claim_ids.update(item for item in detail.get("claimIds", []) if isinstance(item, str))
+        owners = {
+            scope.scope_id
+            for scope in run.scopes.values()
+            if scope.scope_id != run.root_scope_id
+            and any(claim_ids.intersection(action.get("claimIds", [])) for action in scope.actions)
+        }
+        return next(iter(owners)) if len(owners) == 1 else run.root_scope_id
 
     def handle(self, envelope: dict[str, Any]) -> dict[str, Any]:
         if envelope.get("version") != PROTOCOL_VERSION:
@@ -1109,6 +1292,9 @@ class VerificationEngine:
                 "capabilities": [
                     "run.open",
                     "scope.open",
+                    "scope.reopen",
+                    "candidate.attach",
+                    "candidate.commit",
                     "contract.propose",
                     "contract.amend",
                     "action.open",
@@ -1137,14 +1323,20 @@ class VerificationEngine:
             token = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:16] + "-" + uuid.uuid4().hex[:8]
             run_dir = self.state_root / "runs" / token
             run_dir.mkdir(parents=True, exist_ok=False)
+            config = load_config(workspace)
+            configured_profile = payload.get("configuredProfile")
+            if configured_profile in {"fast", "adaptive", "strict"}:
+                verification_config = config.setdefault("verification", {})
+                if isinstance(verification_config, dict):
+                    verification_config["profile"] = configured_profile
             run = RunState(
                 run_id=run_id,
                 root_scope_id=scope_id,
                 workspace=workspace,
                 run_dir=run_dir,
-                config=load_config(workspace),
+                config=config,
                 sources=sources,
-                scopes={scope_id: ScopeState(scope_id, None)},
+                scopes={scope_id: ScopeState(scope_id, None, "root")},
             )
             self.runs[run_id] = run
             self._event(run, "run.opened", {"sources": list(sources.values())})
@@ -1162,10 +1354,120 @@ class VerificationEngine:
                 raise ProtocolError("scope.open requires an existing parentScopeId")
             if scope_id in run.scopes:
                 raise ProtocolError("scopeId is already open")
-            run.scopes[scope_id] = ScopeState(scope_id, parent)
+            kind = payload.get("kind", "work_unit")
+            if kind not in {"exploration", "work_unit", "repair", "integration"}:
+                raise ProtocolError("scope.open kind is invalid")
+            assigned = payload.get("assignedClaimIds", [])
+            if not isinstance(assigned, list) or any(not isinstance(item, str) for item in assigned):
+                raise ProtocolError("scope.open assignedClaimIds must be strings")
+            if run.goal_contract is not None:
+                known_claims = {item["claimId"] for item in run.goal_contract["claims"]}
+                if any(item not in known_claims for item in assigned):
+                    raise ProtocolError("scope.open references an unknown Claim")
+            run.scopes[scope_id] = ScopeState(scope_id, parent, kind, list(assigned))
             self._event(run, "scope.opened", {"scopeId": scope_id, "parentScopeId": parent})
             self._manifest(run)
             return self._status(run, scope_id)
+        if request_type == "scope.reopen":
+            scope = run.scopes.get(scope_id)
+            if scope is None or scope_id == run.root_scope_id:
+                raise ProtocolError("scope.reopen requires an existing child scope")
+            scope.kind = "repair"
+            scope.candidate = None
+            if run.runtime_failure and run.runtime_failure.get("scopeId") == scope_id:
+                run.runtime_failure = None
+            self._event(run, "scope.reopened", {"scopeId": scope_id})
+            self._manifest(run)
+            return self._status(run, scope_id)
+        if request_type == "candidate.attach":
+            scope = run.scopes.get(scope_id)
+            if scope is None or scope_id == run.root_scope_id:
+                raise ProtocolError("candidate.attach requires an existing child scope")
+            candidate = payload.get("candidate")
+            if not isinstance(candidate, dict):
+                raise ProtocolError("candidate.attach requires a candidate object")
+            required = {"candidateId", "runId", "scopeId", "workUnitId", "revision", "files", "patchHash", "overlayRoot"}
+            if not required.issubset(candidate):
+                raise ProtocolError("candidate manifest is missing required fields")
+            if candidate.get("runId") != run_id or candidate.get("scopeId") != scope_id:
+                raise ProtocolError("candidate run or scope binding is invalid")
+            if not isinstance(candidate.get("candidateId"), str) or not candidate["candidateId"]:
+                raise ProtocolError("candidateId must be a non-empty string")
+            if not isinstance(candidate.get("workUnitId"), str) or not candidate["workUnitId"]:
+                raise ProtocolError("workUnitId must be a non-empty string")
+            if not isinstance(candidate.get("revision"), int) or candidate["revision"] < 1:
+                raise ProtocolError("candidate revision must be a positive integer")
+            if not isinstance(candidate.get("patchHash"), str) or not re.fullmatch(r"[0-9a-f]{64}", candidate["patchHash"]):
+                raise ProtocolError("candidate patchHash must be a SHA-256 digest")
+            files = candidate.get("files")
+            if not isinstance(files, list):
+                raise ProtocolError("candidate files must be a list")
+            normalized_files = []
+            for item in files:
+                if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                    raise ProtocolError("candidate file entries require a path")
+                before = item.get("beforeHash")
+                after = item.get("afterHash")
+                if before is not None and (not isinstance(before, str) or not re.fullmatch(r"[0-9a-f]{64}", before)):
+                    raise ProtocolError("candidate beforeHash is invalid")
+                if not isinstance(after, str) or not re.fullmatch(r"[0-9a-f]{64}", after):
+                    raise ProtocolError("candidate afterHash is invalid")
+                normalized_files.append({"path": item["path"], "beforeHash": before, "afterHash": after})
+            expected_hash = canonical_hash(
+                {
+                    "runId": run_id,
+                    "scopeId": scope_id,
+                    "workUnitId": candidate["workUnitId"],
+                    "revision": candidate["revision"],
+                    "files": sorted(normalized_files, key=lambda item: item["path"]),
+                }
+            )
+            if candidate["patchHash"] != expected_hash:
+                raise ProtocolError("candidate patchHash does not match the manifest")
+            candidate_workspace = candidate.get("candidateWorkspace")
+            if candidate_workspace is not None:
+                if not isinstance(candidate_workspace, str) or not candidate_workspace:
+                    raise ProtocolError("candidateWorkspace must be a non-empty path")
+                resolved_workspace = Path(candidate_workspace).resolve()
+                state_root = self.state_root.resolve()
+                try:
+                    resolved_workspace.relative_to(state_root)
+                except ValueError as error:
+                    raise ProtocolError("candidateWorkspace must remain under the harness state root") from error
+                if not resolved_workspace.is_dir():
+                    raise ProtocolError("candidateWorkspace must be an existing directory")
+                candidate = {**candidate, "candidateWorkspace": str(resolved_workspace)}
+            accepted = {
+                **candidate,
+                "files": normalized_files,
+                "attachedAt": utc_now(),
+            }
+            scope.candidate = accepted
+            run.candidates[candidate["candidateId"]] = accepted
+            reference = self._artifact(run, "candidate_manifest", "verifier_observed", accepted)
+            self._append_unique(run.candidate_refs, reference)
+            self._event(run, "candidate.attached", {"candidateId": candidate["candidateId"], "reference": reference})
+            self._manifest(run)
+            return {**self._status(run, scope_id), "candidate": redact(accepted)}
+        if request_type == "candidate.commit":
+            scope = run.scopes.get(scope_id)
+            if scope is None or scope.candidate is None:
+                raise ProtocolError("candidate.commit requires an attached candidate")
+            attestation = payload.get("attestation")
+            if not isinstance(attestation, dict):
+                raise ProtocolError("candidate.commit requires an attestation")
+            candidate = scope.candidate
+            expected = {
+                "candidateId": candidate["candidateId"],
+                "candidateRevision": candidate["revision"],
+                "patchHash": candidate["patchHash"],
+            }
+            if any(attestation.get(key) != value for key, value in expected.items()):
+                raise ProtocolError("candidate commit attestation does not match the attached candidate")
+            scope.committed_candidate_ids.append(candidate["candidateId"])
+            self._event(run, "candidate.committed", expected)
+            self._manifest(run)
+            return {**self._status(run, scope_id), "committedCandidate": expected}
         if request_type in {"contract.propose", "contract.amend"}:
             contract = self._validate_contract(run, payload.get("contract"))
             if request_type == "contract.amend":
@@ -1204,6 +1506,8 @@ class VerificationEngine:
             known = {item["claimId"] for item in run.goal_contract["claims"]}
             if any(item not in known for item in claims):
                 raise ProtocolError("action references an unknown claim")
+            if scope.assigned_claim_ids and any(item not in scope.assigned_claim_ids for item in claims):
+                raise ProtocolError("action references a Claim outside the scope assignment")
             action = {
                 "actionId": action_id,
                 "executionId": execution_id,
@@ -1251,16 +1555,26 @@ class VerificationEngine:
             reference = self._artifact(run, "action_observation", "untrusted_execution_observation", action)
             self._append_unique(run.candidate_refs, reference)
             if status == "error":
-                failure = self._classify_failure(payload)
+                failure = self._validate_failure_envelope(run, scope_id, action_id, payload)
                 run.runtime_failure = {
                     **failure,
                     "scopeId": scope_id,
                     "tool": action["tool"],
                     "fingerprint": canonical_hash(
-                        {"kind": failure["failureKind"], "tool": action["tool"], "error": action["error"]}
+                        {
+                            "kind": failure["failureKind"],
+                            "code": failure["failureEnvelope"].get("code"),
+                            "source": failure["failureEnvelope"].get("source"),
+                            "phase": failure["failureEnvelope"].get("phase"),
+                            "scope": scope_id,
+                        }
                     ),
                 }
-            elif run.runtime_failure and run.runtime_failure.get("tool") == action["tool"]:
+            elif (
+                run.runtime_failure
+                and run.runtime_failure.get("tool") == action["tool"]
+                and run.runtime_failure.get("scopeId") == scope_id
+            ):
                 run.runtime_failure = None
             self._event(run, "action.closed", {"action": action, "reference": reference})
             self._manifest(run)
@@ -1283,15 +1597,37 @@ class VerificationEngine:
                 ["No accepted GoalContract exists."],
                 "Submit harness_contract before verification.",
             )
-        if scope_id != run.root_scope_id:
+        scope = run.scopes.get(scope_id)
+        if scope is None:
+            raise ProtocolError("scope is not open")
+        is_root = scope_id == run.root_scope_id
+        if not is_root and scope.kind in {"work_unit", "repair"} and scope.candidate is None:
             return self._reject(
                 run,
                 scope_id,
-                "root_scope_required",
-                ["Only the root GoalContract can receive Ready."],
-                "Return child Evidence to the root scope.",
+                "candidate_missing",
+                ["No Host-generated CandidateManifest is attached to this scope."],
+                "Attach the current candidate before child verification.",
             )
-        if any(scope.pending for scope in run.scopes.values()):
+        requested_claim_ids = payload.get("claimIds")
+        if requested_claim_ids is None:
+            requested_claim_ids = [] if is_root else scope.assigned_claim_ids
+        if not isinstance(requested_claim_ids, list) or any(not isinstance(item, str) for item in requested_claim_ids):
+            raise ProtocolError("verify.request claimIds must be strings")
+        known_claims = {item["claimId"] for item in run.goal_contract["claims"]}
+        if any(item not in known_claims for item in requested_claim_ids):
+            raise ProtocolError("verify.request references an unknown Claim")
+        selected_claim_ids = set(requested_claim_ids) if requested_claim_ids else known_claims
+        if not is_root and not selected_claim_ids:
+            return self._reject(
+                run,
+                scope_id,
+                "scope_claims_missing",
+                ["Child scope has no assigned Claims."],
+                "Assign Claim IDs before child verification.",
+            )
+        pending_scopes = run.scopes.values() if is_root else [scope]
+        if any(item.pending for item in pending_scopes):
             return self._reject(
                 run,
                 scope_id,
@@ -1299,7 +1635,8 @@ class VerificationEngine:
                 ["One or more actions have not emitted action.close."],
                 "Close pending actions before verification.",
             )
-        if not any(scope.actions for scope in run.scopes.values()):
+        action_scopes = run.scopes.values() if is_root else [scope]
+        if not any(item.actions for item in action_scopes):
             return self._reject(
                 run,
                 scope_id,
@@ -1307,7 +1644,7 @@ class VerificationEngine:
                 ["No host-observed action is bound to the GoalContract."],
                 "Execute the minimum action required by the accepted Claim.",
             )
-        if run.runtime_failure:
+        if run.runtime_failure and (is_root or run.runtime_failure.get("scopeId") == scope_id):
             return self._reject(
                 run,
                 scope_id,
@@ -1316,6 +1653,7 @@ class VerificationEngine:
                 "Repair only the failed provider, model, tool or implementation boundary.",
                 failure_kind=str(run.runtime_failure.get("failureKind", "verification_failed")),
                 details=[run.runtime_failure],
+                repairable=str(run.runtime_failure.get("failureKind")) != "unknown_failure",
             )
 
         verifier_specs = self._verifiers(run)
@@ -1325,13 +1663,42 @@ class VerificationEngine:
             if isinstance(item, str)
         }
         cache: dict[str, dict[str, Any]] = {}
-        run.claim_results = [
-            self._verify_claim(run, claim, verifier_specs, cache, revoked)
+        selected_claims = [
+            claim
             for claim in run.goal_contract["claims"]
+            if claim["claimId"] in selected_claim_ids
         ]
-        result_by_claim = {item["claimId"]: item for item in run.claim_results}
-        run.criterion_results = []
-        for criterion in run.goal_contract["criteria"]:
+        original_workspace = run.workspace
+        candidate_workspace = None if is_root or scope.candidate is None else scope.candidate.get("candidateWorkspace")
+        if candidate_workspace:
+            run.workspace = Path(str(candidate_workspace)).resolve()
+        try:
+            current_claim_results = [
+                self._verify_claim(run, claim, verifier_specs, cache, revoked)
+                for claim in selected_claims
+            ]
+        finally:
+            run.workspace = original_workspace
+        merged_claims = {item["claimId"]: item for item in run.claim_results}
+        merged_claims.update({item["claimId"]: item for item in current_claim_results})
+        run.claim_results = list(merged_claims.values())
+        result_by_claim = {item["claimId"]: item for item in current_claim_results}
+        requested_criterion_ids = payload.get("criterionIds", [])
+        if not isinstance(requested_criterion_ids, list) or any(
+            not isinstance(item, str) for item in requested_criterion_ids
+        ):
+            raise ProtocolError("verify.request criterionIds must be strings")
+        selected_criteria = [
+            criterion
+            for criterion in run.goal_contract["criteria"]
+            if (
+                not requested_criterion_ids
+                or criterion["criterionId"] in requested_criterion_ids
+            )
+            and all(item in selected_claim_ids for item in criterion["claimIds"])
+        ]
+        current_criterion_results = []
+        for criterion in selected_criteria:
             linked = [result_by_claim[item] for item in criterion["claimIds"]]
             if all(item["result"] == "verified" and item["coverage"] == "full" for item in linked):
                 result = "verified"
@@ -1345,7 +1712,7 @@ class VerificationEngine:
             else:
                 result = "inconclusive"
                 coverage = "none"
-            run.criterion_results.append(
+            current_criterion_results.append(
                 {
                     "criterionId": criterion["criterionId"],
                     "result": result,
@@ -1355,16 +1722,19 @@ class VerificationEngine:
                     "risk": criterion["risk"],
                 }
             )
+        merged_criteria = {item["criterionId"]: item for item in run.criterion_results}
+        merged_criteria.update({item["criterionId"]: item for item in current_criterion_results})
+        run.criterion_results = list(merged_criteria.values())
         failed = [
             item
-            for item in run.criterion_results
+            for item in current_criterion_results
             if item["required"] and item["result"] != "verified"
         ]
         if failed:
             first = failed[0]
             missing = [
                 item["claimId"] + ": " + item["reason"]
-                for item in run.claim_results
+                for item in current_claim_results
                 if item["claimId"] in first["claimIds"] and item["result"] != "verified"
             ]
             return self._reject(
@@ -1376,6 +1746,47 @@ class VerificationEngine:
                 details=failed,
             )
 
+        if not is_root:
+            candidate = scope.candidate
+            if candidate is None:
+                raise ProtocolError("scope verification requires an attached candidate")
+            attestation = self._artifact(
+                run,
+                "scope_attestation",
+                "verifier_attested",
+                {
+                    "scopeId": scope_id,
+                    "kind": scope.kind,
+                    "claimIds": sorted(selected_claim_ids),
+                    "criterionResults": current_criterion_results,
+                    "claimResults": current_claim_results,
+                    "requestedBy": redact(payload),
+                    "candidateId": candidate["candidateId"],
+                    "candidateRevision": candidate["revision"],
+                    "patchHash": candidate["patchHash"],
+                },
+            )
+            self._event(run, "scope.verified", {"scopeId": scope_id, "attestation": attestation})
+            self._manifest(run)
+            return {
+                **self._status(run, scope_id),
+                "state": "open",
+                "outcome": "scope_verified",
+                "scopeAttestation": {
+                    "candidateId": candidate["candidateId"],
+                    "candidateRevision": candidate["revision"],
+                    "patchHash": candidate["patchHash"],
+                    "artifact": attestation,
+                },
+                "failureKind": None,
+                "failedCriterion": None,
+                "missingEvidence": [],
+                "repairScope": None,
+                "repairScopeId": None,
+                "repairCount": 0,
+            }
+
+        assurance = self._assurance_metadata(run)
         ready_payload = {
             "goalContract": run.goal_contract,
             "criterionResults": run.criterion_results,
@@ -1383,7 +1794,7 @@ class VerificationEngine:
             "evidenceRefs": run.evidence_refs,
             "evidenceFamilies": run.evidence_families,
             "scopeId": scope_id,
-            "verificationMode": self._verification_config(run).get("mode", "adaptive"),
+            **assurance,
             "requestedBy": redact(payload),
             "eventHead": run.event_hash,
         }
@@ -1398,5 +1809,8 @@ class VerificationEngine:
             "failedCriterion": None,
             "missingEvidence": [],
             "repairScope": None,
+            "repairScopeId": None,
             "repairCount": 0,
+            **assurance,
+            "readyEligible": True,
         }

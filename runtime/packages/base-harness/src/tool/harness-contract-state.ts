@@ -1,3 +1,6 @@
+import * as Orchestration from "@base-harness/core/orchestration"
+import { Coordinator, type GoalContractProposal } from "@base-harness/coordinator"
+
 export interface HarnessContractProposal {
   goal: string
   criteria: Array<{
@@ -42,7 +45,13 @@ const preContractTools = new Set([
 ])
 
 export function assertHarnessContractSubmitted(sessionID: string, toolID: string) {
-  if (preContractTools.has(toolID) || submitted.has(sessionID)) return
+  if (
+    preContractTools.has(toolID) ||
+    submitted.has(sessionID) ||
+    Orchestration.hasContract(sessionID) ||
+    Orchestration.canUseBeforeContract(sessionID, toolID)
+  )
+    return
   throw new Error(
     "GoalContract is required before state-changing tools. Use harness_contract after read-only discovery.",
   )
@@ -83,10 +92,16 @@ function validateProposal(params: HarnessContractProposal) {
   }
 }
 
-export function registerHarnessContractProposal(
+export async function registerHarnessContractProposal(
   sessionID: string,
   params: HarnessContractProposal,
 ) {
   validateProposal(params)
   submitted.add(sessionID)
+  Orchestration.registerContract(
+    sessionID,
+    params.claims.map((item) => item.claimId),
+    params.criteria.map((item) => item.criterionId),
+  )
+  await Coordinator.proposeContract(sessionID, params as unknown as GoalContractProposal)
 }

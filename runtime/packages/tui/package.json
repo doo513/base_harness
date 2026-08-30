@@ -63,8 +63,7 @@
     "opentui-spinner": "catalog:",
     "remeda": "catalog:",
     "strip-ansi": "7.1.2",
-    "solid-js": "catalog:",
-    "@base-harness/verification": "workspace:*"
+    "solid-js": "catalog:"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",

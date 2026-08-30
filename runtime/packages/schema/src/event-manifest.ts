@@ -5,6 +5,7 @@ import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
 import { FileSystemWatcher } from "./filesystem-watcher"
+import { HarnessEvent } from "./harness-event"
 import { InstallationEvent } from "./installation-event"
 import { Integration } from "./integration"
 import { LegacyEvent } from "./legacy-event"
@@ -58,6 +59,7 @@ export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  ...HarnessEvent.Definitions,
 )
 
 export const Definitions = Event.inventory(
@@ -79,6 +81,7 @@ export const Definitions = Event.inventory(
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
+  ...HarnessEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)
 export { Durable }

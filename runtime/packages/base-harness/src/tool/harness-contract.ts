@@ -61,8 +61,8 @@ export const HarnessContractTool = Tool.define(
       "Submit a typed GoalContract before changing workspace state. Each criterion must map bidirectionally to one or more atomic claims with scope, applicability, a typed predicate, and an allowed verifier policy.",
     parameters: Parameters,
     execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
-      Effect.sync(() => {
-        registerHarnessContractProposal(ctx.sessionID, params)
+      Effect.promise(async () => {
+        await registerHarnessContractProposal(ctx.sessionID, params)
         return {
           title: "GoalContract proposal",
           output: JSON.stringify(params, null, 2),

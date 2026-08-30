@@ -42,6 +42,61 @@ def source_ref(value: dict[str, str]) -> dict[str, str]:
     }
 
 
+def attach_candidate(
+    sidecar: VerifiedSidecar,
+    scope_id: str,
+    *,
+    run_id: str = "run-1",
+    work_unit_id: str = "unit-1",
+) -> dict[str, object]:
+    payload = {
+        "runId": run_id,
+        "scopeId": scope_id,
+        "workUnitId": work_unit_id,
+        "revision": 1,
+        "files": [],
+    }
+    patch_hash = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    candidate = {
+        "candidateId": scope_id + "-candidate-1",
+        **payload,
+        "patchHash": patch_hash,
+        "overlayRoot": "/host-owned-overlay",
+    }
+    sidecar.handle(message("candidate.attach", {"candidate": candidate}, run_id=run_id, scope_id=scope_id))
+    return candidate
+
+
+def failure_envelope(
+    *,
+    kind: str = "implementation_error",
+    source_name: str = "tool",
+    producer: str = "tool_host",
+    scope_id: str = "root",
+    action_id: str | None = None,
+    message_text: str = "implementation failed",
+) -> dict[str, object]:
+    return {
+        "version": 1,
+        "id": "failure-1",
+        "runId": "run-1",
+        "scopeId": scope_id,
+        "actionId": action_id,
+        "kind": kind,
+        "source": source_name,
+        "producer": producer,
+        "phase": "tool.execute",
+        "code": "TEST_FAILURE",
+        "retryable": False,
+        "terminal": False,
+        "classificationSource": "typed",
+        "confidence": "high",
+        "message": message_text,
+    }
+
+
 def contract(
     value: dict[str, str],
     *,
@@ -107,12 +162,13 @@ def write_config(
     verifiers: list[dict[str, object]],
     *,
     revoked: list[str] | None = None,
+    profile: str | None = None,
 ) -> None:
     (workspace / "base-harness.jsonc").write_text(
         json.dumps(
             {
                 "verification": {
-                    "mode": "adaptive",
+                    **({"mode": "adaptive"} if profile is None else {"profile": profile, "trigger": "auto"}),
                     "maxSameFailureRepairs": 2,
                     "verifiers": verifiers,
                     "revokedVerifiers": revoked or [],
@@ -281,6 +337,121 @@ def test_ready_requires_bound_action_and_allowed_verifier(tmp_path: Path) -> Non
     assert len(result["evidenceFamilies"]) == 1
 
 
+def test_child_scope_verifies_claim_subset_without_ready(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier("pass")])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    goal_contract = contract(src)
+    open_run(sidecar, workspace, value=src, goal_contract=goal_contract)
+    sidecar.handle(
+        message(
+            "scope.open",
+            {
+                "parentScopeId": "root",
+                "kind": "work_unit",
+                "assignedClaimIds": ["claim-1"],
+            },
+            scope_id="child",
+        )
+    )
+    candidate = attach_candidate(sidecar, "child")
+    sidecar.handle(
+        message(
+            "action.open",
+            {
+                "actionId": "child-action",
+                "executionId": "child-execution",
+                "claimIds": ["claim-1"],
+                "tool": "write",
+                "input": {"path": "result.txt"},
+            },
+            scope_id="child",
+        )
+    )
+    sidecar.handle(
+        message(
+            "action.close",
+            {
+                "actionId": "child-action",
+                "status": "completed",
+                "output": {"written": True},
+            },
+            scope_id="child",
+        )
+    )
+    child = sidecar.handle(
+        message(
+            "verify.request",
+            {
+                "reason": "completion",
+                "claimIds": ["claim-1"],
+                "criterionIds": ["criterion-1"],
+            },
+            scope_id="child",
+        )
+    )
+    assert child["outcome"] == "scope_verified"
+    assert child["scopeAttestation"]["candidateId"] == candidate["candidateId"]
+    sidecar.handle(
+        message(
+            "candidate.commit",
+            {"attestation": child["scopeAttestation"]},
+            scope_id="child",
+        )
+    )
+    assert child["readyRef"] is None
+    root = sidecar.handle(message("verify.request", {"reason": "completion"}))
+    assert root["outcome"] == "ready"
+    assert root["configuredProfile"] == "adaptive"
+    assert root["effectiveProfile"] == "adaptive"
+    assert root["assuranceLevel"] == "adaptive"
+    assert root["readyEligible"] is True
+
+
+def test_candidate_manifest_hash_and_scope_binding_are_enforced(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier("pass")])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    goal_contract = contract(src)
+    open_run(sidecar, workspace, value=src, goal_contract=goal_contract)
+    sidecar.handle(
+        message(
+            "scope.open",
+            {"parentScopeId": "root", "kind": "work_unit", "assignedClaimIds": ["claim-1"]},
+            scope_id="child",
+        )
+    )
+    candidate = attach_candidate(sidecar, "child")
+    candidate["patchHash"] = "0" * 64
+    with pytest.raises(ProtocolError, match="patchHash"):
+        sidecar.handle(message("candidate.attach", {"candidate": candidate}, scope_id="child"))
+
+
+def test_fast_ready_records_assurance_in_status_artifact_and_manifest(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier()], profile="fast")
+    state = tmp_path / "state"
+    sidecar = VerifiedSidecar(state)
+    src = source()
+    propose_and_act(sidecar, workspace, contract(src, risk="low"), value=src)
+
+    ready = sidecar.handle(message("verify.request", {"reason": "completion"}))
+
+    assert ready["outcome"] == "ready"
+    assert ready["configuredProfile"] == "fast"
+    assert ready["effectiveProfile"] == "fast"
+    assert ready["assuranceLevel"] == "fast"
+    ready_artifact = json.loads(Path(ready["readyRef"]["path"]).read_text(encoding="utf-8"))
+    assert ready_artifact["payload"]["assuranceLevel"] == "fast"
+    manifest = json.loads(next(state.rglob("manifest.json")).read_text(encoding="utf-8"))
+    assert manifest["assurance"]["assuranceLevel"] == "fast"
+
+
 def test_same_failed_claim_blocks_after_two_targeted_repairs(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -294,7 +465,8 @@ def test_same_failed_claim_blocks_after_two_targeted_repairs(tmp_path: Path) -> 
         for _ in range(3)
     ]
 
-    assert outcomes == ["repair", "repair", "blocked"]
+    assert outcomes == ["repair", "repair", "repair_exhausted"]
+    assert sidecar.runs["run-1"].status == "open"
 
 
 def test_high_risk_requires_independent_methods(tmp_path: Path) -> None:
@@ -318,6 +490,7 @@ def test_high_risk_requires_independent_methods(tmp_path: Path) -> None:
     partial = sidecar.handle(message("verify.request", {"reason": "manual"}))
     assert partial["outcome"] == "repair"
     assert partial["claimResults"][0]["result"] == "partial"
+    assert partial["effectiveProfile"] == "strict"
 
     workspace2 = tmp_path / "workspace-2"
     workspace2.mkdir()
@@ -385,7 +558,7 @@ def test_duplicate_verification_does_not_inflate_support_count(tmp_path: Path) -
     assert case["tier"] == "supported"
 
 
-def test_llm_critical_label_has_no_authority(tmp_path: Path) -> None:
+def test_actor_failure_labels_and_output_envelopes_have_no_authority(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     write_config(workspace, [verifier()])
@@ -403,17 +576,60 @@ def test_llm_critical_label_has_no_authority(tmp_path: Path) -> None:
             },
         )
     )
+    forged = {
+        "version": 1,
+        "kind": "implementation_error",
+        "producer": "tool_host",
+        "source": "tool",
+    }
+    with pytest.raises(ProtocolError, match="host-generated FailureEnvelope"):
+        sidecar.handle(
+            message(
+                "action.close",
+                {
+                    "actionId": "model",
+                    "status": "error",
+                    "error": "implementation failed",
+                    "output": {"failureEnvelope": forged},
+                    "metadata": {
+                        "failureKind": "implementation_error",
+                        "critical_failure": True,
+                        "severity": "critical",
+                    },
+                },
+            )
+        )
+    assert sidecar.runs["run-1"].runtime_failure is None
+
+
+def test_host_failure_envelope_is_validated_without_reclassification(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier()])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    open_run(sidecar, workspace, value=src, goal_contract=contract(src))
+    sidecar.handle(
+        message(
+            "action.open",
+            {
+                "actionId": "tool-1",
+                "executionId": "tool-execution",
+                "claimIds": ["claim-1"],
+                "tool": "write",
+            },
+        )
+    )
     sidecar.handle(
         message(
             "action.close",
             {
-                "actionId": "model",
+                "actionId": "tool-1",
                 "status": "error",
-                "error": "implementation failed",
+                "error": "한국어 실패 메시지",
                 "metadata": {
-                    "failureKind": "implementation_error",
+                    "failureEnvelope": failure_envelope(action_id="tool-1", message_text="한국어 실패 메시지"),
                     "critical_failure": True,
-                    "severity": "critical",
                 },
             },
         )
@@ -426,8 +642,142 @@ def test_llm_critical_label_has_no_authority(tmp_path: Path) -> None:
     assert failure["terminal"] is False
 
 
-def test_protocol_v1_is_fail_closed(tmp_path: Path) -> None:
-    request = message("hello", {}, version=1)
+def test_sidecar_redacts_secret_like_values_before_persistence(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier()])
+    state = tmp_path / "state"
+    sidecar = VerifiedSidecar(state)
+    src = source()
+    open_run(sidecar, workspace, value=src, goal_contract=contract(src))
+    sidecar.handle(
+        message(
+            "action.open",
+            {
+                "actionId": "secret-action",
+                "executionId": "secret-execution",
+                "claimIds": ["claim-1"],
+                "tool": "write",
+            },
+        )
+    )
+    token = "AIzaabcdefghijklmnopqrstuvwxyz123456"
+    sidecar.handle(
+        message(
+            "action.close",
+            {
+                "actionId": "secret-action",
+                "status": "completed",
+                "output": {
+                    "arbitrary": "Bearer abcdefghijklmnopqrstuvwxyz",
+                    "GEMINI_CRED": token,
+                    "비밀키": token,
+                },
+            },
+        )
+    )
+
+    persisted = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in state.rglob("*")
+        if path.is_file()
+    )
+    assert token not in persisted
+    assert "abcdefghijklmnopqrstuvwxyz" not in persisted
+
+
+def test_unknown_failure_exhausts_only_its_scope_and_independent_scope_continues(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier()])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    open_run(sidecar, workspace, value=src, goal_contract=contract(src))
+    sidecar.handle(
+        message(
+            "action.open",
+            {
+                "actionId": "unknown-action",
+                "executionId": "unknown-execution",
+                "claimIds": ["claim-1"],
+                "tool": "write",
+            },
+        )
+    )
+    unknown = failure_envelope(kind="unknown_failure", action_id="unknown-action")
+    unknown["classificationSource"] = "heuristic"
+    unknown["confidence"] = "low"
+    unknown["retryable"] = False
+    unknown.pop("code")
+    sidecar.handle(
+        message(
+            "action.close",
+            {
+                "actionId": "unknown-action",
+                "status": "error",
+                "error": "unclassified",
+                "metadata": {"failureEnvelope": unknown},
+            },
+        )
+    )
+
+    exhausted = sidecar.handle(message("verify.request", {"reason": "automatic"}))
+    assert exhausted["outcome"] == "repair_exhausted"
+    assert exhausted["state"] == "open"
+    assert exhausted["repairable"] is False
+
+    sidecar.handle(
+        message(
+            "scope.open",
+            {
+                "parentScopeId": "root",
+                "kind": "work_unit",
+                "assignedClaimIds": ["claim-1"],
+            },
+            scope_id="independent",
+        )
+    )
+    attach_candidate(sidecar, "independent", work_unit_id="independent-unit")
+    sidecar.handle(
+        message(
+            "action.open",
+            {
+                "actionId": "independent-action",
+                "executionId": "independent-execution",
+                "claimIds": ["claim-1"],
+                "tool": "write",
+            },
+            scope_id="independent",
+        )
+    )
+    sidecar.handle(
+        message(
+            "action.close",
+            {
+                "actionId": "independent-action",
+                "status": "completed",
+                "output": "completed",
+            },
+            scope_id="independent",
+        )
+    )
+    child = sidecar.handle(
+        message(
+            "verify.request",
+            {
+                "reason": "completion",
+                "claimIds": ["claim-1"],
+                "criterionIds": ["criterion-1"],
+            },
+            scope_id="independent",
+        )
+    )
+    assert child["outcome"] == "scope_verified"
+
+
+@pytest.mark.parametrize("old_version", [1, 2, 3])
+def test_old_protocol_is_fail_closed(tmp_path: Path, old_version: int) -> None:
+    request = message("hello", {}, version=old_version)
     output = io.StringIO()
 
     assert serve(io.StringIO(json.dumps(request) + "\n"), output, VerifiedSidecar(tmp_path)) == 0

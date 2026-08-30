@@ -6,6 +6,7 @@ import { Ripgrep } from "@base-harness/core/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
 import * as Tool from "./tool"
+import { consumeExplorationBudget } from "./exploration-budget"
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
@@ -24,6 +25,7 @@ export const GlobTool = Tool.define(
       parameters: Parameters,
       execute: (params: { pattern: string; path?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          consumeExplorationBudget(ctx.sessionID, "glob")
           const ins = yield* InstanceState.context
           yield* ctx.ask({
             permission: "glob",

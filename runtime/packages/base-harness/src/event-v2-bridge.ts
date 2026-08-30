@@ -4,6 +4,9 @@ import { LayerNode } from "@base-harness/core/effect/layer-node"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { GlobalBus } from "@/bus/global"
 import { EventV2 } from "@base-harness/core/event"
+import { HarnessEvent } from "@base-harness/schema/harness-event"
+import { Coordinator } from "@base-harness/coordinator"
+import { EffectBridge } from "@/effect/bridge"
 import { Location } from "@base-harness/core/location"
 import { Project } from "@base-harness/core/project"
 import { AbsolutePath } from "@base-harness/core/schema"
@@ -15,6 +18,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const coordinatorInstance = yield* InstanceRef
 
     const publish: EventV2.Interface["publish"] = (definition, data, options) =>
       Effect.gen(function* () {
@@ -32,8 +36,22 @@ const layer = Layer.effect(
         })
       })
 
+    const bridge = yield* EffectBridge.make()
+    const unsubscribeCoordinator = Coordinator.subscribe((status) =>
+      bridge.promise(publish(HarnessEvent.Status, { sessionID: status.sessionID, status })).then(() => undefined),
+    )
+    yield* Effect.addFinalizer(() => Effect.sync(unsubscribeCoordinator))
+    yield* Effect.addFinalizer(() =>
+      coordinatorInstance
+        ? Effect.promise(() => Coordinator.closeWorkspace(coordinatorInstance.directory))
+        : Effect.void,
+    )
+
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
+        yield* Effect.sync(() => {
+          void Coordinator.observeHostEvent(event.type, event.data)
+        })
         const ctx = yield* InstanceRef
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
         GlobalBus.emit("event", {

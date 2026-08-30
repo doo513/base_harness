@@ -7,6 +7,8 @@ dist/
 build/
 *.egg-info/
 run/
+!runtime/packages/base-harness/src/cli/cmd/run/
+!runtime/packages/base-harness/src/cli/cmd/run/**
 runs/
 .env
 .DS_Store

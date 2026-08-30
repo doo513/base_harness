@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto"
 
-export const SIDECAR_PROTOCOL_VERSION = 2 as const
+export const SIDECAR_PROTOCOL_VERSION = 4 as const
 
-export type VerificationOutcome = "ready" | "repair" | "blocked" | "failure" | "needs_input"
+export type VerificationOutcome =
+  | "scope_verified"
+  | "ready"
+  | "repair"
+  | "repair_exhausted"
+  | "blocked"
+  | "failure"
+  | "needs_input"
+export type VerificationProfile = "fast" | "adaptive" | "strict"
+export type VerificationTrigger = "auto" | "manual"
+export type VerificationScopeKind = "root" | "exploration" | "work_unit" | "repair" | "integration"
 export type VerificationState =
   | "inactive"
   | "starting"
@@ -110,6 +120,25 @@ export interface ArtifactReference {
   trust: "untrusted_execution_observation" | "verifier_observed" | "verifier_attested"
 }
 
+export interface CandidateManifest {
+  candidateId: string
+  runId: string
+  scopeId: string
+  workUnitId: string
+  revision: number
+  files: Array<{ path: string; beforeHash: string | null; afterHash: string }>
+  patchHash: string
+  overlayRoot: string
+  candidateWorkspace?: string
+}
+
+export interface ScopeAttestation {
+  candidateId: string
+  candidateRevision: number
+  patchHash: string
+  artifact?: ArtifactReference
+}
+
 export interface CriterionVerificationResult {
   criterionId: string
   result: ClaimResult
@@ -153,6 +182,7 @@ export interface VerificationStatus {
   failedCriterion?: string | null
   missingEvidence?: string[]
   repairScope?: string | null
+  repairScopeId?: string | null
   repairCount?: number
   failureFingerprint?: string
   message?: string
@@ -160,6 +190,12 @@ export interface VerificationStatus {
   candidateRefs: ArtifactReference[]
   readyRef?: ArtifactReference | null
   maxSameFailureRepairs: number
+  configuredProfile?: VerificationProfile
+  effectiveProfile?: VerificationProfile
+  assuranceLevel?: VerificationProfile
+  escalationReasons?: string[]
+  readyEligible?: boolean
+  scopeAttestation?: ScopeAttestation | null
 }
 
 export interface ProtocolEnvelope<T = Record<string, unknown>> {
@@ -177,6 +213,9 @@ export interface OpenRunInput {
   workspace: string
   goalSources: GoalSource[]
   goalContract?: GoalContract
+  configuredProfile?: VerificationProfile
+  effectiveProfile?: VerificationProfile
+  escalationReasons?: string[]
 }
 
 export interface ActionOpenInput {
@@ -216,13 +255,24 @@ export interface VerificationClient {
   snapshot(): VerificationStatus
   subscribe(listener: (status: VerificationStatus) => void): () => void
   open(input: OpenRunInput): Promise<VerificationStatus>
-  openScope(scopeId: string, parentScopeId: string): Promise<VerificationStatus>
+  openScope(
+    scopeId: string,
+    parentScopeId: string,
+    options?: { kind?: VerificationScopeKind; assignedClaimIds?: string[] },
+  ): Promise<VerificationStatus>
   proposeContract(contract: GoalContract, scopeId?: string): Promise<VerificationStatus>
   amendContract(contract: GoalContract, scopeId?: string): Promise<VerificationStatus>
   openAction(input: ActionOpenInput): Promise<{ actionId: string; status: VerificationStatus }>
   closeAction(input: ActionCloseInput): Promise<VerificationStatus>
   observe(input: ObserveActionInput): Promise<VerificationStatus>
-  verify(reason: "automatic" | "manual" | "completion", scopeId?: string): Promise<VerificationStatus>
+  verify(
+    reason: "automatic" | "manual" | "completion",
+    scopeId?: string,
+    target?: { claimIds?: string[]; criterionIds?: string[] },
+  ): Promise<VerificationStatus>
+  attachCandidate(candidate: CandidateManifest): Promise<VerificationStatus>
+  commitCandidate(attestation: ScopeAttestation, scopeId?: string): Promise<VerificationStatus>
+  reopenScope(scopeId: string): Promise<VerificationStatus>
   status(scopeId?: string): Promise<VerificationStatus>
   close(): Promise<VerificationStatus>
   dispose(): Promise<void>

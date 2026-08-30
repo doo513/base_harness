@@ -30,6 +30,16 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
   }),
+  verification: Schema.Struct({
+    profile: Schema.Literals(["fast", "adaptive", "strict"]).pipe(Schema.optional),
+    trigger: Schema.Literals(["auto", "manual"]).pipe(Schema.optional),
+    maxSameFailureRepairs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(Schema.optional),
+  }).pipe(Schema.optional),
+  orchestration: Schema.Struct({
+    mode: Schema.Literals(["adaptive", "manual"]).pipe(Schema.optional),
+    exploration: Schema.Literals(["adaptive", "always", "manual"]).pipe(Schema.optional),
+    maxParallelWorkUnits: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  }).pipe(Schema.optional),
   shell: Schema.String.pipe(Schema.optional).annotate({
     description: "Default shell to use for terminal and shell tool execution",
   }),

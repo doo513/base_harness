@@ -6,6 +6,7 @@ import { Ripgrep } from "@base-harness/core/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./grep.txt"
 import * as Tool from "./tool"
+import { consumeExplorationBudget } from "./exploration-budget"
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The regex pattern to search for in file contents" }),
@@ -27,6 +28,7 @@ export const GrepTool = Tool.define(
       parameters: Parameters,
       execute: (params: { pattern: string; path?: string; include?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          consumeExplorationBudget(ctx.sessionID, "grep")
           const empty = {
             title: params.pattern,
             metadata: { matches: 0, truncated: false },

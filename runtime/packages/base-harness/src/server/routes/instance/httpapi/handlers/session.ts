@@ -26,6 +26,7 @@ import {
   CommandPayload,
   DiffQuery,
   ForkPayload,
+  HarnessVerifyPayload,
   InitPayload,
   ListQuery,
   MessagesQuery,
@@ -36,6 +37,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
+import { Coordinator } from "@base-harness/coordinator"
 import { PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
@@ -234,6 +236,28 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const harness = Effect.fn("SessionHttpApi.harness")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return Coordinator.status(ctx.params.sessionID)
+    })
+
+    const harnessVerify = Effect.fn("SessionHttpApi.harnessVerify")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof HarnessVerifyPayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* Effect.promise(() => Coordinator.verifyRoot(ctx.params.sessionID, ctx.payload.reason ?? "manual"))
+    })
+
+    const harnessCancel = Effect.fn("SessionHttpApi.harnessCancel")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* Effect.promise(() => Coordinator.cancel(ctx.params.sessionID))
+    })
+
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof InitPayload.Type
@@ -424,6 +448,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("harness", harness)
+      .handle("harnessVerify", harnessVerify)
+      .handle("harnessCancel", harnessCancel)
       .handle("init", init)
       .handle("share", share)
       .handle("unshare", unshare)

@@ -74,6 +74,9 @@ export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
+export const HarnessVerifyPayload = Schema.Struct({
+  reason: Schema.optional(Schema.Literals(["automatic", "manual", "completion"])),
+})
 
 export const SessionPaths = {
   list: root,
@@ -89,6 +92,9 @@ export const SessionPaths = {
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
+  harness: `${root}/:sessionID/harness`,
+  harnessVerify: `${root}/:sessionID/harness/verify`,
+  harnessCancel: `${root}/:sessionID/harness/cancel`,
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
@@ -404,6 +410,43 @@ export const SessionApi = HttpApi.make("session")
             summary: "Respond to permission",
             description: "Approve or deny a permission request from the AI assistant.",
             deprecated: true,
+          }),
+        ),
+        HttpApiEndpoint.get("harness", SessionPaths.harness, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Unknown, "Harness coordinator status"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.harness",
+            summary: "Get harness status",
+            description: "Retrieve the authoritative Host Coordinator state for this root session.",
+          }),
+        ),
+        HttpApiEndpoint.post("harnessVerify", SessionPaths.harnessVerify, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: HarnessVerifyPayload,
+          success: described(Schema.Unknown, "Harness verification status"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.harnessVerify",
+            summary: "Verify harness run",
+            description: "Request root verification from the authoritative Host Coordinator.",
+          }),
+        ),
+        HttpApiEndpoint.post("harnessCancel", SessionPaths.harnessCancel, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Unknown, "Interrupted harness status"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.harnessCancel",
+            summary: "Cancel harness run",
+            description: "Interrupt queued work and close the run without issuing Ready.",
           }),
         ),
         HttpApiEndpoint.delete("deleteMessage", SessionPaths.deleteMessage, {

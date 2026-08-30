@@ -9,6 +9,8 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
+import * as Orchestration from "@base-harness/core/orchestration"
+import { consumeExplorationBudget } from "./exploration-budget"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -238,7 +240,11 @@ export const ReadTool = Tool.define<
       if (process.platform === "win32") {
         filepath = FSUtil.normalizePath(filepath)
       }
-      const title = path.relative(instance.worktree, filepath)
+      const resolved = yield* Effect.promise(() => Orchestration.resolveRead(ctx.sessionID, instance.worktree, filepath))
+      const logicalFilepath = resolved.logicalPath
+      filepath = resolved.physicalPath
+      consumeExplorationBudget(ctx.sessionID, "read", logicalFilepath)
+      const title = path.relative(instance.worktree, logicalFilepath)
 
       const stat = yield* fs.stat(filepath).pipe(
         Effect.catchIf(
@@ -247,7 +253,7 @@ export const ReadTool = Tool.define<
         ),
       )
 
-      yield* assertExternalDirectoryEffect(ctx, filepath, {
+      yield* assertExternalDirectoryEffect(ctx, logicalFilepath, {
         bypass: Boolean(ctx.extra?.["bypassCwdCheck"]),
         kind: stat?.type === "Directory" ? "directory" : "file",
       })

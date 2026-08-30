@@ -85,6 +85,7 @@
     "@octokit/rest": "catalog:",
     "@openauthjs/openauth": "catalog:",
     "@base-harness/codemode": "workspace:*",
+    "@base-harness/coordinator": "workspace:*",
     "@base-harness/llm": "workspace:*",
     "@base-harness/plugin": "workspace:*",
     "@base-harness/protocol": "workspace:*",
@@ -150,8 +151,7 @@
     "ws": "8.21.0",
     "xdg-basedir": "5.1.0",
     "yargs": "18.0.0",
-    "zod": "catalog:",
-    "@base-harness/verification": "workspace:*"
+    "zod": "catalog:"
   },
   "overrides": {
     "drizzle-orm": "catalog:"

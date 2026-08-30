@@ -14,6 +14,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
+import * as Orchestration from "@base-harness/core/orchestration"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -38,10 +39,14 @@ export const WriteTool = Tool.define(
       execute: (params: { content: string; filePath: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
-          const filepath = path.isAbsolute(params.filePath)
+          const logicalFilepath = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.join(instance.directory, params.filePath)
-          yield* assertExternalDirectoryEffect(ctx, filepath)
+          yield* assertExternalDirectoryEffect(ctx, logicalFilepath)
+          const target = yield* Effect.promise(() =>
+            Orchestration.resolveWrite(ctx.sessionID, instance.worktree, logicalFilepath),
+          )
+          const filepath = target.physicalPath
 
           const exists = yield* fs.existsSafe(filepath)
           const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "" }
@@ -53,10 +58,10 @@ export const WriteTool = Tool.define(
           const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew))
           yield* ctx.ask({
             permission: "edit",
-            patterns: [path.relative(instance.worktree, filepath)],
+            patterns: [path.relative(instance.worktree, logicalFilepath)],
             always: ["*"],
             metadata: {
-              filepath,
+              filepath: logicalFilepath,
               diff,
             },
           })
@@ -65,11 +70,13 @@ export const WriteTool = Tool.define(
           if (yield* format.file(filepath)) {
             yield* Bom.syncFile(fs, filepath, desiredBom)
           }
-          yield* events.publish(FileSystem.Event.Edited, { file: filepath })
-          yield* events.publish(Watcher.Event.Updated, {
-            file: filepath,
-            event: exists ? "change" : "add",
-          })
+          if (!target.overlay) {
+            yield* events.publish(FileSystem.Event.Edited, { file: logicalFilepath })
+            yield* events.publish(Watcher.Event.Updated, {
+              file: logicalFilepath,
+              event: exists ? "change" : "add",
+            })
+          }
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")
@@ -90,10 +97,10 @@ export const WriteTool = Tool.define(
           }
 
           return {
-            title: path.relative(instance.worktree, filepath),
+            title: path.relative(instance.worktree, logicalFilepath),
             metadata: {
               diagnostics,
-              filepath,
+              filepath: logicalFilepath,
               exists: exists,
             },
             output,

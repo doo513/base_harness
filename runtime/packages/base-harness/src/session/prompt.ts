@@ -99,6 +99,9 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   return part.state.status === "error" && part.state.metadata?.interrupted === true
 }
 
+import * as Orchestration from "@base-harness/core/orchestration"
+import { Coordinator } from "@base-harness/coordinator"
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
@@ -1053,6 +1056,64 @@ const layer = Layer.effect(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const goal = input.parts
+        .flatMap((part) => (part.type === "text" && "text" in part ? [part.text] : []))
+        .join("\n")
+        .trim()
+      if (goal) {
+        const cfg = yield* config.get()
+        const instance = yield* InstanceState.context
+        const selectedModel = input.model ?? (yield* currentModel(input.sessionID))
+        const directive = Orchestration.beginPrompt({
+          sessionID: input.sessionID,
+          parentSessionID: session.parentID,
+          workspace: instance.directory,
+          goal,
+          mode: cfg.orchestration?.mode,
+          exploration: cfg.orchestration?.exploration,
+          maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
+          model: {
+            providerID: selectedModel.providerID,
+            modelID: selectedModel.modelID,
+            variant: input.variant,
+          },
+        })
+        if (!session.parentID) {
+          const rootPromptOps = yield* ops()
+          yield* Effect.promise(() =>
+            Coordinator.openRun({
+              sessionID: input.sessionID,
+              workspace: instance.directory,
+              goal,
+              configuredProfile: cfg.verification?.profile,
+              effectiveProfile: cfg.verification?.profile,
+              maxSameFailureRepairs: cfg.verification?.maxSameFailureRepairs,
+              maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
+              trigger: cfg.verification?.trigger,
+              context: {
+                promptOps: rootPromptOps,
+                messageID: input.messageID,
+                agent: input.agent,
+                model: selectedModel,
+                variant: input.variant,
+              },
+            }),
+          )
+        }
+        const synthetic = { type: "text" as const, text: directive.instruction, synthetic: true }
+        const exploration = directive.explore
+          ? [
+              {
+                type: "subtask" as const,
+                agent: "explore",
+                description: "Pre-plan exploration",
+                prompt: directive.explorationPrompt ?? goal,
+                model: selectedModel,
+              },
+            ]
+          : []
+        input = { ...input, parts: [...exploration, synthetic, ...input.parts] }
+      }
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)

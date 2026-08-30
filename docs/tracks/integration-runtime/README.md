@@ -85,3 +85,16 @@ The active cross-run lifecycle extension is specified in `EVIDENCE_MEMORY_LIFECY
 - Stage 00-08: frozen except confirmed defect fixes
 
 Model/tool/retrieval/plugin output never gains trusted-state or completion authority directly.
+
+## V2 Coordinator delivery (2026-08-31)
+
+The V2-only TypeScript Host, independent Python verifier, WorkGraph/Overlay orchestration, protocol v4 candidate attestation, and unified TUI/headless Coordinator delivery are documented in:
+
+- `v2-coordinator-delivery/README.md`
+- `v2-coordinator-delivery/01_V2_RUNTIME_AND_INTERFACE.md`
+- `v2-coordinator-delivery/02_VERIFICATION_SAFETY_FOUNDATION.md`
+- `v2-coordinator-delivery/03_WORKGRAPH_OVERLAY_ORCHESTRATION.md`
+- `v2-coordinator-delivery/04_COORDINATOR_AND_SIDECAR_V4.md`
+- `v2-coordinator-delivery/05_HOST_TUI_HEADLESS_SDK.md`
+- `v2-coordinator-delivery/06_VALIDATION_AND_RESIDUAL_RISKS.md`
+- `v2-coordinator-delivery/07_NEXT_MODULE_SECURITY_ISOLATION_PLAN.md`

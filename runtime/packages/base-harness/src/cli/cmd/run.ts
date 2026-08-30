@@ -694,14 +694,19 @@ export const RunCommand = effectCmd({
         // to stdout/UI. `client` is passed explicitly because attach mode may
         // rebind the SDK to the session's directory after the subscription is
         // created, and replies issued from inside the loop must use that client.
-        async function loop(client: OpencodeClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
+        async function loop(
+          client: OpencodeClient,
+          events: Awaited<ReturnType<typeof sdk.event.subscribe>>,
+        ) {
           const toggles = new Map<string, boolean>()
           const sessions = new Set([sessionID])
           let error: string | undefined
 
           for await (const event of events.stream) {
             if (event.type === "session.created" && event.properties.info.parentID) {
-              if (sessions.has(event.properties.info.parentID)) sessions.add(event.properties.info.id)
+              if (sessions.has(event.properties.info.parentID)) {
+                sessions.add(event.properties.info.id)
+              }
             }
 
             if (
@@ -719,9 +724,10 @@ export const RunCommand = effectCmd({
 
             if (event.type === "message.part.updated") {
               const part = event.properties.part
-              if (part.sessionID !== sessionID) continue
+              if (!sessions.has(part.sessionID)) continue
 
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
+                if (part.sessionID !== sessionID) continue
                 if (emit("tool_use", { part })) continue
                 if (part.state.status === "completed") {
                   await tool(part)
@@ -780,7 +786,8 @@ export const RunCommand = effectCmd({
 
             if (event.type === "session.error") {
               const props = event.properties
-              if (props.sessionID !== sessionID || !props.error) continue
+              if (!props.sessionID || !sessions.has(props.sessionID) || !props.error) continue
+              if (props.sessionID !== sessionID) continue
               let err = String(props.error.name)
               if ("data" in props.error && props.error.data && "message" in props.error.data) {
                 err = String(props.error.data.message)
@@ -831,22 +838,6 @@ export const RunCommand = effectCmd({
         await share(client, sessionID)
 
         if (!interactive) {
-          const verificationPrompt =
-            args.message.join(" ").trim() || args.command || "Complete the requested run"
-          const verificationSource = goalSource(
-            verificationPrompt,
-            "headless-" + sessionID,
-            "user_message",
-          )
-          const headlessVerification = args.attach
-            ? undefined
-            : await createVerificationClient({
-                runId: "run-" + sessionID,
-                scopeId: sessionID,
-                workspace: process.cwd(),
-                goalSources: [verificationSource],
-                goalContract: createGoalContract(verificationSource),
-              })
           let verificationFinalized = false
           const events = await client.event.subscribe()
           const completed = loop(client, events).catch((e) => {
@@ -854,22 +845,23 @@ export const RunCommand = effectCmd({
             process.exitCode = 1
           })
           async function finish() {
-            if (args.attach) return
             const error = await completed
             if (error) process.exitCode = 1
-            if (!headlessVerification || verificationFinalized) return
+            if (verificationFinalized) return
             verificationFinalized = true
             try {
-              await headlessVerification.observe({
-                tool: "session.run",
-                status: error ? "error" : "completed",
-                error,
-                metadata: { mode: "headless", sessionID },
-              })
-              const verificationResult = await headlessVerification.verify("completion")
+              const sessionClient = client.session as unknown as {
+                harnessVerify(input: {
+                  sessionID: string
+                  directory?: string
+                  reason: "completion"
+                }): Promise<{ data?: Record<string, unknown>; error?: unknown } | Record<string, unknown>>
+              }
+              const response = await sessionClient.harnessVerify({ sessionID, directory: cwd, reason: "completion" })
+              const verificationResult = ("data" in response && response.data ? response.data : response) as Record<string, unknown>
               if (verificationResult.outcome !== "ready") {
-                const criterion = verificationResult.failedCriterion ?? "independent verification"
-                const failure = verificationResult.failureKind ?? "verification_failed"
+                const criterion = String(verificationResult.failedCriterion ?? "independent verification")
+                const failure = String(verificationResult.failureKind ?? "verification_failed")
                 console.error("base-harness did not issue Ready: " + failure + " (" + criterion + ")")
                 process.exitCode = 1
               }
@@ -881,7 +873,7 @@ export const RunCommand = effectCmd({
               )
               process.exitCode = 1
             } finally {
-              await headlessVerification.dispose()
+              // The Host owns the verifier lifecycle for local and attach runs.
             }
           }
 
@@ -1057,8 +1049,3 @@ export async function runMini(input: MiniCommandInput) {
     demo: input.demo ?? false,
   })
 }
-import {
-  createGoalContract,
-  createVerificationClient,
-  goalSource,
-} from "@base-harness/verification"

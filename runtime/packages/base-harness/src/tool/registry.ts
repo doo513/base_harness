@@ -56,7 +56,9 @@ import { MCP } from "@/mcp"
 import { PermissionV1 } from "@base-harness/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
 import { HarnessContractTool } from "./harness-contract"
+import { HarnessWorkGraphTool } from "./harness-workgraph"
 import { assertHarnessContractSubmitted } from "./harness-contract-state"
+import * as Orchestration from "@base-harness/core/orchestration"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (
@@ -118,6 +120,7 @@ const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const harnessContract = yield* HarnessContractTool
+    const harnessWorkGraph = yield* HarnessWorkGraphTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -224,6 +227,7 @@ const layer = Layer.effect(
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           contract: Tool.init(harnessContract),
+          workgraph: Tool.init(harnessWorkGraph),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
@@ -236,6 +240,7 @@ const layer = Layer.effect(
           builtin: [
             tool.invalid,
             tool.contract,
+            tool.workgraph,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
@@ -342,6 +347,7 @@ const layer = Layer.effect(
               context: Parameters<typeof tool.execute>[1],
             ) => {
               assertHarnessContractSubmitted(context.sessionID, tool.id)
+              Orchestration.assertToolAllowed(context.sessionID, tool.id, args)
               return tool.execute(args, context)
             },
             formatValidationError: tool.formatValidationError,

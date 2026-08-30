@@ -1209,6 +1209,28 @@ export type Config = {
     diff_style?: "auto" | "stacked"
   }
   /**
+   * Base Harness V2 independent verification policy
+   */
+  verification?: {
+    /**
+     * Verification trigger policy
+     */
+    mode?: "adaptive" | "manual"
+    /**
+     * Automatically verify when the session becomes idle
+     */
+    auto?: boolean
+    /**
+     * Maximum repairs allowed for the same failure fingerprint
+     */
+    maxSameFailureRepairs?: number
+  }
+  orchestration?: {
+    mode?: "adaptive" | "manual"
+    exploration?: "adaptive" | "always" | "manual"
+    maxParallelWorkUnits?: number
+  }
+  /**
    * Command configuration, see https://base-harness.local/docs/commands
    */
   command?: {

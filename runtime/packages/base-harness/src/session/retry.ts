@@ -154,6 +154,37 @@ export function retryable(error: Err, provider: string) {
   return undefined
 }
 
+export type RetryClassificationSource = "typed" | "status" | "provider_code" | "heuristic"
+
+export function retryClassification(error: Err): RetryClassificationSource | undefined {
+  if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
+  if (SessionV1.APIError.isInstance(error)) {
+    if (error.data.isRetryable) return "typed"
+    const status = error.data.statusCode
+    if (status !== undefined && (status === 429 || status >= 500)) return "status"
+    const body = parseJSON(error.data.responseBody)
+    if (
+      typeof body?.code === "string" ||
+      typeof body?.error?.code === "string" ||
+      typeof body?.type === "string"
+    ) {
+      return "provider_code"
+    }
+    if (
+      matchesRetryableMessage(error.data.message) ||
+      matchesRetryableMessage(error.data.responseBody)
+    ) {
+      return "heuristic"
+    }
+    return undefined
+  }
+  const message = isRecord(error.data) ? error.data.message : undefined
+  if (typeof message !== "string") return undefined
+  const code = isRecord(error.data) ? error.data.code : undefined
+  if (typeof code === "string") return "provider_code"
+  return matchesRetryableMessage(message) ? "heuristic" : undefined
+}
+
 function matchesRetryableMessage(value: unknown) {
   return typeof value === "string" && RETRYABLE_MESSAGE_PATTERNS.some((pattern) => pattern.test(value))
 }
@@ -190,7 +221,8 @@ export function policy(opts: {
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
-      if (meta.attempt > RETRY_MAX_RETRIES) return Cause.done(meta.attempt)
+      const maximum = retryClassification(error) === "heuristic" ? 1 : RETRY_MAX_RETRIES
+      if (meta.attempt > maximum) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis

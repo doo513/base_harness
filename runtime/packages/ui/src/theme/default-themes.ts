@@ -24,7 +24,7 @@ import nightowlThemeJson from "./themes/nightowl.json"
 import nordThemeJson from "./themes/nord.json"
 import oneDarkThemeJson from "./themes/one-dark.json"
 import oneDarkProThemeJson from "./themes/onedarkpro.json"
-import opencodeThemeJson from "./themes/base-harness.json"
+import baseHarnessThemeJson from "./themes/base-harness.json"
 import orngThemeJson from "./themes/orng.json"
 import osakaJadeThemeJson from "./themes/osaka-jade.json"
 import palenightThemeJson from "./themes/palenight.json"
@@ -62,7 +62,9 @@ export const nightowlTheme = nightowlThemeJson as DesktopTheme
 export const nordTheme = nordThemeJson as DesktopTheme
 export const oneDarkTheme = oneDarkThemeJson as DesktopTheme
 export const oneDarkProTheme = oneDarkProThemeJson as DesktopTheme
-export const opencodeTheme = opencodeThemeJson as DesktopTheme
+export const baseHarnessTheme = baseHarnessThemeJson as DesktopTheme
+/** @deprecated Use baseHarnessTheme. */
+export const opencodeTheme = baseHarnessTheme
 export const orngTheme = orngThemeJson as DesktopTheme
 export const osakaJadeTheme = osakaJadeThemeJson as DesktopTheme
 export const palenightTheme = palenightThemeJson as DesktopTheme
@@ -101,7 +103,7 @@ export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
   nord: nordTheme,
   "one-dark": oneDarkTheme,
   onedarkpro: oneDarkProTheme,
-  opencode: opencodeTheme,
+  "base-harness": baseHarnessTheme,
   orng: orngTheme,
   "osaka-jade": osakaJadeTheme,
   palenight: palenightTheme,

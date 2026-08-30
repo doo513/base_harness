@@ -1,3 +1,4 @@
+import localModels from "./models-catalog.json" with { type: "json" }
 import path from "path"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
@@ -157,10 +158,10 @@ const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.BASE_HARNESS_MODELS_URL || "https://models.base-harness.ai"
+    const source = Flag.BASE_HARNESS_MODELS_URL || "https://models.dev"
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.base-harness.ai" ? "models.json" : `models-${Hash.fast(source)}.json`,
+      source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.minutes(5)
     const lockKey = `models-dev:${filepath}`
@@ -195,9 +196,11 @@ const layer = Layer.effect(
       Effect.map((v) => v as Record<string, Provider> | undefined),
     )
 
-    const loadSnapshot = Effect.sync(() =>
-      typeof BASE_HARNESS_MODELS_DEV === "undefined" ? undefined : BASE_HARNESS_MODELS_DEV,
-    )
+    const loadSnapshot = Effect.sync(() => {
+      if (Flag.BASE_HARNESS_MODELS_PATH || Flag.BASE_HARNESS_MODELS_URL) return undefined
+      if (typeof BASE_HARNESS_MODELS_DEV !== "undefined") return BASE_HARNESS_MODELS_DEV
+      return localModels as unknown as Record<string, Provider>
+    })
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()
@@ -215,11 +218,13 @@ const layer = Layer.effect(
     })
 
     const populate = Effect.gen(function* () {
-      const fromDisk = yield* loadFromDisk
-      if (fromDisk) return fromDisk
+      if (Flag.BASE_HARNESS_MODELS_PATH || Flag.BASE_HARNESS_MODELS_URL) {
+        const fromDisk = yield* loadFromDisk
+        if (fromDisk) return fromDisk
+      }
       const snapshot = yield* loadSnapshot
       if (snapshot) return snapshot
-      if (Flag.BASE_HARNESS_DISABLE_MODELS_FETCH) return {}
+      if (Flag.BASE_HARNESS_DISABLE_MODELS_FETCH || !Flag.BASE_HARNESS_MODELS_URL) return {}
       // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
       const text = yield* Effect.scoped(
         Effect.gen(function* () {
@@ -235,6 +240,7 @@ const layer = Layer.effect(
     const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
 
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
+      if (Flag.BASE_HARNESS_MODELS_PATH || !Flag.BASE_HARNESS_MODELS_URL) return
       if (!force && (yield* fresh())) return
       yield* Effect.scoped(
         Effect.gen(function* () {

@@ -28,6 +28,7 @@
     "packages": [
       "packages/base-harness",
       "packages/codemode",
+      "packages/coordinator",
       "packages/core",
       "packages/effect-drizzle-sqlite",
       "packages/effect-sqlite-node",
