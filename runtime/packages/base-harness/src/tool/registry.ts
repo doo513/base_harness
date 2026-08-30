@@ -58,7 +58,7 @@ import { McpCatalog } from "@/mcp/catalog"
 import { HarnessContractTool } from "./harness-contract"
 import { HarnessWorkGraphTool } from "./harness-workgraph"
 import { assertHarnessContractSubmitted } from "./harness-contract-state"
-import * as Orchestration from "@base-harness/core/orchestration"
+import { Orchestration } from "../harness/coordinator-service"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (

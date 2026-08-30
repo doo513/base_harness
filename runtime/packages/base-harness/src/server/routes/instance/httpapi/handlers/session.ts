@@ -37,7 +37,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { Coordinator } from "@base-harness/coordinator"
+import { Coordinator } from "../../../../../harness/coordinator-service"
 import { PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 

@@ -10,66 +10,23 @@ import {
   type VerificationProfile,
   type VerificationStatus,
 } from "@base-harness/verification"
-
-export type WorkerState = "queued" | "running" | "candidate_ready" | "verifying" | "committing" | "repairing" | "completed" | "failed" | "repair_exhausted"
-
-export interface CoordinatorWorkerStatus {
-  workUnitId: string
-  title: string
-  state: WorkerState
-  scopeId?: string
-  repairCount: number
-  failureFingerprint?: string
-}
-
-export interface HarnessStatus {
-  sessionID: string
-  workspace: string
-  runId: string
-  goal: string
-  phase: Orchestration.Phase | "inactive"
-  workers: CoordinatorWorkerStatus[]
-  activeCount: number
-  queuedCount: number
-  outcome?: VerificationStatus["outcome"]
-  verificationState: VerificationStatus["state"]
-  configuredProfile?: VerificationProfile
-  effectiveProfile?: VerificationProfile
-  assuranceLevel?: VerificationProfile
-  failureKind?: string | null
-  failedCriterion?: string | null
-  missingEvidence: string[]
-  repairCount: number
-  maxSameFailureRepairs: number
-  evidenceCount: number
-  candidateCount: number
-  readyEligible: boolean
-  message?: string
-}
-
-export interface WorkerExecutionRequest {
-  rootSessionID: string
-  unit: Orchestration.WorkUnit
-  context: unknown
-  taskID?: string
-  repairPrompt?: string
-}
-
-export interface WorkerExecutionResult {
-  sessionID: string
-  output?: string
-}
-
-export type WorkerExecutor = (request: WorkerExecutionRequest) => Promise<WorkerExecutionResult>
-export interface IntegrationExecutionRequest {
-  rootSessionID: string
-  context: unknown
-  integrationPaths: string[]
-  integrationRequests: string[]
-  repairPrompt?: string
-}
-export type IntegrationExecutor = (request: IntegrationExecutionRequest) => Promise<void>
-export type StatusPublisher = (status: HarnessStatus) => void | Promise<void>
+import { CandidateService } from "./candidate-service"
+import type {
+  BeginRunInput,
+  CoordinatorService,
+  CoordinatorWorkerStatus,
+  HarnessStatus,
+  HostActionEvent,
+  IntegrationExecutor,
+  StatusPublisher,
+  VerificationTarget,
+  WorkerExecutor,
+  WorkerState,
+} from "./contracts"
+import { integrationRepairPrompt, workerRepairPrompt } from "./repair-router"
+import { RunRepository } from "./run-repository"
+import { dependenciesComplete, hasPendingWork, nextRunnable } from "./scheduler"
+import { inactiveVerification, nonRepairableFailure } from "./state-machine"
 
 type WorkerRecord = CoordinatorWorkerStatus & {
   unit: Orchestration.WorkUnit
@@ -110,39 +67,32 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 
 const stringValue = (value: unknown) => (typeof value === "string" ? value : undefined)
 
-const nonRepairableFailure = (kind: string | null | undefined) =>
-  kind === "model_provider_error" ||
-  kind === "model_protocol_error" ||
-  kind === "workspace_conflict" ||
-  kind === "verifier_error" ||
-  kind === "harness_error" ||
-  kind === "unknown_failure"
-
-const inactiveVerification = (runId: string, scopeId: string, maxSameFailureRepairs = 2): VerificationStatus => ({
-  state: "inactive",
-  goal: "",
-  runId,
-  scopeId,
-  rootScopeId: scopeId,
-  criterionResults: [],
-  claimResults: [],
-  evidenceFamilies: [],
-  evidenceRefs: [],
-  candidateRefs: [],
-  readyRef: null,
-  maxSameFailureRepairs,
-})
-
-export class CoordinatorRuntime {
-  private readonly runs = new Map<string, RunRecord>()
-  private readonly scopeRoots = new Map<string, string>()
+export class CoordinatorRuntime implements CoordinatorService {
+  private readonly repository: RunRepository<RunRecord>
+  private readonly candidates: CandidateService
   private executor?: WorkerExecutor
   private integrationExecutor?: IntegrationExecutor
   private readonly publishers = new Set<StatusPublisher>()
 
   constructor(
     private readonly verifierFactory: typeof createVerificationClient = createVerificationClient,
-  ) {}
+    options: { repository?: RunRepository<RunRecord>; candidates?: CandidateService } = {},
+  ) {
+    this.repository = options.repository ?? new RunRepository({ persistent: verifierFactory === createVerificationClient })
+    this.candidates = options.candidates ?? new CandidateService()
+  }
+
+  get orchestration() {
+    return this.candidates.api
+  }
+
+  private get runs() {
+    return this.repository.runs
+  }
+
+  private get scopeRoots() {
+    return this.repository.scopeRoots
+  }
 
   registerWorkerExecutor(executor: WorkerExecutor) {
     this.executor = executor
@@ -157,8 +107,25 @@ export class CoordinatorRuntime {
     return () => this.publishers.delete(publisher)
   }
 
+  beginRun(input: BeginRunInput) {
+    return this.openRun(input)
+  }
+
+  observe(event: HostActionEvent) {
+    return this.observeHostEvent(event.type, event.data)
+  }
+
+  submitWorkGraph(input: { sessionID: string; graph: Orchestration.WorkGraph; context: unknown }) {
+    return this.acceptWorkGraph(input.sessionID, input.graph, input.context)
+  }
+
+  verify(target: VerificationTarget) {
+    return this.verifyRoot(target.sessionID, target.reason ?? "manual")
+  }
+
   private runFor(sessionID: string) {
-    return this.runs.get(this.scopeRoots.get(sessionID) ?? sessionID)
+    this.candidates.activate()
+    return this.repository.get(sessionID)
   }
 
   private async disposeRun(run: RunRecord) {
@@ -167,10 +134,7 @@ export class CoordinatorRuntime {
     for (const resolve of run.settledWaiters) resolve()
     run.settledWaiters.clear()
     await run.verifier?.close().catch(() => undefined)
-    this.runs.delete(run.sessionID)
-    for (const [scopeId, rootId] of this.scopeRoots) {
-      if (rootId === run.sessionID) this.scopeRoots.delete(scopeId)
-    }
+    this.repository.delete(run)
   }
 
   private async ensureVerifier(run: RunRecord) {
@@ -204,17 +168,9 @@ export class CoordinatorRuntime {
     }
   }
 
-  async openRun(input: {
-    sessionID: string
-    workspace: string
-    goal: string
-    configuredProfile?: VerificationProfile
-    effectiveProfile?: VerificationProfile
-    maxSameFailureRepairs?: number
-    maxParallelWorkUnits?: number
-    trigger?: "auto" | "manual"
-    context?: unknown
-  }) {
+  async openRun(input: BeginRunInput) {
+    this.candidates.activate()
+    await this.repository.initialize()
     let existing = this.runs.get(input.sessionID)
     if (existing && existing.workspace !== input.workspace) {
       await this.disposeRun(existing)
@@ -252,8 +208,7 @@ export class CoordinatorRuntime {
       configuredProfile: profile,
       effectiveProfile: input.effectiveProfile ?? profile,
     }
-    this.runs.set(input.sessionID, run)
-    this.scopeRoots.set(input.sessionID, input.sessionID)
+    this.repository.set(run)
     await this.publish(run)
     return this.snapshot(run)
   }
@@ -304,7 +259,7 @@ export class CoordinatorRuntime {
   }
 
   private dependenciesComplete(run: RunRecord, worker: WorkerRecord) {
-    return worker.unit.dependsOn.every((id) => run.workers.get(id)?.state === "completed")
+    return dependenciesComplete(worker, run.workers)
   }
 
   private async drain(run: RunRecord) {
@@ -312,9 +267,7 @@ export class CoordinatorRuntime {
     run.draining = true
     try {
       while (run.active.size < run.maxParallel) {
-        const next = [...run.workers.values()].find(
-          (worker) => worker.state === "queued" && this.dependenciesComplete(run, worker),
-        )
+        const next = nextRunnable(run.workers)
         if (!next) break
         if (!this.executor || !run.context) {
           next.state = "failed"
@@ -377,12 +330,11 @@ export class CoordinatorRuntime {
     Orchestration.reopenScope(worker.scopeId)
     await run.verifier?.reopenScope(worker.scopeId)
     worker.state = "running"
-    const repairPrompt = [
-      "Repair only the rejected WorkUnit and its owned paths.",
-      "Failure fingerprint: " + (worker.failureFingerprint ?? "unknown"),
-      "Failed criterion: " + (run.verification.failedCriterion ?? "unknown"),
-      "Missing evidence: " + (run.verification.missingEvidence?.join("; ") || "none reported"),
-    ].join("\n")
+    const repairPrompt = workerRepairPrompt({
+      fingerprint: worker.failureFingerprint,
+      failedCriterion: run.verification.failedCriterion,
+      missingEvidence: run.verification.missingEvidence,
+    })
     try {
       await this.executor({
         rootSessionID: run.sessionID,
@@ -559,12 +511,13 @@ export class CoordinatorRuntime {
   }
 
   private pending(run: RunRecord) {
-    if (run.active.size > 0) return true
-    const workers = [...run.workers.values()]
-    if (workers.some((worker) => ["running", "candidate_ready", "verifying", "committing", "repairing"].includes(worker.state))) return true
-    if (run.integrationStarted && !run.integrationComplete && run.verification.outcome !== "blocked") return true
-    if (workers.length && workers.every((worker) => worker.state === "completed")) return !run.integrationComplete
-    return workers.some((worker) => worker.state === "queued" && this.dependenciesComplete(run, worker))
+    return hasPendingWork(
+      run.workers,
+      run.active.size,
+      run.integrationStarted,
+      run.integrationComplete,
+      run.verification.outcome,
+    )
   }
 
   private async waitForSettled(run: RunRecord) {
@@ -613,12 +566,11 @@ export class CoordinatorRuntime {
           context: run.context,
           integrationPaths: run.graph?.integrationPaths ?? [],
           integrationRequests: run.graph?.units.flatMap((unit) => unit.integrationRequests) ?? [],
-          repairPrompt: [
-            "Repair only the rejected root integration scope.",
-            `Failure fingerprint: ${run.verification.failureFingerprint ?? "unknown"}`,
-            `Failed criterion: ${run.verification.failedCriterion ?? "unknown"}`,
-            `Missing evidence: ${run.verification.missingEvidence?.join("; ") || "none reported"}`,
-          ].join("\n"),
+          repairPrompt: integrationRepairPrompt({
+            fingerprint: run.verification.failureFingerprint,
+            failedCriterion: run.verification.failedCriterion,
+            missingEvidence: run.verification.missingEvidence,
+          }),
         })
         run.integrationComplete = true
         await this.publish(run)
@@ -827,6 +779,7 @@ export class CoordinatorRuntime {
 
   private async publish(run: RunRecord) {
     const status = this.snapshot(run)
+    await this.repository.persist(status, run.interrupted)
     const waiters = [...run.settledWaiters]
     run.settledWaiters.clear()
     for (const resolve of waiters) resolve()
@@ -841,8 +794,8 @@ export class CoordinatorRuntime {
 
   resetForTest() {
     for (const run of this.runs.values()) void run.verifier?.close().catch(() => undefined)
-    this.runs.clear()
-    this.scopeRoots.clear()
+    this.repository.reset()
+    this.candidates.reset()
     this.executor = undefined
     this.integrationExecutor = undefined
     this.publishers.clear()
@@ -850,5 +803,9 @@ export class CoordinatorRuntime {
 }
 
 export const Coordinator = new CoordinatorRuntime()
+
+export * from "./contracts"
+export { RunRepository } from "./run-repository"
+export { CandidateService } from "./candidate-service"
 
 export type { GoalContractProposal, VerificationStatus }

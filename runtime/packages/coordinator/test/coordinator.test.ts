@@ -85,14 +85,13 @@ test("Coordinator queues a third unit while running at most two and commits only
   roots.push(workspace)
   for (const name of ["a.txt", "b.txt", "c.txt"]) await writeFile(join(workspace, name), "before", "utf8")
 
-  Orchestration.beginPrompt({
+  const runtime = new CoordinatorRuntime(async (input) => new FakeVerifier(input) as unknown as ProcessVerificationClient)
+  runtime.orchestration.beginPrompt({
     sessionID: "root",
     workspace,
     goal: "Implement three independent modules in parallel",
   })
-  Orchestration.registerContract("root", ["claim-a", "claim-b", "claim-c"], ["criterion-a", "criterion-b", "criterion-c"])
-
-  const runtime = new CoordinatorRuntime(async (input) => new FakeVerifier(input) as unknown as ProcessVerificationClient)
+  runtime.orchestration.registerContract("root", ["claim-a", "claim-b", "claim-c"], ["criterion-a", "criterion-b", "criterion-c"])
   await runtime.openRun({ sessionID: "root", workspace, goal: "Implement three independent modules", configuredProfile: "fast" })
   let active = 0
   let maximum = 0
@@ -100,13 +99,13 @@ test("Coordinator queues a third unit while running at most two and commits only
     active += 1
     maximum = Math.max(maximum, active)
     const sessionID = "worker-" + unit.id
-    Orchestration.startChild({
+    runtime.orchestration.startChild({
       parentSessionID: rootSessionID,
       sessionID,
       subagentType: unit.agentType ?? "general",
       workUnitId: unit.id,
     })
-    const target = await Orchestration.resolveWrite(sessionID, workspace, unit.writeSet[0]!)
+    const target = await runtime.orchestration.resolveWrite(sessionID, workspace, unit.writeSet[0]!)
     await Bun.sleep(20)
     await writeFile(target.physicalPath, unit.id, "utf8")
     await runtime.finishWorker(sessionID, true)

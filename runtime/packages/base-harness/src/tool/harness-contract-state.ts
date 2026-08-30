@@ -1,5 +1,4 @@
-import * as Orchestration from "@base-harness/core/orchestration"
-import { Coordinator, type GoalContractProposal } from "@base-harness/coordinator"
+import { Coordinator, Orchestration, type GoalContractProposal } from "../harness/coordinator-service"
 
 export interface HarnessContractProposal {
   goal: string

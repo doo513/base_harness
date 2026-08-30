@@ -18,7 +18,7 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@base-harness/core/fs-util"
 import * as Bom from "@/util/bom"
-import * as Orchestration from "@base-harness/core/orchestration"
+import { Orchestration } from "../harness/coordinator-service"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")

@@ -9,7 +9,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
-import * as Orchestration from "@base-harness/core/orchestration"
+import { Orchestration } from "../harness/coordinator-service"
 import { consumeExplorationBudget } from "./exploration-budget"
 
 const DEFAULT_READ_LIMIT = 2000

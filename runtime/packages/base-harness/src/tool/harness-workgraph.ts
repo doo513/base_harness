@@ -1,7 +1,6 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
-import * as Orchestration from "@base-harness/core/orchestration"
-import { Coordinator } from "@base-harness/coordinator"
+import { Coordinator, type WorkGraph } from "../harness/coordinator-service"
 
 const StringList = Schema.mutable(Schema.Array(Schema.String))
 const WorkUnit = Schema.Struct({
@@ -32,7 +31,7 @@ export const HarnessWorkGraphTool = Tool.define(
     parameters: Parameters,
     execute: (params: Input, ctx: Tool.Context) =>
       Effect.promise(async () => {
-        const graph: Orchestration.WorkGraph = {
+        const graph: WorkGraph = {
           units: params.units.map((unit) => ({
             ...unit,
             claimIds: [...unit.claimIds],

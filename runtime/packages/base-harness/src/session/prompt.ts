@@ -99,8 +99,7 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   return part.state.status === "error" && part.state.metadata?.interrupted === true
 }
 
-import * as Orchestration from "@base-harness/core/orchestration"
-import { Coordinator } from "@base-harness/coordinator"
+import { Coordinator, Orchestration } from "../harness/coordinator-service"
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>

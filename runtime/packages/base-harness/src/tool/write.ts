@@ -14,7 +14,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
-import * as Orchestration from "@base-harness/core/orchestration"
+import { Orchestration } from "../harness/coordinator-service"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 

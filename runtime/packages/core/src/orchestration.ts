@@ -152,9 +152,38 @@ type RootState = {
   stateDirectory: string
 }
 
-const roots = new Map<string, RootState>()
-const scopes = new Map<string, ScopeState>()
-const candidates = new Map<string, CandidateState>()
+export class WorkspaceCandidateStore {
+  readonly roots = new Map<string, RootState>()
+  readonly scopes = new Map<string, ScopeState>()
+  readonly candidates = new Map<string, CandidateState>()
+
+  clear() {
+    this.roots.clear()
+    this.scopes.clear()
+    this.candidates.clear()
+  }
+}
+
+let activeStore: WorkspaceCandidateStore | undefined
+
+export function bindWorkspaceCandidateStore(store: WorkspaceCandidateStore) {
+  activeStore = store
+  return store
+}
+
+const currentStore = () => (activeStore ??= new WorkspaceCandidateStore())
+const delegatedMap = <K, V>(select: (store: WorkspaceCandidateStore) => Map<K, V>) =>
+  new Proxy(new Map<K, V>(), {
+    get(_target, property) {
+      const target = select(currentStore())
+      const value = Reflect.get(target, property, target)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+
+const roots = delegatedMap<string, RootState>((store) => store.roots)
+const scopes = delegatedMap<string, ScopeState>((store) => store.scopes)
+const candidates = delegatedMap<string, CandidateState>((store) => store.candidates)
 const readOnlyTools = new Set([
   "harness_contract",
   "harness_workgraph",
