@@ -62,6 +62,8 @@ type RunRecord = {
   rootVerification?: Promise<HarnessStatus>
   configuredProfile: VerificationProfile
   effectiveProfile: VerificationProfile
+  isolation?: import("./contracts").IsolationStatus
+  sandboxRuns: number
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -221,6 +223,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       settledWaiters: new Set(),
       configuredProfile: profile,
       effectiveProfile: input.effectiveProfile ?? profile,
+      sandboxRuns: 0,
     }
     this.repository.set(run)
     await this.publish(run)
@@ -559,7 +562,7 @@ export class CoordinatorRuntime implements CoordinatorService {
           claimIds,
           tool: "session.completion",
           status: "completed",
-          metadata: { coordinator: true },
+          metadata: { coordinator: true, isolation: run.isolation },
         })
         run.verification = await run.verifier!.verify(reason, run.sessionID)
         if (run.verification.outcome !== "repair") break
@@ -657,14 +660,17 @@ export class CoordinatorRuntime implements CoordinatorService {
           run.openedScopes.add(sessionID)
         }
         const rawError = state?.error
+        const rawFailure = record(rawError)
+        const sandboxCode = stringValue(rawFailure?.code)
+        const sandboxFailure = sandboxCode?.startsWith("SANDBOX_") || rawFailure?.name === "SandboxError"
         const failure = status === "error"
           ? createFailureEnvelope({
               runId: run.runId,
               scopeId: sessionID,
               actionId: stringValue(part.id),
-              source: "tool",
-              producer: "tool_host",
-              phase: "tool.execute",
+              source: sandboxFailure ? "harness" : "tool",
+              producer: sandboxFailure ? "orchestrator" : "tool_host",
+              phase: sandboxFailure ? "sandbox.execute" : "tool.execute",
               error: rawError,
             })
           : undefined
@@ -752,6 +758,15 @@ export class CoordinatorRuntime implements CoordinatorService {
     await Promise.all(matches.map((run) => this.disposeRun(run)))
   }
 
+  async recordIsolation(sessionID: string, isolation: import("./contracts").IsolationStatus) {
+    const run = this.runFor(sessionID)
+    if (!run) return this.snapshotOrInactive(sessionID)
+    run.isolation = isolation
+    run.sandboxRuns += 1
+    await this.publish(run)
+    return this.snapshot(run)
+  }
+
   status(sessionID: string) {
     const run = this.runFor(sessionID)
     return run ? this.snapshot(run) : this.snapshotOrInactive(sessionID)
@@ -774,7 +789,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       evidenceCount: 0,
       candidateCount: 0,
       readyEligible: false,
-      metrics: { observedActions: 0, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0 },
+      metrics: { observedActions: 0, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0, sandboxRuns: 0 },
     }
   }
 
@@ -803,12 +818,14 @@ export class CoordinatorRuntime implements CoordinatorService {
       candidateCount: run.verification.candidateRefs.length,
       readyEligible: run.verification.readyEligible === true,
       message: run.verification.message,
+      isolation: run.isolation,
       metrics: {
         observedActions: run.observedActions.size,
         workers: run.workers.size,
         activeWorkers: run.active.size,
         repairs: run.verification.repairCount ?? 0,
         evidence: run.verification.evidenceRefs.length,
+        sandboxRuns: run.sandboxRuns,
       },
     }
   }

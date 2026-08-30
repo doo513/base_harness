@@ -94,6 +94,7 @@ export class RunRepository<T extends RepositoryRun> {
       activeCount: status.activeCount,
       queuedCount: status.queuedCount,
       metrics: status.metrics,
+      isolation: status.isolation ?? null,
       interrupted,
       updatedAt: new Date().toISOString(),
     }

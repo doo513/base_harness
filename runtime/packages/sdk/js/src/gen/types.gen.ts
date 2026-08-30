@@ -1230,6 +1230,15 @@ export type Config = {
     exploration?: "adaptive" | "always" | "manual"
     maxParallelWorkUnits?: number
   }
+  isolation?: {
+    strictBackend?: "auto" | "wsl2" | "namespace"
+    wslDistro?: string
+    timeoutMs?: number
+    memoryMiB?: number
+    maxProcesses?: number
+    maxOutputBytes?: number
+    maxInputBytes?: number
+  }
   /**
    * Command configuration, see https://base-harness.local/docs/commands
    */

@@ -54,7 +54,24 @@ export interface HarnessStatus {
     activeWorkers: number
     repairs: number
     evidence: number
+    sandboxRuns: number
   }
+  isolation?: IsolationStatus
+}
+
+export interface IsolationStatus {
+  backend: "wsl2" | "namespace" | "native"
+  containment: string
+  network: "loopback_only" | "host"
+  state: "running" | "completed" | "failed"
+  code?: string
+  distro?: string
+  kernel?: string
+  timeoutMs?: number
+  memoryMiB?: number
+  maxProcesses?: number
+  maxOutputBytes?: number
+  inputBytes?: number
 }
 
 export interface BeginRunInput {

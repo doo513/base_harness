@@ -47,6 +47,16 @@ export const Orchestration = Schema.Struct({
   maxParallelWorkUnits: Schema.optional(PositiveInt),
 })
 
+export const Isolation = Schema.Struct({
+  strictBackend: Schema.optional(Schema.Literals(["auto", "wsl2", "namespace"])),
+  wslDistro: Schema.optional(Schema.String),
+  timeoutMs: Schema.optional(PositiveInt),
+  memoryMiB: Schema.optional(PositiveInt),
+  maxProcesses: Schema.optional(PositiveInt),
+  maxOutputBytes: Schema.optional(PositiveInt),
+  maxInputBytes: Schema.optional(PositiveInt),
+})
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -56,6 +66,9 @@ export const Info = Schema.Struct({
   }),
   orchestration: Schema.optional(Orchestration).annotate({
     description: "Adaptive exploration, bounded WorkUnit execution, and targeted repair policy",
+  }),
+  isolation: Schema.optional(Isolation).annotate({
+    description: "Strict WSL2 or Linux namespace execution isolation policy",
   }),
   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),

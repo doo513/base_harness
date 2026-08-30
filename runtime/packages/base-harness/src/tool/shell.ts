@@ -21,6 +21,8 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { SandboxError, StrictSandbox } from "@base-harness/core/sandbox"
+import { Coordinator } from "../harness/coordinator-service"
 
 export { Parameters } from "./shell/prompt"
 
@@ -627,6 +629,47 @@ export const ShellTool = Tool.define(
                   yield* ask(ctx, scan, params)
                 }),
               )
+
+              const effectiveProfile = Coordinator.status(ctx.sessionID).effectiveProfile ?? cfg.verification?.profile ?? "adaptive"
+              if (effectiveProfile === "strict") {
+                const env = yield* shellEnv(ctx, cwd)
+                return yield* Effect.promise(async () => {
+                  try {
+                    await Coordinator.recordIsolation(ctx.sessionID, {
+                      backend: process.platform === "win32" ? "wsl2" : "namespace",
+                      containment: "user_mount_pid_net_namespace",
+                      network: "loopback_only",
+                      state: "running",
+                    })
+                    const result = await StrictSandbox.run({
+                      command: params.command,
+                      workspace: instanceCtx.directory,
+                      cwd,
+                      config: cfg.isolation,
+                      signal: ctx.abort,
+                    })
+                    await Coordinator.recordIsolation(ctx.sessionID, result.provenance)
+                    const combined = result.stdout + result.stderr
+                    const output = combined || "(no output)"
+                    await ctx.metadata({ metadata: { output: preview(output), exit: result.exitCode, sandbox: result.provenance } })
+                    return {
+                      title: params.command,
+                      metadata: { output: preview(output), exit: result.exitCode, truncated: false, sandbox: result.provenance },
+                      output: `${output}\n\n<sandbox_metadata>\nbackend=${result.provenance.backend}\nnetwork=${result.provenance.network}\n</sandbox_metadata>`,
+                    }
+                  } catch (error) {
+                    const sandbox = error instanceof SandboxError ? error : undefined
+                    await Coordinator.recordIsolation(ctx.sessionID, {
+                      backend: process.platform === "win32" ? "wsl2" : "namespace",
+                      containment: "user_mount_pid_net_namespace",
+                      network: "loopback_only",
+                      state: "failed",
+                      code: sandbox?.code ?? "SANDBOX_UNAVAILABLE",
+                    })
+                    throw error
+                  }
+                })
+              }
 
               return yield* run(
                 {

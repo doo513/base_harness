@@ -40,6 +40,15 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     exploration: Schema.Literals(["adaptive", "always", "manual"]).pipe(Schema.optional),
     maxParallelWorkUnits: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
   }).pipe(Schema.optional),
+  isolation: Schema.Struct({
+    strictBackend: Schema.Literals(["auto", "wsl2", "namespace"]).pipe(Schema.optional),
+    wslDistro: Schema.String.pipe(Schema.optional),
+    timeoutMs: Schema.Int.check(Schema.isGreaterThan(0)).pipe(Schema.optional),
+    memoryMiB: Schema.Int.check(Schema.isGreaterThan(0)).pipe(Schema.optional),
+    maxProcesses: Schema.Int.check(Schema.isGreaterThan(0)).pipe(Schema.optional),
+    maxOutputBytes: Schema.Int.check(Schema.isGreaterThan(0)).pipe(Schema.optional),
+    maxInputBytes: Schema.Int.check(Schema.isGreaterThan(0)).pipe(Schema.optional),
+  }).pipe(Schema.optional),
   shell: Schema.String.pipe(Schema.optional).annotate({
     description: "Default shell to use for terminal and shell tool execution",
   }),
