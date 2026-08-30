@@ -12,12 +12,14 @@ import {
   type VerificationClient,
   type VerificationStatus,
 } from "./types"
+import { isTrustedFailureEnvelope } from "./failure"
 
-interface ClientOptions {
+export interface ClientOptions {
   command?: string[]
   cwd?: string
   env?: Record<string, string | undefined>
   timeoutMs?: number
+  redactor?: (value: unknown) => unknown
 }
 
 interface PendingRequest {
@@ -102,6 +104,7 @@ export class ProcessVerificationClient implements VerificationClient {
   private readonly pending = new Map<string, PendingRequest>()
   private readonly listeners = new Set<(status: VerificationStatus) => void>()
   private readonly timeoutMs: number
+  private readonly redactor: (value: unknown) => unknown
   private current: VerificationStatus
   private sequence = 0
   private disposed = false
@@ -110,6 +113,7 @@ export class ProcessVerificationClient implements VerificationClient {
     this.runId = runId
     this.rootScopeId = rootScopeId
     this.timeoutMs = options.timeoutMs ?? 30_000
+    this.redactor = options.redactor ?? ((value) => value)
     this.current = inactiveStatus(runId, rootScopeId)
     const pythonPath = resolve(import.meta.dir, "../../../../src")
     const existingPythonPath = process.env.PYTHONPATH
@@ -236,6 +240,12 @@ export class ProcessVerificationClient implements VerificationClient {
   }
 
   async observe(input: ObserveActionInput): Promise<VerificationStatus> {
+    if (input.status === "error" && !isTrustedFailureEnvelope(input.error)) {
+      throw new VerificationClientError(
+        "harness_untrusted_failure",
+        "Only a host-produced FailureEnvelope may be submitted as an execution failure.",
+      )
+    }
     const opened = await this.openAction(input)
     return this.closeAction({
       scopeId: input.scopeId,
@@ -316,7 +326,7 @@ export class ProcessVerificationClient implements VerificationClient {
       runId: this.runId,
       scopeId,
       type,
-      payload,
+      payload: this.redactor(payload) as Record<string, unknown>,
     }
     return new Promise<T>((resolveRequest, reject) => {
       const timer = setTimeout(() => {

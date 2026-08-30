@@ -106,7 +106,52 @@ export class SecretRegistry {
   }
 }
 
-export const GlobalSecretRegistry = new SecretRegistry()
-GlobalSecretRegistry.registerEnvironment()
+export class SecretRegistryHub {
+  readonly processRegistry = new SecretRegistry()
+  private readonly runs = new Map<string, SecretRegistry>()
+
+  constructor(environment: NodeJS.ProcessEnv = process.env) {
+    this.processRegistry.registerEnvironment(environment)
+  }
+
+  register(value: unknown, source = "credential") {
+    this.processRegistry.register(value, source)
+    for (const registry of this.runs.values()) registry.register(value, source)
+  }
+
+  openRun(runId: string) {
+    const existing = this.runs.get(runId)
+    if (existing) return existing
+    const registry = this.processRegistry.snapshot()
+    this.runs.set(runId, registry)
+    return registry
+  }
+
+  forRun(runId: string) {
+    return this.runs.get(runId) ?? this.openRun(runId)
+  }
+
+  redact(runId: string, value: unknown) {
+    return this.forRun(runId).redact(value)
+  }
+
+  findings(runId: string, value: unknown) {
+    return this.forRun(runId).findings(value)
+  }
+
+  closeRun(runId: string) {
+    this.runs.get(runId)?.clear()
+    this.runs.delete(runId)
+  }
+
+  clear() {
+    for (const registry of this.runs.values()) registry.clear()
+    this.runs.clear()
+    this.processRegistry.clear()
+  }
+}
+
+export const GlobalSecretRegistryHub = new SecretRegistryHub()
+export const GlobalSecretRegistry = GlobalSecretRegistryHub.processRegistry
 
 export const SecretRedaction = { REDACTED, SENSITIVE_KEY }

@@ -6,7 +6,7 @@ import { Credential } from "@base-harness/schema/credential"
 import { Integration } from "@base-harness/schema/integration"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
-import { GlobalSecretRegistry } from "./secret-registry"
+import { GlobalSecretRegistryHub } from "./secret-registry"
 import { CredentialTable } from "./credential/sql"
 
 export const ID = Credential.ID
@@ -62,7 +62,7 @@ const layer = Layer.effect(
         label: row.label,
         value: decode(row.value),
       })
-      GlobalSecretRegistry.register(credential.value, `credential:${credential.id}`)
+      GlobalSecretRegistryHub.register(credential.value, `credential:${credential.id}`)
       return credential
     }
 
@@ -95,7 +95,7 @@ const layer = Layer.effect(
         return row ? stored(row) : undefined
       }),
       create: Effect.fn("Credential.create")(function* (input) {
-        GlobalSecretRegistry.register(input.value, `credential:${input.integrationID}`)
+        GlobalSecretRegistryHub.register(input.value, `credential:${input.integrationID}`)
         const credential = new Info({
           id: ID.create(),
           integrationID: input.integrationID,
@@ -125,7 +125,7 @@ const layer = Layer.effect(
       }),
       update: Effect.fn("Credential.update")(function* (id, updates) {
         if (!updates.label && !updates.value) return
-        if (updates.value) GlobalSecretRegistry.register(updates.value, `credential:${id}`)
+        if (updates.value) GlobalSecretRegistryHub.register(updates.value, `credential:${id}`)
         yield* db
           .update(CredentialTable)
           .set({ label: updates.label, value: updates.value })

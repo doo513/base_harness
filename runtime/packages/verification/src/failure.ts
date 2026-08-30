@@ -35,6 +35,9 @@ export interface FailureEnvelope {
   details?: unknown
 }
 
+const TRUSTED_FAILURE: unique symbol = Symbol("base-harness.trusted-failure")
+export type TrustedFailureEnvelope = FailureEnvelope & { readonly [TRUSTED_FAILURE]: true }
+
 type RecordValue = Record<string, unknown>
 const record = (value: unknown): RecordValue | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as RecordValue) : undefined
@@ -109,7 +112,7 @@ export function createFailureEnvelope(input: {
   producer: FailureProducer
   phase: string
   error: unknown
-}): FailureEnvelope {
+}): TrustedFailureEnvelope {
   const info = typed(input.error)
   const message = render(input.error)
   const lower = message.toLowerCase()
@@ -164,7 +167,7 @@ export function createFailureEnvelope(input: {
     retryable = /rate.?limit|temporar|overload/.test(lower)
   }
 
-  return {
+  const envelope: FailureEnvelope = {
     version: 1,
     id: randomUUID(),
     runId: input.runId,
@@ -184,6 +187,7 @@ export function createFailureEnvelope(input: {
     message,
     details: input.error,
   }
+  return Object.defineProperty(envelope, TRUSTED_FAILURE, { value: true }) as TrustedFailureEnvelope
 }
 
 export function failureFingerprint(envelope: FailureEnvelope, criterion = "", repairTarget = "") {
@@ -214,6 +218,10 @@ export function isFailureEnvelope(value: unknown): value is FailureEnvelope {
     typeof item.producer === "string" &&
     typeof item.phase === "string"
   )
+}
+
+export function isTrustedFailureEnvelope(value: unknown): value is TrustedFailureEnvelope {
+  return isFailureEnvelope(value) && (value as TrustedFailureEnvelope)[TRUSTED_FAILURE] === true
 }
 
 export const classifyRuntimeFailure = (value: unknown): FailureKind =>

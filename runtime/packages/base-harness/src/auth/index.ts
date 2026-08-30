@@ -4,7 +4,7 @@ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@base-harness/core/schema"
 import { Global } from "@base-harness/core/global"
 import { FSUtil } from "@base-harness/core/fs-util"
-import { GlobalSecretRegistry } from "@base-harness/core/secret-registry"
+import { GlobalSecretRegistryHub } from "@base-harness/core/secret-registry"
 
 export const OAUTH_DUMMY_KEY = "opencode-oauth-dummy-key"
 
@@ -37,9 +37,9 @@ export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminat
 export type Info = Schema.Schema.Type<typeof Info>
 
 const register = (providerID: string, info: Info) => {
-  if (info.type === "oauth") GlobalSecretRegistry.register([info.access, info.refresh], `auth:${providerID}`)
-  if (info.type === "api") GlobalSecretRegistry.register(info.key, `auth:${providerID}`)
-  if (info.type === "wellknown") GlobalSecretRegistry.register([info.key, info.token], `auth:${providerID}`)
+  if (info.type === "oauth") GlobalSecretRegistryHub.register([info.access, info.refresh], `auth:${providerID}`)
+  if (info.type === "api") GlobalSecretRegistryHub.register(info.key, `auth:${providerID}`)
+  if (info.type === "wellknown") GlobalSecretRegistryHub.register([info.key, info.token], `auth:${providerID}`)
 }
 
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {

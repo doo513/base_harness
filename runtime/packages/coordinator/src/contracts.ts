@@ -48,6 +48,13 @@ export interface HarnessStatus {
   candidateCount: number
   readyEligible: boolean
   message?: string
+  metrics: {
+    observedActions: number
+    workers: number
+    activeWorkers: number
+    repairs: number
+    evidence: number
+  }
 }
 
 export interface BeginRunInput {

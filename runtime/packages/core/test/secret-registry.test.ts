@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { SecretRegistry } from "../src/secret-registry"
+import { SecretRegistry, SecretRegistryHub } from "../src/secret-registry"
 
 test("registered values and common encodings are redacted independent of field names", () => {
   const registry = new SecretRegistry()
@@ -25,4 +25,16 @@ test("short secrets only redact exact scalars or sensitive fields", () => {
   expect(registry.redact("a tiny example")).toBe("a tiny example")
   expect(registry.redact("tiny")).toBe("[REDACTED]")
   expect(registry.redact({ 비밀키: "tiny" })).toEqual({ 비밀키: "[REDACTED]" })
+})
+
+test("run registries receive credentials loaded after the run opens", () => {
+  const hub = new SecretRegistryHub({})
+  hub.openRun("run-1")
+  hub.register("late-provider-secret-123456", "provider:late")
+
+  expect(hub.redact("run-1", { arbitrary: "late-provider-secret-123456" })).toEqual({
+    arbitrary: "[REDACTED]",
+  })
+  expect(hub.findings("run-1", { arbitrary: "late-provider-secret-123456" })).toHaveLength(1)
+  hub.closeRun("run-1")
 })

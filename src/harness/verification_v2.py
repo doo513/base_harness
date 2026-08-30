@@ -18,6 +18,8 @@ from typing import Any
 PROTOCOL_VERSION = 4
 DEFAULT_MAX_SAME_FAILURE_REPAIRS = 2
 MAX_CAPTURE_CHARS = 32_000
+MAX_ARTIFACT_BYTES = 10 * 1024 * 1024
+MAX_RUN_ARTIFACT_BYTES = 100 * 1024 * 1024
 STRENGTH = {"structural": 1, "execution": 2, "behavioral": 3, "external_oracle": 4}
 RISKS = {"low", "medium", "high", "critical"}
 CLAIM_KINDS = {"artifact", "execution", "behavior", "configuration", "negative", "external"}
@@ -274,6 +276,7 @@ class RunState:
     status: str = "open"
     event_hash: str = "0" * 64
     event_sequence: int = 0
+    artifact_bytes: int = 0
 
 
 class EvidenceMemory:
@@ -491,10 +494,16 @@ class VerificationEngine:
             "createdAt": utc_now(),
             "payload": redact(payload),
         }
-        digest = canonical_hash(body)
+        encoded = canonical_bytes(body)
+        if len(encoded) > MAX_ARTIFACT_BYTES:
+            raise ProtocolError("verification artifact exceeds the 10 MiB item limit")
+        digest = hashlib.sha256(encoded).hexdigest()
         path = run.run_dir / "artifacts" / digest[:2] / (digest + ".json")
         if not path.exists():
+            if run.artifact_bytes + len(encoded) > MAX_RUN_ARTIFACT_BYTES:
+                raise ProtocolError("verification artifacts exceed the 100 MiB run limit")
             atomic_json(path, body)
+            run.artifact_bytes += len(encoded)
         return {
             "artifactType": kind,
             "sha256": digest,

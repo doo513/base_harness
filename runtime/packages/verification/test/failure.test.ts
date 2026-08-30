@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createFailureEnvelope, failureFingerprint } from "../src/failure"
+import { createFailureEnvelope, failureFingerprint, isTrustedFailureEnvelope } from "../src/failure"
 
 const input = {
   runId: "run-1",
@@ -8,6 +8,17 @@ const input = {
   producer: "model_gateway" as const,
   phase: "model.generate",
 }
+
+test("only the host-created envelope carries the non-serializable trust brand", () => {
+  const envelope = createFailureEnvelope({
+    ...input,
+    error: { reason: { _tag: "RateLimitError", status: 429 }, message: "limited" },
+  })
+
+  expect(isTrustedFailureEnvelope(envelope)).toBe(true)
+  expect(isTrustedFailureEnvelope({ ...envelope })).toBe(false)
+  expect(JSON.stringify(envelope)).not.toContain("trusted-failure")
+})
 
 test("typed provider tag classifies Korean messages independently of wording", () => {
   const first = createFailureEnvelope({

@@ -49,9 +49,7 @@ const layer = Layer.effect(
 
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
-        yield* Effect.sync(() => {
-          void Coordinator.observeHostEvent(event.type, event.data)
-        })
+        yield* Effect.promise(() => Coordinator.observeHostEvent(event.type, event.data))
         const ctx = yield* InstanceRef
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
         GlobalBus.emit("event", {

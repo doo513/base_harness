@@ -24,6 +24,7 @@ import type {
   WorkerState,
 } from "./contracts"
 import { integrationRepairPrompt, workerRepairPrompt } from "./repair-router"
+import { PersistenceGateway } from "./persistence-gateway"
 import { RunRepository } from "./run-repository"
 import { dependenciesComplete, hasPendingWork, nextRunnable } from "./scheduler"
 import { inactiveVerification, nonRepairableFailure } from "./state-machine"
@@ -49,6 +50,7 @@ type RunRecord = {
   observedActions: Set<string>
   pendingHostEvents: Array<{ type: string; data: unknown }>
   hostEvents: Promise<void>
+  hostEventDepth: number
   maxParallel: number
   interrupted: boolean
   trigger: "auto" | "manual"
@@ -70,16 +72,22 @@ const stringValue = (value: unknown) => (typeof value === "string" ? value : und
 export class CoordinatorRuntime implements CoordinatorService {
   private readonly repository: RunRepository<RunRecord>
   private readonly candidates: CandidateService
+  private readonly persistence: PersistenceGateway
   private executor?: WorkerExecutor
   private integrationExecutor?: IntegrationExecutor
   private readonly publishers = new Set<StatusPublisher>()
 
   constructor(
     private readonly verifierFactory: typeof createVerificationClient = createVerificationClient,
-    options: { repository?: RunRepository<RunRecord>; candidates?: CandidateService } = {},
+    options: {
+      repository?: RunRepository<RunRecord>
+      candidates?: CandidateService
+      persistence?: PersistenceGateway
+    } = {},
   ) {
     this.repository = options.repository ?? new RunRepository({ persistent: verifierFactory === createVerificationClient })
     this.candidates = options.candidates ?? new CandidateService()
+    this.persistence = options.persistence ?? new PersistenceGateway()
   }
 
   get orchestration() {
@@ -134,21 +142,25 @@ export class CoordinatorRuntime implements CoordinatorService {
     for (const resolve of run.settledWaiters) resolve()
     run.settledWaiters.clear()
     await run.verifier?.close().catch(() => undefined)
+    this.persistence.closeRun(run.runId)
     this.repository.delete(run)
   }
 
   private async ensureVerifier(run: RunRecord) {
     if (run.verifier || run.verifierFailure) return run.verifier
     try {
-      run.verifier = await this.verifierFactory({
-        runId: run.runId,
-        scopeId: run.sessionID,
-        workspace: run.workspace,
-        goalSources: [run.source],
-        goalContract: run.configuredProfile === "fast" ? createGoalContract(run.source, { risk: "low" }) : undefined,
-        configuredProfile: run.configuredProfile,
-        effectiveProfile: run.effectiveProfile,
-      })
+      run.verifier = await this.verifierFactory(
+        {
+          runId: run.runId,
+          scopeId: run.sessionID,
+          workspace: run.workspace,
+          goalSources: [run.source],
+          goalContract: run.configuredProfile === "fast" ? createGoalContract(run.source, { risk: "low" }) : undefined,
+          configuredProfile: run.configuredProfile,
+          effectiveProfile: run.effectiveProfile,
+        },
+        { redactor: (value) => this.persistence.redact(run.runId, value) },
+      )
       run.verification = run.verifier.snapshot()
       run.verifier.subscribe((status) => {
         run.verification = status
@@ -181,6 +193,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       return this.snapshot(existing)
     }
     const runId = "run-" + input.sessionID
+    this.persistence.openRun(runId)
     const source = goalSource(input.goal, "session-" + input.sessionID, "user_message")
     const profile = input.configuredProfile ?? "adaptive"
     const run: RunRecord = {
@@ -197,6 +210,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       observedActions: new Set(),
       pendingHostEvents: [],
       hostEvents: Promise.resolve(),
+      hostEventDepth: 0,
       maxParallel: Math.max(1, Math.min(2, input.maxParallelWorkUnits ?? 2)),
       interrupted: false,
       trigger: input.trigger ?? "auto",
@@ -229,6 +243,7 @@ export class CoordinatorRuntime implements CoordinatorService {
   async acceptWorkGraph(sessionID: string, graph: Orchestration.WorkGraph, context: unknown) {
     const run = this.runFor(sessionID)
     if (!run) throw new Error("Coordinator run is not open")
+    if (graph.units.length > 64) throw new Error("WorkGraph exceeds the maximum of 64 WorkUnits")
     await Orchestration.acceptWorkGraph(run.sessionID, graph)
     run.context = context
     run.graph = graph
@@ -600,12 +615,24 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (!run || run.interrupted) return
     if (!run.contractAccepted) {
       if (type === "session.error" || (type === "message.part.updated" && part?.type === "tool")) {
-        if (run.pendingHostEvents.length < 100) run.pendingHostEvents.push({ type, data })
+        if (run.pendingHostEvents.length < 2048) run.pendingHostEvents.push({ type, data })
       }
       return
     }
     await this.ensureVerifier(run)
     if (!run.verifier) return
+    if (run.hostEventDepth >= 2048) {
+      run.verification = {
+        ...run.verification,
+        state: "failure",
+        outcome: "failure",
+        failureKind: "harness_error",
+        message: "Coordinator host event queue exceeded 2048 pending events.",
+      }
+      await this.publish(run)
+      return
+    }
+    run.hostEventDepth += 1
     const previous = run.hostEvents
     let release!: () => void
     run.hostEvents = new Promise<void>((resolve) => {
@@ -705,6 +732,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       }
       await this.publish(run)
     } finally {
+      run.hostEventDepth -= 1
       release()
     }
   }
@@ -746,6 +774,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       evidenceCount: 0,
       candidateCount: 0,
       readyEligible: false,
+      metrics: { observedActions: 0, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0 },
     }
   }
 
@@ -774,11 +803,18 @@ export class CoordinatorRuntime implements CoordinatorService {
       candidateCount: run.verification.candidateRefs.length,
       readyEligible: run.verification.readyEligible === true,
       message: run.verification.message,
+      metrics: {
+        observedActions: run.observedActions.size,
+        workers: run.workers.size,
+        activeWorkers: run.active.size,
+        repairs: run.verification.repairCount ?? 0,
+        evidence: run.verification.evidenceRefs.length,
+      },
     }
   }
 
   private async publish(run: RunRecord) {
-    const status = this.snapshot(run)
+    const status = this.persistence.redact(run.runId, this.snapshot(run))
     await this.repository.persist(status, run.interrupted)
     const waiters = [...run.settledWaiters]
     run.settledWaiters.clear()
