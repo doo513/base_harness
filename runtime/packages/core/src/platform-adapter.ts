@@ -1,5 +1,7 @@
 export type ProcessContainment = "job_object" | "tree_kill" | "process_group"
 
+export const WINDOWS_JOB_OBJECT_ENV = "BASE_HARNESS_INTERNAL_WINDOWS_JOB_OBJECT"
+
 export interface WindowsJobHandle {
   readonly containment: "job_object"
   close(): void

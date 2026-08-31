@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -39,6 +39,18 @@ test("workspace validation enforces input limits and Windows path policy", async
       code: "SANDBOX_ESCAPE_ATTEMPT",
     })
   }
+})
+
+test("workspace validation rejects links that resolve outside the declared root", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "base-harness-sandbox-link-root-"))
+  const outside = await mkdtemp(join(tmpdir(), "base-harness-sandbox-link-outside-"))
+  roots.push(workspace, outside)
+  await writeFile(join(outside, "outside.txt"), "outside", "utf8")
+  await symlink(outside, join(workspace, "escape"), process.platform === "win32" ? "junction" : "dir")
+
+  await expect(validateSandboxWorkspace(workspace, 1024 * 1024)).rejects.toMatchObject({
+    code: "SANDBOX_ESCAPE_ATTEMPT",
+  })
 })
 
 test.skipIf(process.platform !== "win32")(
@@ -88,3 +100,35 @@ test.skipIf(process.platform !== "win32")("missing WSL distro fails closed", asy
   expect(error).toBeInstanceOf(SandboxError)
   expect(error.code).toBe("SANDBOX_UNAVAILABLE")
 })
+
+test.skipIf(process.platform !== "win32")(
+  "timeout tears down the sandbox PID namespace and descendants",
+  async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "base-harness-sandbox-timeout-"))
+    roots.push(workspace)
+    await writeFile(join(workspace, "input.txt"), "input", "utf8")
+    const marker = `base-harness-child-${Date.now()}`
+    const started = Date.now()
+    const result = await new SandboxManager().run({
+      workspace,
+      cwd: workspace,
+      command: `( /bin/bash -c 'exec -a ${marker} sleep 30' ) & wait`,
+      config: {
+        strictBackend: "wsl2",
+        wslDistro: "Ubuntu-24.04",
+        timeoutMs: 1_000,
+        maxOutputBytes: 1024 * 1024,
+        maxInputBytes: 16 * 1024 * 1024,
+      },
+    })
+    expect(result.exitCode).toBe(124)
+    expect(Date.now() - started).toBeLessThan(10_000)
+
+    const probe = Bun.spawn(
+      ["wsl.exe", "-d", "Ubuntu-24.04", "--exec", "/usr/bin/pgrep", "-f", marker],
+      { stdout: "ignore", stderr: "ignore" },
+    )
+    expect(await probe.exited).not.toBe(0)
+  },
+  60_000,
+)

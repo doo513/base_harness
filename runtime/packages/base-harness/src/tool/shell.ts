@@ -22,6 +22,7 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { SandboxError, StrictSandbox } from "@base-harness/core/sandbox"
+import { WINDOWS_JOB_OBJECT_ENV } from "@base-harness/core/platform-adapter"
 import { Coordinator } from "../harness/coordinator-service"
 
 export { Parameters } from "./shell/prompt"
@@ -676,7 +677,10 @@ export const ShellTool = Tool.define(
                   shell,
                   command: params.command,
                   cwd,
-                  env: yield* shellEnv(ctx, cwd),
+                  env: {
+                    ...(yield* shellEnv(ctx, cwd)),
+                    [WINDOWS_JOB_OBJECT_ENV]: "1",
+                  },
                   timeout,
                 },
                 ctx,

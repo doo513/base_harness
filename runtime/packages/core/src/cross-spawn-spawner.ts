@@ -26,7 +26,7 @@ import { PassThrough } from "node:stream"
 import launch from "cross-spawn"
 import { makeGlobalNode } from "./effect/app-node"
 import { filesystem, path } from "./effect/app-node-platform"
-import { assignWindowsJobObject, type WindowsJobHandle } from "./platform-adapter"
+import { assignWindowsJobObject, WINDOWS_JOB_OBJECT_ENV, type WindowsJobHandle } from "./platform-adapter"
 
 const toError = (err: unknown): Error => (err instanceof globalThis.Error ? err : new globalThis.Error(String(err)))
 
@@ -268,7 +268,10 @@ export const make = Effect.gen(function* () {
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
     Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      const proc = launch(command.command, command.args, opts)
+      const useWindowsJob = opts.env?.[WINDOWS_JOB_OBJECT_ENV] === "1"
+      const env = opts.env ? { ...opts.env } : undefined
+      if (env) delete env[WINDOWS_JOB_OBJECT_ENV]
+      const proc = launch(command.command, command.args, env ? { ...opts, env } : opts)
       let job: WindowsJobHandle | undefined
       let processClosed = false
       let end = false
@@ -287,7 +290,7 @@ export const make = Effect.gen(function* () {
         Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
       })
       proc.on("spawn", () => {
-        if (globalThis.process.platform === "win32" && proc.pid) {
+        if (useWindowsJob && globalThis.process.platform === "win32" && proc.pid) {
           void assignWindowsJobObject(proc.pid).then((value) => {
             if (processClosed) value?.close()
             else job = value

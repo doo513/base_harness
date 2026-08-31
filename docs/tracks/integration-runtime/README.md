@@ -98,3 +98,13 @@ The V2-only TypeScript Host, independent Python verifier, WorkGraph/Overlay orch
 - `v2-coordinator-delivery/05_HOST_TUI_HEADLESS_SDK.md`
 - `v2-coordinator-delivery/06_VALIDATION_AND_RESIDUAL_RISKS.md`
 - `v2-coordinator-delivery/07_NEXT_MODULE_SECURITY_ISOLATION_PLAN.md`
+
+## V2 module, security, and isolation hardening (2026-08-31)
+
+The follow-up delivery that centralizes ownership, trusted persistence, and strict WSL2/Linux namespace execution is documented in:
+
+- `v2-hardening/README.md`
+- `v2-hardening/01_MODULE_BOUNDARY.md`
+- `v2-hardening/02_SECURITY_BOUNDARY.md`
+- `v2-hardening/03_STRICT_ISOLATION.md`
+- `v2-hardening/04_PROMOTION_REPORT.md`
