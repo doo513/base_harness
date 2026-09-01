@@ -5,6 +5,7 @@ export type PlanningDecision = "direct" | "planned"
 export type PlanningState =
   | "idle"
   | "contract_building"
+  | "contract_preflight"
   | "contract_reviewing"
   | "awaiting_input"
   | "planning_decision"
@@ -89,6 +90,76 @@ export interface MetaReviewReport {
   revisedArtifact?: unknown
 }
 
+export type UncertaintyKind =
+  | "multiple_interpretations"
+  | "missing_decision"
+  | "assumption"
+  | "conflict"
+
+export type DecisionImpact =
+  | "implementation_choice"
+  | "user_preference"
+  | "required_criterion"
+  | "scope"
+  | "security"
+  | "external_effect"
+  | "verifier_applicability"
+
+export interface UncertaintyCandidate {
+  id: string
+  kind: UncertaintyKind
+  impact: DecisionImpact
+  affectedClaimIds: string[]
+  affectedCriterionIds: string[]
+  sourceRefs: SourceReference[]
+  statement: string
+  suggestedResolution?: string
+}
+
+export interface InterpretationProposal {
+  version: 1
+  candidates: UncertaintyCandidate[]
+}
+
+export type PreflightReason =
+  | "multiple_valid_interpretations"
+  | "missing_required_value"
+  | "unsafe_default"
+  | "scope_conflict"
+  | "applicability_gap"
+  | "criterion_not_observable"
+  | "verifier_mismatch"
+  | "external_side_effect"
+  | "high_risk"
+  | "strict_profile"
+  | "complex_contract"
+
+export interface ContractPreflightResult {
+  version: 1
+  decision: "accept" | "meta_review_required" | "needs_input"
+  reasons: PreflightReason[]
+  affectedClaimIds: string[]
+  affectedCriterionIds: string[]
+  mutatingActionAllowed: boolean
+}
+
+export type ContractRevalidationTrigger =
+  | "new_required_dependency"
+  | "scope_expansion_requested"
+  | "applicability_changed"
+  | "plan_basis_changed"
+  | "verifier_became_unavailable"
+  | "required_criterion_changed"
+
+export interface ContractPreflightSignals {
+  risk: "low" | "medium" | "high" | "critical"
+  configuredProfile: "fast" | "adaptive" | "strict"
+  requiredClaimCount: number
+  requiredCriterionCount: number
+  hasExternalClaim: boolean
+  applicabilityResolved: boolean
+}
+
 export interface PlanningSignals {
   risk: "low" | "medium" | "high" | "critical"
   requiredClaimCount: number
@@ -119,6 +190,21 @@ const issueKinds = new Set<MetaIssueKind>([
   "coverage",
   "verifier_mismatch",
   "unsafe_assumption",
+])
+const uncertaintyKinds = new Set<UncertaintyKind>([
+  "multiple_interpretations",
+  "missing_decision",
+  "assumption",
+  "conflict",
+])
+const decisionImpacts = new Set<DecisionImpact>([
+  "implementation_choice",
+  "user_preference",
+  "required_criterion",
+  "scope",
+  "security",
+  "external_effect",
+  "verifier_applicability",
 ])
 
 export function createKernelSessionState(): KernelSessionState {
@@ -176,6 +262,148 @@ export function decidePlanning(
   return "direct"
 }
 
+export function parseInterpretationProposal(value: unknown): InterpretationProposal {
+  if (!value || typeof value !== "object") throw new Error("INTERPRETATION_SCHEMA")
+  const input = value as Record<string, unknown>
+  if (input.version !== 1 || !Array.isArray(input.candidates)) {
+    throw new Error("INTERPRETATION_SCHEMA")
+  }
+  const ids = new Set<string>()
+  const candidates = input.candidates.map((raw, index): UncertaintyCandidate => {
+    if (!raw || typeof raw !== "object") throw new Error("INTERPRETATION_CANDIDATE")
+    const candidate = raw as Record<string, unknown>
+    const id = requiredInterpretationString(candidate.id, `candidate[${index}].id`)
+    if (ids.has(id)) throw new Error("INTERPRETATION_DUPLICATE_ID")
+    ids.add(id)
+    if (!uncertaintyKinds.has(candidate.kind as UncertaintyKind)) {
+      throw new Error("INTERPRETATION_KIND")
+    }
+    if (!decisionImpacts.has(candidate.impact as DecisionImpact)) {
+      throw new Error("INTERPRETATION_IMPACT")
+    }
+    if (!Array.isArray(candidate.sourceRefs) || candidate.sourceRefs.length === 0) {
+      throw new Error("INTERPRETATION_SOURCE")
+    }
+    const sourceRefs = candidate.sourceRefs.map((rawSource): SourceReference => {
+      if (!rawSource || typeof rawSource !== "object") throw new Error("INTERPRETATION_SOURCE")
+      const source = rawSource as Record<string, unknown>
+      return {
+        source: requiredInterpretationString(source.source, "sourceRefs.source"),
+        pointer: optionalInterpretationString(source.pointer),
+        quote: optionalInterpretationString(source.quote),
+      }
+    })
+    return {
+      id,
+      kind: candidate.kind as UncertaintyKind,
+      impact: candidate.impact as DecisionImpact,
+      affectedClaimIds: interpretationStringArray(candidate.affectedClaimIds),
+      affectedCriterionIds: interpretationStringArray(candidate.affectedCriterionIds),
+      sourceRefs,
+      statement: requiredInterpretationString(candidate.statement, `candidate[${index}].statement`),
+      suggestedResolution: optionalInterpretationString(candidate.suggestedResolution),
+    }
+  })
+  return { version: 1, candidates }
+}
+
+export function validateInterpretationBindings(
+  proposal: InterpretationProposal,
+  claimIds: readonly string[],
+  criterionIds: readonly string[],
+): void {
+  const claims = new Set(claimIds)
+  const criteria = new Set(criterionIds)
+  for (const candidate of proposal.candidates) {
+    if (!candidate.affectedClaimIds.length && !candidate.affectedCriterionIds.length) {
+      throw new Error("INTERPRETATION_UNBOUND")
+    }
+    if (candidate.affectedClaimIds.some((id) => !claims.has(id))) {
+      throw new Error("INTERPRETATION_UNKNOWN_CLAIM")
+    }
+    if (candidate.affectedCriterionIds.some((id) => !criteria.has(id))) {
+      throw new Error("INTERPRETATION_UNKNOWN_CRITERION")
+    }
+  }
+}
+
+export function decideContractPreflight(
+  proposal: InterpretationProposal,
+  signals: ContractPreflightSignals,
+): ContractPreflightResult {
+  const consequential = proposal.candidates.filter(
+    (candidate) => candidate.impact !== "implementation_choice",
+  )
+  if (consequential.length) {
+    return {
+      version: 1,
+      decision: "needs_input",
+      reasons: uniquePreflightReasons(consequential.map(reasonForCandidate)),
+      affectedClaimIds: [...new Set(consequential.flatMap((candidate) => candidate.affectedClaimIds))],
+      affectedCriterionIds: [
+        ...new Set(consequential.flatMap((candidate) => candidate.affectedCriterionIds)),
+      ],
+      mutatingActionAllowed: false,
+    }
+  }
+
+  const reasons: PreflightReason[] = []
+  if (signals.risk === "high" || signals.risk === "critical") reasons.push("high_risk")
+  if (signals.configuredProfile === "strict") reasons.push("strict_profile")
+  if (signals.hasExternalClaim) reasons.push("external_side_effect")
+  if (!signals.applicabilityResolved) reasons.push("applicability_gap")
+  if (signals.requiredClaimCount > 1 || signals.requiredCriterionCount > 1) {
+    reasons.push("complex_contract")
+  }
+  if (reasons.length) {
+    return {
+      version: 1,
+      decision: "meta_review_required",
+      reasons: uniquePreflightReasons(reasons),
+      affectedClaimIds: [],
+      affectedCriterionIds: [],
+      mutatingActionAllowed: false,
+    }
+  }
+  return {
+    version: 1,
+    decision: "accept",
+    reasons: [],
+    affectedClaimIds: [],
+    affectedCriterionIds: [],
+    mutatingActionAllowed: true,
+  }
+}
+
+function reasonForCandidate(candidate: UncertaintyCandidate): PreflightReason {
+  if (candidate.impact === "scope") return "scope_conflict"
+  if (candidate.impact === "verifier_applicability") return "verifier_mismatch"
+  if (candidate.impact === "external_effect") return "external_side_effect"
+  if (candidate.kind === "multiple_interpretations") return "multiple_valid_interpretations"
+  if (candidate.kind === "missing_decision") return "missing_required_value"
+  return "unsafe_default"
+}
+
+function requiredInterpretationString(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`INTERPRETATION_STRING:${field}`)
+  return value
+}
+
+function optionalInterpretationString(value: unknown): string | undefined {
+  return value === undefined ? undefined : requiredInterpretationString(value, "optional")
+}
+
+function interpretationStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0)) {
+    throw new Error("INTERPRETATION_ID_LIST")
+  }
+  return value
+}
+
+function uniquePreflightReasons(reasons: PreflightReason[]): PreflightReason[] {
+  return [...new Set(reasons)]
+}
+
 export function operationForTool(toolID: string): ToolOperation {
   const operations: Record<string, ToolOperation> = {
     read: "read",
@@ -212,6 +440,7 @@ export function allowsOperation(
 ): boolean {
   if (
     state.planningState === "contract_building" ||
+    state.planningState === "contract_preflight" ||
     state.planningState === "contract_reviewing" ||
     state.planningState === "planning_decision" ||
     state.planningState === "plan_building" ||

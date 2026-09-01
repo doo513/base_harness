@@ -40,6 +40,13 @@ type HarnessStatus = {
   planningDecision?: "direct" | "planned"
   activePlanId?: string
   activePlanRevision?: number
+  preflight?: {
+    decision: "accept" | "meta_review_required" | "needs_input"
+    reasons: string[]
+    questionCount: number
+    assumptionCount: number
+    reviewerCallCount: number
+  }
   metaReview?: {
     phase: "goal_contract" | "plan"
     outcome: "pass" | "revise" | "needs_input"
@@ -115,6 +122,13 @@ function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) 
           ? " / " + props.status.activePlanId + "@" + String(props.status.activePlanRevision)
           : ""}
       </text>
+      <Show when={props.status.preflight}>
+        {(preflight) => (
+          <text fg="#a8b3c7">
+            Preflight {preflight().decision} / questions {String(preflight().questionCount)} / assumptions {String(preflight().assumptionCount)} / reviews {String(preflight().reviewerCallCount)}
+          </text>
+        )}
+      </Show>
       <text fg="#a8b3c7">
         Workers {String(props.status.activeCount)} active / {String(props.status.queuedCount)} queued / {String(props.status.workers.length)} total
       </text>
@@ -201,6 +215,7 @@ const tui: TuiPlugin = async (api) => {
       status().planningState === "plan_ready" ||
       status().planningState === "awaiting_input" ||
       status().planningState === "contract_building" ||
+      status().planningState === "contract_preflight" ||
       status().planningState === "contract_reviewing" ||
       status().planningState === "plan_building" ||
       status().planningState === "plan_reviewing"

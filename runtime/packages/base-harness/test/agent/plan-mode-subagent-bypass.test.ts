@@ -26,17 +26,17 @@ function testAgent(input: {
 // exercises the actual helper that task.ts uses to build the subagent's
 // session permission, so any regression in that helper trips this test.
 
-it.instance("subagent permissions take precedence over parent agent restrictions", () =>
+it.instance("subagent permissions take precedence over meta-review restrictions", () =>
   Effect.gen(function* () {
-    const planAgent = yield* Agent.use.get("plan")
+    const reviewAgent = yield* Agent.use.get("meta-review")
     const generalAgent = yield* Agent.use.get("general")
 
-    expect(planAgent).toBeDefined()
+    expect(reviewAgent).toBeDefined()
     expect(generalAgent).toBeDefined()
-    // Sanity: the plan agent itself blocks edit. (Note: `write` and
+    // Sanity: the meta-review agent itself blocks edit. (Note: `write` and
     // `apply_patch` route through the `edit` permission at the runtime
     // tool layer — see Permission.disabled / EDIT_TOOLS.)
-    expect(Permission.evaluate("edit", "/some/file.ts", planAgent!.permission).action).toBe("deny")
+    expect(Permission.evaluate("edit", "/some/file.ts", reviewAgent!.permission).action).toBe("deny")
 
     const parentSessionPermission: PermissionV1.Ruleset = []
 
@@ -74,9 +74,9 @@ it.instance(
   "custom subagent can explicitly enable edits denied to its parent agent",
   () =>
     Effect.gen(function* () {
-      const planAgent = yield* Agent.use.get("plan")
+      const reviewAgent = yield* Agent.use.get("meta-review")
       const my = yield* Agent.use.get("my_subagent")
-      expect(planAgent).toBeDefined()
+      expect(reviewAgent).toBeDefined()
       expect(my).toBeDefined()
 
       const parentSessionPermission: PermissionV1.Ruleset = []
@@ -86,7 +86,7 @@ it.instance(
       })
       const effective = Permission.merge(my!.permission, subagentSessionPermission)
 
-      expect(Permission.evaluate("edit", "/some/file.ts", planAgent!.permission).action).toBe("deny")
+      expect(Permission.evaluate("edit", "/some/file.ts", reviewAgent!.permission).action).toBe("deny")
       expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("allow")
       expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
     }),

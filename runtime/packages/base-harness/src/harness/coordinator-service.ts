@@ -12,6 +12,7 @@ export const Coordinator = new Proxy(RuntimeCoordinator, {
     if (property === "control") return kernel.control.bind(kernel)
     if (property === "assertToolAllowed") return kernel.assertToolAllowed.bind(kernel)
     if (property === "registerMetaReviewer") return kernel.registerMetaReviewer.bind(kernel)
+    if (property === "revalidateContract") return kernel.revalidateContract.bind(kernel)
     const value = Reflect.get(target, property, receiver)
     return typeof value === "function" ? value.bind(target) : value
   },
@@ -22,9 +23,22 @@ export const Coordinator = new Proxy(RuntimeCoordinator, {
   control(sessionID: string, control: import("@base-harness/kernel").HarnessControl): Promise<unknown>
   assertToolAllowed(sessionID: string, toolID: string, subagentType?: string): void
   registerMetaReviewer(reviewer: (request: MetaReviewRequest) => Promise<unknown>): void
+  revalidateContract(
+    sessionID: string,
+    trigger: import("@base-harness/kernel").ContractRevalidationTrigger,
+    affectedClaimIds?: string[],
+    affectedCriterionIds?: string[],
+  ): unknown
 }
 export const Orchestration = RuntimeCoordinator.orchestration
-export type { HarnessControl, KernelSessionState, PlanSpec } from "@base-harness/kernel"
+export type {
+  ContractPreflightResult,
+  ContractRevalidationTrigger,
+  HarnessControl,
+  InterpretationProposal,
+  KernelSessionState,
+  PlanSpec,
+} from "@base-harness/kernel"
 export type { MetaReviewRequest } from "./kernel-host"
 
 export type {

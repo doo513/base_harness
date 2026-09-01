@@ -30,8 +30,8 @@ it.instance(
   "Agent.get includes color from config",
   () =>
     Effect.gen(function* () {
-      const plan = yield* AgentSvc.use.get("plan")
-      expect(plan?.color).toBe("#A855F7")
+      const review = yield* AgentSvc.use.get("meta-review")
+      expect(review?.color).toBe("#A855F7")
       const build = yield* AgentSvc.use.get("build")
       expect(build?.color).toBe("accent")
     }),
@@ -39,7 +39,7 @@ it.instance(
     git: true,
     config: {
       agent: {
-        plan: { color: "#A855F7" },
+        "meta-review": { color: "#A855F7" },
         build: { color: "accent" },
       },
     },

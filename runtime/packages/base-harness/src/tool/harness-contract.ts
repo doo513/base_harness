@@ -45,11 +45,40 @@ const Claim = Schema.Struct({
   }),
 })
 
+const SourceReference = Schema.Struct({
+  source: Schema.String,
+  pointer: Schema.optional(Schema.String),
+  quote: Schema.optional(Schema.String),
+})
+
+const UncertaintyCandidate = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["multiple_interpretations", "missing_decision", "assumption", "conflict"]),
+  impact: Schema.Literals([
+    "implementation_choice",
+    "user_preference",
+    "required_criterion",
+    "scope",
+    "security",
+    "external_effect",
+    "verifier_applicability",
+  ]),
+  affectedClaimIds: StringList,
+  affectedCriterionIds: StringList,
+  sourceRefs: Schema.mutable(Schema.Array(SourceReference)),
+  statement: Schema.String,
+  suggestedResolution: Schema.optional(Schema.String),
+})
+
 export const Parameters = Schema.Struct({
   goal: Schema.String,
   criteria: Schema.mutable(Schema.Array(Criterion)),
   claims: Schema.mutable(Schema.Array(Claim)),
   constraints: Schema.optional(StringList),
+  interpretation: Schema.Struct({
+    version: Schema.Literal(1),
+    candidates: Schema.mutable(Schema.Array(UncertaintyCandidate)),
+  }),
 })
 
 type Proposal = Schema.Schema.Type<typeof Parameters>
@@ -61,18 +90,22 @@ export const HarnessContractTool = Tool.define<typeof Parameters, Metadata, Ques
     const question = yield* Question.Service
     return {
       description:
-        "Submit a typed GoalContract before changing workspace state. Each criterion must map bidirectionally to one or more atomic claims with scope, applicability, a typed predicate, and an allowed verifier policy.",
+        "Submit a typed GoalContract and semantic uncertainty candidates before changing workspace state. The Kernel validates bindings and decides whether input, meta-review, or execution is allowed.",
       parameters: Parameters,
       execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const status = yield* Effect.promise(() =>
             registerHarnessContractProposal(ctx.sessionID, params, ctx),
           )
-          const blocking = Array.isArray(status.metaReview?.issues)
+          const preflightBlocking = Array.isArray(status.preflight?.requiredDecisions)
+            ? status.preflight.requiredDecisions
+            : []
+          const reviewBlocking = Array.isArray(status.metaReview?.issues)
             ? status.metaReview.issues.filter(
                 (issue: { severity?: string }) => issue.severity === "blocking",
               )
             : []
+          const blocking = [...preflightBlocking, ...reviewBlocking]
           let answers: ReadonlyArray<Question.Answer> | undefined
           if (status.planningState === "awaiting_input" && blocking.length > 0) {
             const questions = blocking.slice(0, 3).map(

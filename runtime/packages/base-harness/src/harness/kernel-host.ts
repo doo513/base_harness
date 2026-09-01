@@ -2,18 +2,26 @@ import {
   allowsOperation,
   applyControl,
   createKernelSessionState,
+  decideContractPreflight,
   decidePlanning,
   operationForTool,
+  parseInterpretationProposal,
   parseMetaReview,
+  validateInterpretationBindings,
   validatePlanSpec,
   validatePlanCoverage,
   type HarnessControl,
+  type ContractPreflightResult,
+  type ContractRevalidationTrigger,
+  type InterpretationProposal,
   type KernelSessionState,
   type MetaReviewPhase,
   type MetaReviewReport,
   type PlanSpec,
   type PlanningDecision,
   type PlanningSignals,
+  type PreflightReason,
+  type UncertaintyCandidate,
 } from "@base-harness/kernel"
 import { createHash, randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
@@ -38,6 +46,7 @@ export interface KernelStatus {
   planningDecision?: PlanningDecision
   activePlanId?: string
   activePlanRevision?: number
+  preflight?: ContractPreflightStatus
   metaReview?: {
     phase: MetaReviewPhase
     outcome: MetaReviewReport["outcome"]
@@ -45,6 +54,23 @@ export interface KernelStatus {
     blockingIssueCount: number
     issues: MetaReviewReport["issues"]
   }
+}
+
+export interface ContractPreflightStatus extends ContractPreflightResult {
+  candidateCount: number
+  questionCount: number
+  assumptionCount: number
+  reviewerCallCount: number
+  requiredDecisions: Array<{
+    id: string
+    statement: string
+    suggestedResolution?: string
+    impact: UncertaintyCandidate["impact"]
+    affectedClaimIds: string[]
+    affectedCriterionIds: string[]
+  }>
+  assumptions: string[]
+  revalidationTrigger?: ContractRevalidationTrigger
 }
 
 interface SessionRecord {
@@ -61,6 +87,7 @@ interface SessionRecord {
   plan?: PlanSpec
   decision?: PlanningDecision
   review?: MetaReviewReport
+  preflight?: ContractPreflightStatus
   revisionOnly?: boolean
   explicitSelection?: boolean
 }
@@ -104,6 +131,8 @@ export class KernelHost {
       record.state = { ...record.state, planningState: "plan_building" }
     } else {
       record.state = { ...record.state, planningState: "contract_building" }
+      record.review = undefined
+      record.preflight = undefined
     }
     record.workspace = input.workspace
     record.goal = input.goal
@@ -116,23 +145,69 @@ export class KernelHost {
   async proposeContract(sessionID: string, proposal: unknown, context?: unknown) {
     const record = this.session(sessionID)
     if (context) record.context = context
-    record.state = { ...record.state, planningState: "contract_reviewing" }
-    const reviewed = await this.review(sessionID, "goal_contract", proposal)
-    if (reviewed.report.outcome === "needs_input") {
+    record.review = undefined
+    record.state = { ...record.state, planningState: "contract_preflight" }
+    let normalized = normalizeContractProposal(proposal)
+    assertContractProposal(normalized.contract)
+    validateInterpretationBindings(
+      normalized.interpretation,
+      allIDs(normalized.contract, "claims", "claimId"),
+      allIDs(normalized.contract, "criteria", "criterionId"),
+    )
+    let result = decideContractPreflight(
+      normalized.interpretation,
+      contractPreflightSignals(
+        normalized.contract,
+        verificationProfile(this.runtime.status(sessionID)),
+      ),
+    )
+    record.preflight = preflightStatus(result, normalized.interpretation)
+    if (result.decision === "needs_input") {
       record.state = { ...record.state, planningState: "awaiting_input" }
       return this.mergeStatus(sessionID, this.runtime.status(sessionID))
     }
-    if (reviewed.report.outcome === "revise" && reviewed.artifact === proposal) {
-      record.state = { ...record.state, planningState: "awaiting_input" }
-      return this.mergeStatus(sessionID, this.runtime.status(sessionID))
+    if (result.decision === "meta_review_required") {
+      record.state = { ...record.state, planningState: "contract_reviewing" }
+      const reviewed = await this.review(sessionID, "goal_contract", proposal)
+      if (reviewed.report.outcome !== "pass") {
+        record.state = { ...record.state, planningState: "awaiting_input" }
+        return this.mergeStatus(sessionID, this.runtime.status(sessionID))
+      }
+      normalized = normalizeContractProposal(reviewed.artifact)
+      assertContractProposal(normalized.contract)
+      validateInterpretationBindings(
+        normalized.interpretation,
+        allIDs(normalized.contract, "claims", "claimId"),
+        allIDs(normalized.contract, "criteria", "criterionId"),
+      )
+      result = decideContractPreflight(
+        normalized.interpretation,
+        contractPreflightSignals(
+          normalized.contract,
+          verificationProfile(this.runtime.status(sessionID)),
+        ),
+      )
+      record.preflight = preflightStatus(
+        result.decision === "meta_review_required"
+          ? { ...result, decision: "accept", mutatingActionAllowed: true }
+          : result,
+        normalized.interpretation,
+        record.preflight?.reviewerCallCount ?? 0,
+        reviewed.report.issues
+          .filter((issue) => issue.severity === "warning")
+          .map((issue) => issue.statement),
+      )
+      if (result.decision === "needs_input") {
+        record.state = { ...record.state, planningState: "awaiting_input" }
+        return this.mergeStatus(sessionID, this.runtime.status(sessionID))
+      }
     }
-    assertContractProposal(reviewed.artifact)
-    record.contract = reviewed.artifact
+    record.contract = normalized.contract
     record.contractRevision += 1
-    record.contractHash = digest(reviewed.artifact)
-    const result = await this.runtime.proposeContract(sessionID, reviewed.artifact)
+    record.contractHash = digest(normalized.contract)
+    const runtimeResult = await this.runtime.proposeContract(sessionID, normalized.contract)
     record.state = { ...record.state, planningState: "planning_decision" }
-    return this.mergeStatus(sessionID, result)
+    return this.mergeStatus(sessionID, runtimeResult)
   }
 
   async acceptWorkGraph(sessionID: string, graph: any, context?: unknown) {
@@ -211,12 +286,20 @@ export class KernelHost {
         throw kernelError("PLAN_NOT_READY")
       }
       if (control.planId && control.planId !== record.plan.planId) throw kernelError("PLAN_ID_MISMATCH")
-      await assertPlanFresh(record.plan, record.workspace!)
+      try {
+        await assertPlanFresh(record.plan, record.workspace!)
+      } catch (error) {
+        if ((error as { code?: string })?.code === "PLAN_STALE") {
+          this.markRevalidation(record, "plan_basis_changed")
+        }
+        throw error
+      }
       if (
         record.plan.domain !== record.state.domain ||
         digest(record.plan.skills) !== digest(record.state.skills) ||
         record.plan.goalContractHash !== record.contractHash
       ) {
+        this.markRevalidation(record, "plan_basis_changed")
         throw kernelError("PLAN_STALE")
       }
       record.state = { ...record.state, planningState: "executing" }
@@ -251,6 +334,17 @@ export class KernelHost {
     return this.mergeStatus(sessionID, this.runtime.status(sessionID))
   }
 
+  revalidateContract(
+    sessionID: string,
+    trigger: ContractRevalidationTrigger,
+    affectedClaimIds: string[] = [],
+    affectedCriterionIds: string[] = [],
+  ) {
+    const record = this.session(sessionID)
+    this.markRevalidation(record, trigger, affectedClaimIds, affectedCriterionIds)
+    return this.status(sessionID)
+  }
+
   private mergeStatus(sessionID: string, status: any) {
     const record = this.session(sessionID)
     const kernel: KernelStatus = {
@@ -261,6 +355,7 @@ export class KernelHost {
       planningDecision: record.decision,
       activePlanId: record.state.activePlanId,
       activePlanRevision: record.state.activePlanRevision,
+      preflight: record.preflight,
       metaReview: record.review
         ? {
             phase: record.review.phase,
@@ -281,6 +376,9 @@ export class KernelHost {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       let raw: unknown
       try {
+        if (phase === "goal_contract" && this.session(sessionID).preflight) {
+          this.session(sessionID).preflight!.reviewerCallCount += 1
+        }
         raw = await this.reviewer({
           phase,
           sessionID,
@@ -340,6 +438,7 @@ export class KernelHost {
       steps,
       workGraph: graph,
       assumptions:
+        record.preflight?.assumptions ??
         record.review?.issues
           .filter((issue) => issue.severity === "warning")
           .map((issue) => issue.statement) ?? [],
@@ -347,6 +446,29 @@ export class KernelHost {
     validatePlanSpec(plan)
     validatePlanCoverage(plan, requiredIDs(record.contract, "claims", "claimId"), requiredIDs(record.contract, "criteria", "criterionId"))
     return plan
+  }
+
+  private markRevalidation(
+    record: SessionRecord,
+    trigger: ContractRevalidationTrigger,
+    affectedClaimIds: string[] = [],
+    affectedCriterionIds: string[] = [],
+  ) {
+    const planOnly = trigger === "plan_basis_changed"
+    record.state = {
+      ...record.state,
+      planningState: planOnly ? "plan_building" : "contract_building",
+    }
+    record.revisionOnly = planOnly
+    record.preflight = {
+      ...(record.preflight ?? emptyPreflightStatus()),
+      decision: "meta_review_required",
+      reasons: revalidationReasons(trigger),
+      affectedClaimIds,
+      affectedCriterionIds,
+      mutatingActionAllowed: false,
+      revalidationTrigger: trigger,
+    }
   }
 }
 
@@ -375,7 +497,8 @@ function planningSignals(contract: any, graph: any): PlanningSignals {
     requiredCriterionCount: criteria.filter((criterion: any) => criterion.required !== false).length,
     targetCount: targets.size || 1,
     hasExternalClaim: claims.some(
-      (claim: any) => claim.external === true || claim.scope?.external === true,
+      (claim: any) =>
+        claim.kind === "external" || claim.external === true || claim.scope?.external === true,
     ),
     applicabilityResolved: claims.every(
       (claim: any) =>
@@ -393,6 +516,97 @@ function planningSignals(contract: any, graph: any): PlanningSignals {
       ),
     ),
   }
+}
+
+function contractPreflightSignals(
+  contract: unknown,
+  configuredProfile: "fast" | "adaptive" | "strict",
+) {
+  const signals = planningSignals(contract, { units: [] })
+  return {
+    risk: signals.risk,
+    configuredProfile,
+    requiredClaimCount: signals.requiredClaimCount,
+    requiredCriterionCount: signals.requiredCriterionCount,
+    hasExternalClaim: signals.hasExternalClaim,
+    applicabilityResolved: signals.applicabilityResolved,
+  }
+}
+
+function verificationProfile(status: any): "fast" | "adaptive" | "strict" {
+  const profile = status?.effectiveProfile ?? status?.configuredProfile
+  return profile === "fast" || profile === "strict" ? profile : "adaptive"
+}
+
+function normalizeContractProposal(proposal: unknown): {
+  contract: Record<string, unknown>
+  interpretation: InterpretationProposal
+} {
+  if (!proposal || typeof proposal !== "object") throw kernelError("CONTRACT_SCHEMA")
+  const input = proposal as Record<string, unknown>
+  const interpretation = parseInterpretationProposal(
+    input.interpretation ?? { version: 1, candidates: [] },
+  )
+  const contract = { ...input }
+  delete contract.interpretation
+  return { contract, interpretation }
+}
+
+function preflightStatus(
+  result: ContractPreflightResult,
+  interpretation: InterpretationProposal,
+  reviewerCallCount = 0,
+  reviewerAssumptions: string[] = [],
+): ContractPreflightStatus {
+  const requiredDecisions = interpretation.candidates
+    .filter((candidate) => candidate.impact !== "implementation_choice")
+    .map((candidate) => ({
+      id: candidate.id,
+      statement: candidate.statement,
+      suggestedResolution: candidate.suggestedResolution,
+      impact: candidate.impact,
+      affectedClaimIds: candidate.affectedClaimIds,
+      affectedCriterionIds: candidate.affectedCriterionIds,
+    }))
+  const assumptions = [
+    ...interpretation.candidates
+      .filter((candidate) => candidate.impact === "implementation_choice")
+      .map((candidate) => candidate.statement),
+    ...reviewerAssumptions,
+  ]
+  return {
+    ...result,
+    candidateCount: interpretation.candidates.length,
+    questionCount: requiredDecisions.length,
+    assumptionCount: assumptions.length,
+    reviewerCallCount,
+    requiredDecisions,
+    assumptions: [...new Set(assumptions)],
+  }
+}
+
+function emptyPreflightStatus(): ContractPreflightStatus {
+  return {
+    version: 1,
+    decision: "accept",
+    reasons: [],
+    affectedClaimIds: [],
+    affectedCriterionIds: [],
+    mutatingActionAllowed: false,
+    candidateCount: 0,
+    questionCount: 0,
+    assumptionCount: 0,
+    reviewerCallCount: 0,
+    requiredDecisions: [],
+    assumptions: [],
+  }
+}
+
+function revalidationReasons(trigger: ContractRevalidationTrigger): PreflightReason[] {
+  if (trigger === "scope_expansion_requested") return ["scope_conflict"]
+  if (trigger === "applicability_changed") return ["applicability_gap"]
+  if (trigger === "verifier_became_unavailable") return ["verifier_mismatch"]
+  return ["complex_contract"]
 }
 
 async function hashBasis(workspace: string, paths: string[]) {
@@ -455,6 +669,16 @@ function requiredIDs(contract: unknown, collection: string, idField: string): st
   return value
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
     .filter((item) => item.required !== false)
+    .map((item) => item[idField])
+    .filter((item): item is string => typeof item === "string")
+}
+
+function allIDs(contract: unknown, collection: string, idField: string): string[] {
+  if (!contract || typeof contract !== "object") return []
+  const value = (contract as Record<string, unknown>)[collection]
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
     .map((item) => item[idField])
     .filter((item): item is string => typeof item === "string")
 }
