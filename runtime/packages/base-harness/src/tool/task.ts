@@ -114,6 +114,7 @@ export const TaskTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      Coordinator.assertToolAllowed(ctx.sessionID, "task", params.subagent_type)
       const cfg = yield* config.get()
       if (
         params.subagent_type !== "explore" &&
@@ -431,6 +432,60 @@ export const TaskTool = Tool.define(
     })
 
     const coordinatorBridge = yield* EffectBridge.make()
+    Coordinator.registerMetaReviewer((request) => {
+      const source = request.context as Tool.Context
+      const reviewerContext: Tool.Context = {
+        ...source,
+        extra: {
+          ...source.extra,
+          bypassAgentCheck: true,
+          coordinatorDispatch: true,
+        },
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const prompt = JSON.stringify({
+        protocol: "base-harness-meta-review-v1",
+        phase: request.phase,
+        attempt: request.attempt,
+        artifact: request.artifact,
+        priorIssues: request.priorIssues,
+        response: {
+          phase: request.phase,
+          outcome: "pass | revise | needs_input",
+          issues: [
+            {
+              id: "string",
+              kind: "omission | contradiction | ambiguity | scope | applicability | coverage | verifier_mismatch | unsafe_assumption",
+              severity: "blocking | warning",
+              targetIds: ["string"],
+              sourceRefs: [{ source: "string", pointer: "string", quote: "string" }],
+              statement: "string",
+              suggestedResolution: "string",
+            },
+          ],
+          revisedArtifact: "include only for a safe typed correction",
+        },
+        constraints: {
+          blockingOnlyForRequiredDecision: true,
+          warningBecomesAssumption: true,
+          noEvidenceOrReadyAuthority: true,
+        },
+      })
+      return coordinatorBridge
+        .promise(
+          run(
+            {
+              description: "Meta review: " + request.phase,
+              prompt,
+              subagent_type: "meta-review",
+              background: false,
+            },
+            reviewerContext,
+          ),
+        )
+        .then((result) => result.output)
+    })
     Coordinator.registerWorkerExecutor((request) => {
       const source = request.context as Tool.Context
       const coordinatorContext: Tool.Context = {

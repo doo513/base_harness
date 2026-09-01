@@ -1913,6 +1913,9 @@ export type Config = {
     maxOutputBytes?: number
     maxInputBytes?: number
   }
+  kernel?: {
+    defaultDomain?: "develop" | "general"
+  }
   shell?: string
   logLevel?: LogLevel
   server?: ServerConfig
@@ -2070,6 +2073,10 @@ export type Model = {
   capabilities: {
     temperature: boolean
     reasoning: boolean
+    reasoningEfforts?: {
+      default: "provider_default"
+      supported: Array<string>
+    }
     attachment: boolean
     toolcall: boolean
     input: {
@@ -10554,6 +10561,57 @@ export type SessionHarnessCancelError = SessionHarnessCancelErrors[keyof Session
 export type SessionHarnessCancelResponses = {
   /**
    * Interrupted harness status
+   */
+  200: unknown
+}
+
+export type SessionHarnessControlData = {
+  body?:
+    | {
+        type: "domain.set"
+        domain: "develop" | "general"
+      }
+    | {
+        type: "skill.set"
+        skill: "hackathon"
+        enabled: boolean
+      }
+    | {
+        type: "planning.plan_once"
+      }
+    | {
+        type: "planning.discard"
+      }
+    | {
+        type: "planning.execute"
+        planId?: string
+      }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/harness/control"
+}
+
+export type SessionHarnessControlErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionHarnessControlError = SessionHarnessControlErrors[keyof SessionHarnessControlErrors]
+
+export type SessionHarnessControlResponses = {
+  /**
+   * Kernel harness status
    */
   200: unknown
 }

@@ -171,6 +171,26 @@ export const RunCommand = effectCmd({
         type: "string",
         describe: "agent to use",
       })
+      .option("domain", {
+        type: "string",
+        choices: ["develop", "general"] as const,
+        default: "develop" as const,
+        describe: "kernel domain",
+      })
+      .option("hackathon", {
+        type: "boolean",
+        default: false,
+        describe: "enable the hackathon develop skill",
+      })
+      .option("plan", {
+        type: "boolean",
+        default: false,
+        describe: "build and review a plan without executing it",
+      })
+      .option("execute-plan", {
+        type: "string",
+        describe: "execute the current reviewed plan by ID",
+      })
       .option("format", {
         type: "string",
         choices: ["default", "json"],
@@ -417,7 +437,7 @@ export const RunCommand = effectCmd({
       message = resolveRunInput(message, piped) ?? ""
       const initialInput = resolveRunInput(rawMessage, piped)
 
-      if (message.trim().length === 0 && !args.command && !interactive) {
+      if (message.trim().length === 0 && !args.command && !args["execute-plan"] && !interactive) {
         UI.error("You must provide a message or a command")
         process.exit(1)
       }
@@ -831,9 +851,41 @@ export const RunCommand = effectCmd({
         }
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
+        type KernelControl =
+          | { type: "domain.set"; domain: "develop" | "general" }
+          | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+          | { type: "planning.plan_once" }
+          | { type: "planning.execute"; planId?: string }
+        const kernelClient = client.session as unknown as {
+          harnessControl(input: { sessionID: string; directory?: string } & KernelControl): Promise<unknown>
+          harness(input: { sessionID: string; directory?: string }): Promise<unknown>
+        }
 
         // Validate agent if specified
         const agent = await pickAgent(client)
+
+        await kernelClient.harnessControl({
+          sessionID,
+          directory: cwd,
+          type: "domain.set",
+          domain: args.domain,
+        })
+        if (args.hackathon) {
+          await kernelClient.harnessControl({
+            sessionID,
+            directory: cwd,
+            type: "skill.set",
+            skill: "hackathon",
+            enabled: true,
+          })
+        }
+        if (args.plan) {
+          await kernelClient.harnessControl({
+            sessionID,
+            directory: cwd,
+            type: "planning.plan_once",
+          })
+        }
 
         await share(client, sessionID)
 
@@ -849,6 +901,23 @@ export const RunCommand = effectCmd({
             if (error) process.exitCode = 1
             if (verificationFinalized) return
             verificationFinalized = true
+            if (args.plan) {
+              const response = await kernelClient.harness({ sessionID, directory: cwd })
+              const outer = response as { data?: Record<string, unknown> }
+              const planStatus = (outer.data ?? response) as Record<string, unknown>
+              if (planStatus.planningState !== "plan_ready") {
+                console.error("base-harness plan did not reach plan_ready")
+                process.exitCode = 1
+                return
+              }
+              console.log(
+                "Plan ready: " +
+                  String(planStatus.activePlanId) +
+                  "@" +
+                  String(planStatus.activePlanRevision),
+              )
+              return
+            }
             try {
               const sessionClient = client.session as unknown as {
                 harnessVerify(input: {
@@ -875,6 +944,17 @@ export const RunCommand = effectCmd({
             } finally {
               // The Host owns the verifier lifecycle for local and attach runs.
             }
+          }
+
+          if (args["execute-plan"]) {
+            await kernelClient.harnessControl({
+              sessionID,
+              directory: cwd,
+              type: "planning.execute",
+              planId: args["execute-plan"],
+            })
+            await finish()
+            return
           }
 
           if (args.command) {
@@ -1027,6 +1107,11 @@ export async function runMini(input: MiniCommandInput) {
     share: undefined,
     model: input.model,
     agent: input.agent,
+    domain: "develop",
+    hackathon: false,
+    plan: false,
+    "execute-plan": undefined,
+    executePlan: undefined,
     format: "default",
     file: undefined,
     title: undefined,

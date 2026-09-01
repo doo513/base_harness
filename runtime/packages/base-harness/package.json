@@ -86,6 +86,7 @@
     "@openauthjs/openauth": "catalog:",
     "@base-harness/codemode": "workspace:*",
     "@base-harness/coordinator": "workspace:*",
+    "@base-harness/kernel": "workspace:*",
     "@base-harness/llm": "workspace:*",
     "@base-harness/plugin": "workspace:*",
     "@base-harness/protocol": "workspace:*",

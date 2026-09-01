@@ -33,6 +33,24 @@ type HarnessStatus = {
   candidateCount: number
   readyEligible: boolean
   message?: string
+  domain?: "develop" | "general"
+  skills?: Array<"hackathon">
+  planningPreference?: "auto" | "plan_once"
+  planningState?: string
+  planningDecision?: "direct" | "planned"
+  activePlanId?: string
+  activePlanRevision?: number
+  metaReview?: {
+    phase: "goal_contract" | "plan"
+    outcome: "pass" | "revise" | "needs_input"
+    issueCount: number
+    blockingIssueCount: number
+    issues?: Array<{
+      id: string
+      severity: "blocking" | "warning"
+      statement: string
+    }>
+  }
 }
 
 const initialStatus = (maxSameFailureRepairs = 2): HarnessStatus => ({
@@ -88,6 +106,16 @@ function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) 
       <text fg="#a8b3c7">Goal</text>
       <text>{props.status.goal || "Waiting for the Host Coordinator"}</text>
       <text fg="#a8b3c7">
+        Domain {props.status.domain ?? "develop"}
+        {props.status.skills?.includes("hackathon") ? " + hackathon" : ""}
+      </text>
+      <text fg="#a8b3c7">
+        Planning {props.status.planningState ?? "idle"}
+        {props.status.activePlanId
+          ? " / " + props.status.activePlanId + "@" + String(props.status.activePlanRevision)
+          : ""}
+      </text>
+      <text fg="#a8b3c7">
         Workers {String(props.status.activeCount)} active / {String(props.status.queuedCount)} queued / {String(props.status.workers.length)} total
       </text>
       <text fg="#a8b3c7">
@@ -116,6 +144,16 @@ type SessionHarnessClient = {
   harness(input: { sessionID: string; directory?: string }): Promise<unknown>
   harnessVerify(input: { sessionID: string; directory?: string; reason: "automatic" | "manual" | "completion" }): Promise<unknown>
   harnessCancel(input: { sessionID: string; directory?: string }): Promise<unknown>
+  harnessControl(input: {
+    sessionID: string
+    directory?: string
+  } & (
+    | { type: "domain.set"; domain: "develop" | "general" }
+    | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+    | { type: "planning.plan_once" }
+    | { type: "planning.discard" }
+    | { type: "planning.execute"; planId?: string }
+  )): Promise<unknown>
 }
 
 const tui: TuiPlugin = async (api) => {
@@ -146,19 +184,29 @@ const tui: TuiPlugin = async (api) => {
   const rootScopeId = () => activeRootScopeId || status().sessionID
   const refresh = async () => {
     if (!rootScopeId()) return
-    setStatus(
-      unwrap(
-        await client.harness({
-          sessionID: rootScopeId(),
-          directory: api.state.path.directory,
-        }),
-      ),
+    const next = unwrap(
+      await client.harness({
+        sessionID: rootScopeId(),
+        directory: api.state.path.directory,
+      }),
     )
+    setStatus(next)
+    return next
   }
   const notify = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info") =>
     api.ui.toast({ title, message, variant })
   const verify = async (reason: "automatic" | "manual") => {
     if (!rootScopeId() || verificationPending) return
+    if (
+      status().planningState === "plan_ready" ||
+      status().planningState === "awaiting_input" ||
+      status().planningState === "contract_building" ||
+      status().planningState === "contract_reviewing" ||
+      status().planningState === "plan_building" ||
+      status().planningState === "plan_reviewing"
+    ) {
+      return
+    }
     verificationPending = true
     try {
       const next = unwrap(
@@ -187,7 +235,87 @@ const tui: TuiPlugin = async (api) => {
     }
   }
 
+  const control = async (
+    body:
+      | { type: "domain.set"; domain: "develop" | "general" }
+      | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+      | { type: "planning.plan_once" }
+      | { type: "planning.discard" }
+      | { type: "planning.execute"; planId?: string },
+  ) => {
+    if (!rootScopeId()) return
+    try {
+      setStatus(
+        unwrap(
+          await client.harnessControl({
+            sessionID: rootScopeId(),
+            directory: api.state.path.directory,
+            ...body,
+          }),
+        ),
+      )
+    } catch (error) {
+      notify("Kernel control rejected", error instanceof Error ? error.message : String(error), "error")
+    }
+  }
+
   api.command?.register((): TuiCommand[] => [
+    {
+      value: "harness.domain.develop",
+      title: "Develop domain",
+      description: "Enable workspace development",
+      slash: { name: "develop" },
+      category: "Harness",
+      onSelect: () => void control({ type: "domain.set", domain: "develop" }),
+    },
+    {
+      value: "harness.domain.general",
+      title: "General domain",
+      description: "Use read-only general lookup mode",
+      slash: { name: "general" },
+      category: "Harness",
+      onSelect: () => void control({ type: "domain.set", domain: "general" }),
+    },
+    {
+      value: "harness.skill.hackathon",
+      title: "Hackathon skill",
+      description: "Enable demo-first develop planning",
+      slash: { name: "hackathon" },
+      category: "Harness",
+      onSelect: () => void control({ type: "skill.set", skill: "hackathon", enabled: true }),
+    },
+    {
+      value: "harness.skill.hackathon.off",
+      title: "Disable hackathon skill",
+      description: "Keep the current domain and disable demo-first planning",
+      slash: { name: "hackathon off" },
+      category: "Harness",
+      onSelect: () => void control({ type: "skill.set", skill: "hackathon", enabled: false }),
+    },
+    {
+      value: "harness.plan.once",
+      title: "Plan next request",
+      description: "Build and review one plan without executing it",
+      slash: { name: "plan" },
+      category: "Harness",
+      onSelect: () => void control({ type: "planning.plan_once" }),
+    },
+    {
+      value: "harness.plan.discard",
+      title: "Discard active plan",
+      description: "Discard the current unexecuted plan",
+      slash: { name: "plan discard" },
+      category: "Harness",
+      onSelect: () => void control({ type: "planning.discard" }),
+    },
+    {
+      value: "harness.plan.execute",
+      title: "Execute active plan",
+      description: "Execute the reviewed plan revision",
+      slash: { name: "execute" },
+      category: "Harness",
+      onSelect: () => void control({ type: "planning.execute" }),
+    },
     {
       value: "harness.toggle",
       title: "Harness status",
@@ -261,7 +389,13 @@ const tui: TuiPlugin = async (api) => {
     const state = record(properties?.status)
     if (!eventSessionId) return
     selectRootScope(eventSessionId)
-    if (eventSessionId === rootScopeId() && state?.type === "idle" && automatic()) void verify("automatic")
+    if (eventSessionId === rootScopeId() && state?.type === "idle" && automatic()) {
+      void (async () => {
+        const next = await refresh()
+        if (next?.planningState === "plan_ready" || next?.planningState === "awaiting_input") return
+        await verify("automatic")
+      })()
+    }
   })
 }
 

@@ -1496,6 +1496,10 @@ export type Model = {
   capabilities: {
     temperature: boolean
     reasoning: boolean
+    reasoningEfforts?: {
+      default: "provider_default"
+      supported: Array<string>
+    }
     attachment: boolean
     toolcall: boolean
     input: {

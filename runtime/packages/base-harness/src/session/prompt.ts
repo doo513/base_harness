@@ -1089,6 +1089,7 @@ const layer = Layer.effect(
               maxSameFailureRepairs: cfg.verification?.maxSameFailureRepairs,
               maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
               trigger: cfg.verification?.trigger,
+              defaultDomain: cfg.kernel?.defaultDomain ?? "develop",
               context: {
                 promptOps: rootPromptOps,
                 messageID: input.messageID,

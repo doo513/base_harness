@@ -1,4 +1,5 @@
 import { Coordinator, Orchestration, type GoalContractProposal } from "../harness/coordinator-service"
+import type * as Tool from "./tool"
 
 export interface HarnessContractProposal {
   goal: string
@@ -44,6 +45,7 @@ const preContractTools = new Set([
 ])
 
 export function assertHarnessContractSubmitted(sessionID: string, toolID: string) {
+  Coordinator.assertToolAllowed(sessionID, toolID)
   if (
     preContractTools.has(toolID) ||
     submitted.has(sessionID) ||
@@ -94,13 +96,21 @@ function validateProposal(params: HarnessContractProposal) {
 export async function registerHarnessContractProposal(
   sessionID: string,
   params: HarnessContractProposal,
+  context?: Tool.Context,
 ) {
   validateProposal(params)
-  submitted.add(sessionID)
-  Orchestration.registerContract(
+  const status = await Coordinator.proposeContract(
     sessionID,
-    params.claims.map((item) => item.claimId),
-    params.criteria.map((item) => item.criterionId),
+    params as unknown as GoalContractProposal,
+    context,
   )
-  await Coordinator.proposeContract(sessionID, params as unknown as GoalContractProposal)
+  if (status.planningState !== "awaiting_input") {
+    submitted.add(sessionID)
+    Orchestration.registerContract(
+      sessionID,
+      params.claims.map((item) => item.claimId),
+      params.criteria.map((item) => item.criterionId),
+    )
+  }
+  return status
 }

@@ -78,6 +78,28 @@ export const HarnessVerifyPayload = Schema.Struct({
   reason: Schema.optional(Schema.Literals(["automatic", "manual", "completion"])),
 })
 
+export const HarnessControlPayload = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("domain.set"),
+    domain: Schema.Literals(["develop", "general"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("skill.set"),
+    skill: Schema.Literal("hackathon"),
+    enabled: Schema.Boolean,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("planning.plan_once"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("planning.discard"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("planning.execute"),
+    planId: Schema.optional(Schema.String),
+  }),
+])
+
 export const SessionPaths = {
   list: root,
   status: `${root}/status`,
@@ -95,6 +117,7 @@ export const SessionPaths = {
   harness: `${root}/:sessionID/harness`,
   harnessVerify: `${root}/:sessionID/harness/verify`,
   harnessCancel: `${root}/:sessionID/harness/cancel`,
+  harnessControl: `${root}/:sessionID/harness/control`,
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
@@ -447,6 +470,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.harnessCancel",
             summary: "Cancel harness run",
             description: "Interrupt queued work and close the run without issuing Ready.",
+          }),
+        ),
+        HttpApiEndpoint.post("harnessControl", SessionPaths.harnessControl, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: HarnessControlPayload,
+          success: described(Schema.Unknown, "Kernel harness status"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.harnessControl",
+            summary: "Control harness kernel",
+            description: "Apply a typed domain, skill, planning, discard, or execute control.",
           }),
         ),
         HttpApiEndpoint.delete("deleteMessage", SessionPaths.deleteMessage, {

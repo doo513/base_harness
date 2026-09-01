@@ -146,33 +146,6 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
-                plan_enter: "allow",
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
-          plan: {
-            name: "plan",
-            description: "Plan mode. Disallows all edit tools.",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                plan_exit: "allow",
-                task: {
-                  general: "deny",
-                },
-                external_directory: {
-                  [path.join(Global.Path.data, "plans", "*")]: "allow",
-                },
-                edit: {
-                  "*": "deny",
-                  [path.join(".base-harness", "plans", "*.md")]: "allow",
-                  [path.relative(ctx.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
-                },
               }),
               user,
             ),
@@ -212,6 +185,26 @@ const layer = Layer.effect(
             options: {},
             mode: "subagent",
             native: true,
+          },
+          "meta-review": {
+            name: "meta-review",
+            description: "Independently reviews a typed GoalContract or PlanSpec without mutation authority.",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+            hidden: true,
           },
           compaction: {
             name: "compaction",
@@ -262,6 +255,7 @@ const layer = Layer.effect(
         }
 
         for (const [key, value] of Object.entries(cfg.agent ?? {})) {
+          if (key === "plan") continue
           if (value.disable) {
             delete agents[key]
             continue
@@ -316,7 +310,13 @@ const layer = Layer.effect(
             agents,
             values(),
             sortBy(
-              [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "build"), "desc"],
+              [
+                (x) =>
+                  cfg.default_agent
+                    ? x.name === (cfg.default_agent === "plan" ? "build" : cfg.default_agent)
+                    : x.name === "build",
+                "desc",
+              ],
               [(x) => x.name, "asc"],
             ),
           )
@@ -325,10 +325,11 @@ const layer = Layer.effect(
         const defaultInfo = Effect.fnUntraced(function* () {
           const c = yield* config.get()
           if (c.default_agent) {
-            const agent = agents[c.default_agent]
-            if (!agent) throw new Error(`default agent "${c.default_agent}" not found`)
-            if (agent.mode === "subagent") throw new Error(`default agent "${c.default_agent}" is a subagent`)
-            if (agent.hidden === true) throw new Error(`default agent "${c.default_agent}" is hidden`)
+            const configured = c.default_agent === "plan" ? "build" : c.default_agent
+            const agent = agents[configured]
+            if (!agent) throw new Error(`default agent "${configured}" not found`)
+            if (agent.mode === "subagent") throw new Error(`default agent "${configured}" is a subagent`)
+            if (agent.hidden === true) throw new Error(`default agent "${configured}" is hidden`)
             return agent
           }
           const visible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)

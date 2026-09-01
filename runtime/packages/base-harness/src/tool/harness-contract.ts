@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { registerHarnessContractProposal } from "./harness-contract-state"
+import { Question } from "../question"
 
 const StringList = Schema.mutable(Schema.Array(Schema.String))
 
@@ -54,20 +55,59 @@ export const Parameters = Schema.Struct({
 type Proposal = Schema.Schema.Type<typeof Parameters>
 type Metadata = { contractProposal: Proposal }
 
-export const HarnessContractTool = Tool.define(
+export const HarnessContractTool = Tool.define<typeof Parameters, Metadata, Question.Service>(
   "harness_contract",
-  Effect.succeed({
-    description:
-      "Submit a typed GoalContract before changing workspace state. Each criterion must map bidirectionally to one or more atomic claims with scope, applicability, a typed predicate, and an allowed verifier policy.",
-    parameters: Parameters,
-    execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
-      Effect.promise(async () => {
-        await registerHarnessContractProposal(ctx.sessionID, params)
-        return {
-          title: "GoalContract proposal",
-          output: JSON.stringify(params, null, 2),
-          metadata: { contractProposal: params },
-        }
-      }),
-  } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>),
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    return {
+      description:
+        "Submit a typed GoalContract before changing workspace state. Each criterion must map bidirectionally to one or more atomic claims with scope, applicability, a typed predicate, and an allowed verifier policy.",
+      parameters: Parameters,
+      execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
+        Effect.gen(function* () {
+          const status = yield* Effect.promise(() =>
+            registerHarnessContractProposal(ctx.sessionID, params, ctx),
+          )
+          const blocking = Array.isArray(status.metaReview?.issues)
+            ? status.metaReview.issues.filter(
+                (issue: { severity?: string }) => issue.severity === "blocking",
+              )
+            : []
+          let answers: ReadonlyArray<Question.Answer> | undefined
+          if (status.planningState === "awaiting_input" && blocking.length > 0) {
+            const questions = blocking.slice(0, 3).map(
+              (issue: { statement: string; suggestedResolution?: string }) => ({
+                question: issue.statement,
+                header: "Required decision",
+                options: [
+                  {
+                    label: "Apply suggestion",
+                    description:
+                      issue.suggestedResolution ??
+                      "Use the reviewer resolution for this blocking issue.",
+                  },
+                  {
+                    label: "Keep requirement",
+                    description:
+                      "Retain the current requirement and provide a custom clarification.",
+                  },
+                ],
+                multiple: false,
+                custom: true,
+              }),
+            )
+            answers = yield* question.ask({
+              sessionID: ctx.sessionID,
+              tool: ctx.callID ? { messageID: ctx.messageID, callID: ctx.callID } : undefined,
+              questions,
+            })
+          }
+          return {
+            title: "GoalContract proposal",
+            output: JSON.stringify({ proposal: params, kernel: status, answers }, null, 2),
+            metadata: { contractProposal: params, kernelStatus: status, answers },
+          }
+        }).pipe(Effect.orDie),
+    } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>
+  }),
 )

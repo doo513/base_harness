@@ -48,6 +48,10 @@ export type Prepared = {
   }
   readonly messageTransformOptions: Record<string, any>
   readonly headers: Record<string, string>
+  readonly reasoning: {
+    readonly default: "provider_default"
+    readonly selected: "provider_default" | string
+  }
 }
 
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
@@ -77,10 +81,15 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system.push(header, rest.join("\n"))
   }
 
-  const variant =
-    !input.small && input.model.variants && input.user.model.variant
-      ? input.model.variants[input.user.model.variant]
-      : {}
+  const requestedReasoningEffort = !input.small ? input.user.model.variant : undefined
+  const reasoningEfforts = input.model.capabilities.reasoningEfforts
+  const selectedReasoningEffort =
+    requestedReasoningEffort &&
+    reasoningEfforts?.supported.includes(requestedReasoningEffort) &&
+    input.model.variants?.[requestedReasoningEffort]
+      ? requestedReasoningEffort
+      : undefined
+  const variant = selectedReasoningEffort ? input.model.variants?.[selectedReasoningEffort] : undefined
   const base = input.small
     ? ProviderTransform.smallOptions(input.model)
     : ProviderTransform.options({
@@ -183,6 +192,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     messages,
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
     params,
+    reasoning: {
+      default: "provider_default",
+      selected: selectedReasoningEffort ?? "provider_default",
+    },
     messageTransformOptions: options,
     headers: {
       ...(input.model.providerID.startsWith("opencode")

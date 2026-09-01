@@ -59,6 +59,7 @@
         "@aws-sdk/credential-providers": "3.1057.0",
         "@base-harness/codemode": "workspace:*",
         "@base-harness/coordinator": "workspace:*",
+        "@base-harness/kernel": "workspace:*",
         "@base-harness/llm": "workspace:*",
         "@base-harness/plugin": "workspace:*",
         "@base-harness/protocol": "workspace:*",
@@ -322,6 +323,13 @@
       },
       "peerDependencies": {
         "effect": "4.0.0-beta.83",
+      },
+    },
+    "packages/kernel": {
+      "name": "@base-harness/kernel",
+      "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "catalog:",
       },
     },
     "packages/llm": {
@@ -871,6 +879,8 @@
     "@base-harness/effect-sqlite-node": ["@base-harness/effect-sqlite-node@workspace:packages/effect-sqlite-node"],
 
     "@base-harness/http-recorder": ["@base-harness/http-recorder@workspace:packages/http-recorder"],
+
+    "@base-harness/kernel": ["@base-harness/kernel@workspace:packages/kernel"],
 
     "@base-harness/llm": ["@base-harness/llm@workspace:packages/llm"],
 

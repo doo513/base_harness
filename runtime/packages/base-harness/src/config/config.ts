@@ -50,6 +50,7 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
 }
 
 let warnedLegacyVerification = false
+let warnedLegacyPlanAgent = false
 
 function normalizeLoadedConfig(data: unknown) {
   if (!isRecord(data)) return data
@@ -75,6 +76,13 @@ function normalizeLoadedConfig(data: unknown) {
       throw new Error("Unsupported verification setting(s): " + unsupported.sort().join(", "))
     }
     copy.verification = verification
+  }
+  if (copy.default_agent === "plan") {
+    copy.default_agent = "build"
+    if (!warnedLegacyPlanAgent) {
+      warnedLegacyPlanAgent = true
+      console.warn("Deprecated default_agent=plan was mapped to develop; use /plan for one-shot plan-only work.")
+    }
   }
   const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
   if (!hadLegacy) return copy

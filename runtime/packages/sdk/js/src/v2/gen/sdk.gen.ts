@@ -195,6 +195,8 @@ import type {
   SessionGetResponses,
   SessionHarnessCancelErrors,
   SessionHarnessCancelResponses,
+  SessionHarnessControlErrors,
+  SessionHarnessControlResponses,
   SessionHarnessErrors,
   SessionHarnessResponses,
   SessionHarnessVerifyErrors,
@@ -4440,6 +4442,68 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/harness/cancel",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Control harness kernel
+   *
+   * Apply a typed domain, skill, planning, discard, or execute control.
+   */
+  public harnessControl<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      body?:
+        | {
+            type: "domain.set"
+            domain: "develop" | "general"
+          }
+        | {
+            type: "skill.set"
+            skill: "hackathon"
+            enabled: boolean
+          }
+        | {
+            type: "planning.plan_once"
+          }
+        | {
+            type: "planning.discard"
+          }
+        | {
+            type: "planning.execute"
+            planId?: string
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "body", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionHarnessControlResponses,
+      SessionHarnessControlErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/harness/control",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

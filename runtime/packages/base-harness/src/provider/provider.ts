@@ -1028,6 +1028,12 @@ const ProviderInterleaved = Schema.Union([
 const ProviderCapabilities = Schema.Struct({
   temperature: Schema.Boolean,
   reasoning: Schema.Boolean,
+  reasoningEfforts: optional(
+    Schema.Struct({
+      default: Schema.Literal("provider_default"),
+      supported: Schema.Array(Schema.String),
+    }),
+  ),
   attachment: Schema.Boolean,
   toolcall: Schema.Boolean,
   input: ProviderModalities,
@@ -1281,10 +1287,25 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
       input: model.limit.input,
       output: model.limit.output,
     },
-    capabilities: {
-      temperature: model.temperature ?? false,
-      reasoning: model.reasoning ?? false,
-      attachment: model.attachment ?? false,
+        capabilities: {
+          temperature: model.temperature ?? false,
+          reasoning: model.reasoning ?? false,
+          reasoningEfforts: (() => {
+            if (!model.reasoning) return undefined
+            const supported = [
+              ...new Set(
+                (model.reasoning_options ?? [])
+                  .flatMap((option) => (option.type === "effort" ? option.values : []))
+                  .filter((value): value is string => typeof value === "string"),
+              ),
+            ]
+            if (supported.length === 0) return undefined
+            return {
+              default: "provider_default" as const,
+              supported,
+            }
+          })(),
+          attachment: model.attachment ?? false,
       toolcall: model.tool_call ?? true,
       input: {
         text: model.modalities?.input?.includes("text") ?? false,

@@ -57,6 +57,12 @@ export const Isolation = Schema.Struct({
   maxInputBytes: Schema.optional(PositiveInt),
 })
 
+export const Kernel = Schema.Struct({
+  defaultDomain: Schema.optional(Schema.Literals(["develop", "general"])).annotate({
+    description: "Default Kernel domain for a new session",
+  }),
+})
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -69,6 +75,9 @@ export const Info = Schema.Struct({
   }),
   isolation: Schema.optional(Isolation).annotate({
     description: "Strict WSL2 or Linux namespace execution isolation policy",
+  }),
+  kernel: Schema.optional(Kernel).annotate({
+    description: "Kernel domain and planning defaults",
   }),
   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),

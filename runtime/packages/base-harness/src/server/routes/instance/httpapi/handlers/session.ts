@@ -27,6 +27,7 @@ import {
   DiffQuery,
   ForkPayload,
   HarnessVerifyPayload,
+  HarnessControlPayload,
   InitPayload,
   ListQuery,
   MessagesQuery,
@@ -258,6 +259,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* Effect.promise(() => Coordinator.cancel(ctx.params.sessionID))
     })
 
+    const harnessControl = Effect.fn("SessionHttpApi.harnessControl")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof HarnessControlPayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* Effect.promise(() => Coordinator.control(ctx.params.sessionID, ctx.payload))
+    })
+
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof InitPayload.Type
@@ -451,6 +460,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("harness", harness)
       .handle("harnessVerify", harnessVerify)
       .handle("harnessCancel", harnessCancel)
+      .handle("harnessControl", harnessControl)
       .handle("init", init)
       .handle("share", share)
       .handle("unshare", unshare)
