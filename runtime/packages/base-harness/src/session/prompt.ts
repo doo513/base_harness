@@ -1063,13 +1063,17 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const instance = yield* InstanceState.context
         const selectedModel = input.model ?? (yield* currentModel(input.sessionID))
+        const kernelStatus = !session.parentID
+          ? (Coordinator.status(input.sessionID) as { planningPreference?: "auto" | "plan_once" })
+          : undefined
+        const planOnly = kernelStatus?.planningPreference === "plan_once"
         const directive = Orchestration.beginPrompt({
           sessionID: input.sessionID,
           parentSessionID: session.parentID,
           workspace: instance.directory,
           goal,
           mode: cfg.orchestration?.mode,
-          exploration: cfg.orchestration?.exploration,
+          exploration: planOnly ? "manual" : cfg.orchestration?.exploration,
           maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
           model: {
             providerID: selectedModel.providerID,
@@ -1100,7 +1104,18 @@ const layer = Layer.effect(
             }),
           )
         }
-        const synthetic = { type: "text" as const, text: directive.instruction, synthetic: true }
+        const synthetic = {
+          type: "text" as const,
+          text: planOnly
+            ? [
+                "Base Harness plan-only mode is active.",
+                "Submit harness_contract and harness_workgraph without changing workspace state.",
+                "Use read-only tools only when contract construction requires workspace facts; do not delegate exploration by default.",
+                "Stop after the Kernel reports plan_ready; execution requires /execute.",
+              ].join("\n")
+            : directive.instruction,
+          synthetic: true,
+        }
         const exploration = directive.explore
           ? [
               {

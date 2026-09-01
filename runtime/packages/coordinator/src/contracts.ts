@@ -46,6 +46,8 @@ export interface HarnessStatus {
   maxSameFailureRepairs: number
   evidenceCount: number
   candidateCount: number
+  evidenceRefs: string[]
+  candidateRefs: string[]
   readyEligible: boolean
   message?: string
   metrics: {

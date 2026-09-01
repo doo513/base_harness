@@ -1,7 +1,12 @@
 import type { TuiCommand, TuiPlugin } from "@base-harness/plugin/tui"
 import type { BuiltinTuiPlugin } from "./builtins"
-import { createSignal, Show } from "solid-js"
-import { useSync } from "../context/sync"
+import { createSignal, For, onCleanup, Show } from "solid-js"
+import {
+  pendingHarnessSelection,
+  queueHarnessControl,
+  subscribePendingHarnessControls,
+  type HarnessControl,
+} from "../harness/pending-control"
 
 type WorkerStatus = {
   workUnitId: string
@@ -9,6 +14,7 @@ type WorkerStatus = {
   state: string
   scopeId?: string
   repairCount: number
+  failureFingerprint?: string
 }
 
 type HarnessStatus = {
@@ -31,6 +37,8 @@ type HarnessStatus = {
   maxSameFailureRepairs: number
   evidenceCount: number
   candidateCount: number
+  evidenceRefs: string[]
+  candidateRefs: string[]
   readyEligible: boolean
   message?: string
   domain?: "develop" | "general"
@@ -40,12 +48,41 @@ type HarnessStatus = {
   planningDecision?: "direct" | "planned"
   activePlanId?: string
   activePlanRevision?: number
+  goalContract?: {
+    revision: number
+    hash?: string
+    claims: Array<{ id: string; statement: string; required: boolean; criterionIds: string[] }>
+    criteria: Array<{ id: string; statement: string; required: boolean; risk?: string; claimIds: string[] }>
+  }
+  plan?: {
+    id: string
+    revision: number
+    assumptions: string[]
+    steps: Array<{
+      id: string
+      title: string
+      priority: string
+      claimIds: string[]
+      criterionIds: string[]
+      dependsOn: string[]
+      readSet: string[]
+      writeSet: string[]
+    }>
+  }
   preflight?: {
     decision: "accept" | "meta_review_required" | "needs_input"
     reasons: string[]
     questionCount: number
     assumptionCount: number
     reviewerCallCount: number
+    requiredDecisions?: Array<{
+      id: string
+      statement: string
+      impact: string
+      affectedClaimIds: string[]
+      affectedCriterionIds: string[]
+    }>
+    assumptions?: string[]
   }
   metaReview?: {
     phase: "goal_contract" | "plan"
@@ -56,7 +93,23 @@ type HarnessStatus = {
       id: string
       severity: "blocking" | "warning"
       statement: string
+      targetIds?: string[]
     }>
+  }
+  metrics?: {
+    observedActions: number
+    workers: number
+    activeWorkers: number
+    repairs: number
+    evidence: number
+    sandboxRuns: number
+  }
+  isolation?: {
+    backend: string
+    containment: string
+    network: string
+    state: string
+    code?: string
   }
 }
 
@@ -74,6 +127,8 @@ const initialStatus = (maxSameFailureRepairs = 2): HarnessStatus => ({
   maxSameFailureRepairs,
   evidenceCount: 0,
   candidateCount: 0,
+  evidenceRefs: [],
+  candidateRefs: [],
   readyEligible: false,
 })
 
@@ -91,7 +146,16 @@ const outcomeColor = (status: HarnessStatus): string => {
   return "#7aa2c8"
 }
 
-function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) {
+const clip = (value: string, length = 72) =>
+  value.length > length ? value.slice(0, Math.max(0, length - 1)) + "..." : value
+
+function VerificationPanel(props: {
+  status: HarnessStatus
+  overlay?: boolean
+  view?: "summary" | "goal" | "evidence"
+}) {
+  const expandedGoal = () => props.view === "goal"
+  const expandedEvidence = () => props.view === "evidence"
   return (
     <box
       flexDirection="column"
@@ -124,17 +188,67 @@ function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) 
       </text>
       <Show when={props.status.preflight}>
         {(preflight) => (
-          <text fg="#a8b3c7">
-            Preflight {preflight().decision} / questions {String(preflight().questionCount)} / assumptions {String(preflight().assumptionCount)} / reviews {String(preflight().reviewerCallCount)}
-          </text>
+          <box flexDirection="column">
+            <text fg="#a8b3c7">
+              Preflight {preflight().decision} / questions {String(preflight().questionCount)} / assumptions {String(preflight().assumptionCount)} / reviews {String(preflight().reviewerCallCount)}
+            </text>
+            <For each={preflight().requiredDecisions ?? []}>
+              {(decision) => <text fg="#e6b566">? {decision.id} [{decision.impact}] {clip(decision.statement)}</text>}
+            </For>
+            <For each={preflight().assumptions ?? []}>
+              {(assumption) => <text fg="#778399">~ {clip(assumption)}</text>}
+            </For>
+          </box>
         )}
       </Show>
       <text fg="#a8b3c7">
         Workers {String(props.status.activeCount)} active / {String(props.status.queuedCount)} queued / {String(props.status.workers.length)} total
       </text>
+      <For each={props.status.workers}>
+        {(worker) => (
+          <text fg={worker.state === "failed" || worker.state === "repair_exhausted" ? "#e06c75" : "#778399"}>
+            {worker.state === "running" ? ">" : "-"} {worker.workUnitId} [{worker.state}] r{String(worker.repairCount)} {clip(worker.title, 44)}
+          </text>
+        )}
+      </For>
+      <Show when={props.status.goalContract}>
+        {(contract) => (
+          <box flexDirection="column">
+            <text fg="#a8b3c7">GoalContract r{String(contract().revision)} / {contract().claims.length} claims / {contract().criteria.length} criteria</text>
+            <For each={expandedGoal() ? contract().claims : contract().claims.slice(0, 3)}>
+              {(claim) => <text>{claim.required ? "*" : "-"} {claim.id}: {clip(claim.statement)}</text>}
+            </For>
+            <Show when={expandedGoal()}>
+              <For each={contract().criteria}>
+                {(criterion) => <text fg="#778399">- {criterion.id} [{criterion.risk ?? "unknown"}]: {clip(criterion.statement)}</text>}
+              </For>
+            </Show>
+          </box>
+        )}
+      </Show>
+      <Show when={props.status.plan}>
+        {(plan) => (
+          <box flexDirection="column">
+            <text fg="#a8b3c7">Plan {plan().id}@{String(plan().revision)} / {String(plan().steps.length)} steps</text>
+            <For each={plan().steps.slice(0, 6)}>
+              {(step) => <text>- {step.id} [{step.priority}] {clip(step.title, 48)}</text>}
+            </For>
+          </box>
+        )}
+      </Show>
       <text fg="#a8b3c7">
         Evidence {String(props.status.evidenceCount)} / Candidates {String(props.status.candidateCount)}
       </text>
+      <Show when={expandedEvidence()}>
+        <box flexDirection="column">
+          <For each={props.status.evidenceRefs}>
+            {(reference) => <text fg="#78c091">+ {clip(reference)}</text>}
+          </For>
+          <For each={props.status.candidateRefs}>
+            {(reference) => <text fg="#e6b566">? {clip(reference)}</text>}
+          </For>
+        </box>
+      </Show>
       <Show when={props.status.failedCriterion}>
         <text fg="#e6b566">Criterion {props.status.failedCriterion}</text>
       </Show>
@@ -147,6 +261,9 @@ function VerificationPanel(props: { status: HarnessStatus; overlay?: boolean }) 
       <text fg="#a8b3c7">
         Repairs {String(props.status.repairCount)} / {String(props.status.maxSameFailureRepairs)}
       </text>
+      <Show when={props.status.isolation}>
+        {(isolation) => <text fg="#778399">Isolation {isolation().backend} / {isolation().containment} / {isolation().network} / {isolation().state}</text>}
+      </Show>
       <Show when={props.overlay}>
         <text fg="#778399">Run /harness again to close</text>
       </Show>
@@ -158,27 +275,46 @@ type SessionHarnessClient = {
   harness(input: { sessionID: string; directory?: string }): Promise<unknown>
   harnessVerify(input: { sessionID: string; directory?: string; reason: "automatic" | "manual" | "completion" }): Promise<unknown>
   harnessCancel(input: { sessionID: string; directory?: string }): Promise<unknown>
-  harnessControl(input: {
-    sessionID: string
-    directory?: string
-  } & (
-    | { type: "domain.set"; domain: "develop" | "general" }
-    | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
-    | { type: "planning.plan_once" }
-    | { type: "planning.discard" }
-    | { type: "planning.execute"; planId?: string }
-  )): Promise<unknown>
+  harnessControl(input: { sessionID: string; directory?: string; body: HarnessControl }): Promise<unknown>
 }
 
 const tui: TuiPlugin = async (api) => {
-  const sync = useSync()
-  const maxRepairs = () => sync.data.config.verification?.maxSameFailureRepairs ?? 2
-  const automatic = () => sync.data.config.verification?.trigger !== "manual"
-  const [status, setStatus] = createSignal(initialStatus(maxRepairs()))
+  let automaticVerification = true
+  const [status, setStatus] = createSignal(initialStatus(2))
   const [overlay, setOverlay] = createSignal(false)
+  const [overlayView, setOverlayView] = createSignal<"summary" | "goal" | "evidence">("summary")
+  const [pendingSelection, setPendingSelection] = createSignal(pendingHarnessSelection())
   let activeRootScopeId = ""
   let fetchedRootScopeId = ""
+
+  void api.client.config
+    .get()
+    .then((response) => {
+      const config = record(response.data)
+      const verification = record(config.verification)
+      automaticVerification = verification.trigger !== "manual"
+      const repairs = verification.maxSameFailureRepairs
+      if (typeof repairs === "number" && Number.isInteger(repairs) && repairs >= 0) {
+        setStatus((current) => ({ ...current, maxSameFailureRepairs: repairs }))
+      }
+    })
+    .catch(() => {})
+
+  const automatic = () => automaticVerification
   let verificationPending = false
+  const stopPendingSubscription = subscribePendingHarnessControls(() => {
+    const next = pendingHarnessSelection()
+    setPendingSelection(next)
+    if (!rootScopeId()) {
+      setStatus((current) => ({
+        ...current,
+        domain: next.domain,
+        skills: next.hackathon ? ["hackathon"] : [],
+        planningPreference: next.planOnce ? "plan_once" : "auto",
+      }))
+    }
+  })
+  onCleanup(stopPendingSubscription)
 
   const client = api.client.session as unknown as SessionHarnessClient
   const unwrap = (value: unknown): HarnessStatus => {
@@ -250,22 +386,23 @@ const tui: TuiPlugin = async (api) => {
     }
   }
 
-  const control = async (
-    body:
-      | { type: "domain.set"; domain: "develop" | "general" }
-      | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
-      | { type: "planning.plan_once" }
-      | { type: "planning.discard" }
-      | { type: "planning.execute"; planId?: string },
-  ) => {
-    if (!rootScopeId()) return
+  const control = async (body: HarnessControl) => {
+    if (!rootScopeId()) {
+      if (body.type === "planning.execute") {
+        notify("No reviewed plan", "Create a session and build a plan before execution.", "warning")
+        return
+      }
+      queueHarnessControl(body)
+      notify("Harness control staged", "The setting will be applied before the first request.", "success")
+      return
+    }
     try {
       setStatus(
         unwrap(
           await client.harnessControl({
             sessionID: rootScopeId(),
             directory: api.state.path.directory,
-            ...body,
+            body,
           }),
         ),
       )
@@ -274,7 +411,7 @@ const tui: TuiPlugin = async (api) => {
     }
   }
 
-  api.command?.register((): TuiCommand[] => [
+  const harnessCommands: TuiCommand[] = [
     {
       value: "harness.domain.develop",
       title: "Develop domain",
@@ -338,6 +475,7 @@ const tui: TuiPlugin = async (api) => {
       slash: { name: "harness" },
       category: "Harness",
       onSelect: () => {
+        setOverlayView("summary")
         setOverlay((value) => !value)
         void refresh()
       },
@@ -348,7 +486,11 @@ const tui: TuiPlugin = async (api) => {
       description: "Show the active root goal",
       slash: { name: "goal" },
       category: "Harness",
-      onSelect: () => notify("GoalContract", status().goal || "No active Host run"),
+      onSelect: () => {
+        setOverlayView("goal")
+        setOverlay(true)
+        void refresh()
+      },
     },
     {
       value: "harness.verify",
@@ -364,9 +506,28 @@ const tui: TuiPlugin = async (api) => {
       description: "Show trusted evidence and candidate counts",
       slash: { name: "evidence" },
       category: "Harness",
-      onSelect: () => notify("Evidence", `${status().evidenceCount} trusted / ${status().candidateCount} candidates`),
+      onSelect: () => {
+        setOverlayView("evidence")
+        setOverlay(true)
+        void refresh()
+      },
     },
-  ])
+  ]
+
+  api.keymap.registerLayer({
+    commands: harnessCommands.map((command) => ({
+      name: command.value,
+      title: command.title,
+      desc: command.description,
+      category: command.category,
+      namespace: "palette",
+      slashName: command.slash?.name,
+      slashAliases: command.slash?.aliases,
+      run() {
+        return command.onSelect?.(api.ui.dialog)
+      },
+    })),
+  })
 
   api.slots.register({
     order: 50,
@@ -377,12 +538,23 @@ const tui: TuiPlugin = async (api) => {
           fetchedRootScopeId = rootScopeId()
           void refresh()
         }
-        return <VerificationPanel status={status()} />
+        return <VerificationPanel status={status()} view="summary" />
       },
+      app_bottom: () => (
+        <box paddingLeft={1} paddingRight={1}>
+          <text fg="#7aa2c8">
+            HARNESS {status().domain ?? pendingSelection().domain}
+            {(status().skills?.includes("hackathon") ?? pendingSelection().hackathon) ? " + hackathon" : ""}
+            {pendingSelection().planOnce ? " / next: plan-only" : ""}
+            {pendingSelection().count > 0 ? ` / ${String(pendingSelection().count)} staged` : ""}
+            {status().phase !== "inactive" ? ` / ${status().phase}` : ""}
+          </text>
+        </box>
+      ),
       app: () => (
         <Show when={overlay()}>
           <box position="absolute" top={2} right={2} zIndex={100}>
-            <VerificationPanel status={status()} overlay />
+            <VerificationPanel status={status()} overlay view={overlayView()} />
           </box>
         </Show>
       ),

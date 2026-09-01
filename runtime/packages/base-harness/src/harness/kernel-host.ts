@@ -46,6 +46,29 @@ export interface KernelStatus {
   planningDecision?: PlanningDecision
   activePlanId?: string
   activePlanRevision?: number
+  goalContract?: {
+    revision: number
+    hash?: string
+    claims: Array<{
+      id: string
+      statement: string
+      required: boolean
+      criterionIds: string[]
+    }>
+    criteria: Array<{
+      id: string
+      statement: string
+      required: boolean
+      risk?: string
+      claimIds: string[]
+    }>
+  }
+  plan?: {
+    id: string
+    revision: number
+    assumptions: string[]
+    steps: PlanSpec["steps"]
+  }
   preflight?: ContractPreflightStatus
   metaReview?: {
     phase: MetaReviewPhase
@@ -355,6 +378,15 @@ export class KernelHost {
       planningDecision: record.decision,
       activePlanId: record.state.activePlanId,
       activePlanRevision: record.state.activePlanRevision,
+      goalContract: contractStatus(record),
+      plan: record.plan
+        ? {
+            id: record.plan.planId,
+            revision: record.plan.revision,
+            assumptions: record.plan.assumptions,
+            steps: record.plan.steps,
+          }
+        : undefined,
       preflight: record.preflight,
       metaReview: record.review
         ? {
@@ -469,6 +501,34 @@ export class KernelHost {
       mutatingActionAllowed: false,
       revalidationTrigger: trigger,
     }
+  }
+}
+
+function contractStatus(record: SessionRecord): KernelStatus["goalContract"] {
+  if (!record.contract || typeof record.contract !== "object") return undefined
+  const contract = record.contract as Record<string, unknown>
+  const claims = Array.isArray(contract.claims) ? contract.claims : []
+  const criteria = Array.isArray(contract.criteria) ? contract.criteria : []
+  return {
+    revision: record.contractRevision,
+    hash: record.contractHash,
+    claims: claims
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((claim) => ({
+        id: typeof claim.claimId === "string" ? claim.claimId : "unknown",
+        statement: typeof claim.statement === "string" ? claim.statement : "",
+        required: claim.required !== false,
+        criterionIds: stringArray(claim.criterionIds),
+      })),
+    criteria: criteria
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((criterion) => ({
+        id: typeof criterion.criterionId === "string" ? criterion.criterionId : "unknown",
+        statement: typeof criterion.statement === "string" ? criterion.statement : "",
+        required: criterion.required !== false,
+        risk: typeof criterion.risk === "string" ? criterion.risk : undefined,
+        claimIds: stringArray(criterion.claimIds),
+      })),
   }
 }
 

@@ -57,6 +57,7 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
+import { flushPendingHarnessControls } from "../../harness/pending-control"
 
 registerOpencodeSpinner()
 
@@ -164,7 +165,7 @@ export function Prompt(props: PromptProps) {
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
-  const agentShortcut = useCommandShortcut("agent.cycle")
+  const domainShortcut = useCommandShortcut("agent.list")
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
   const exit = useExit()
@@ -1021,6 +1022,22 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      try {
+        await flushPendingHarnessControls((body) =>
+          sdk.client.session.harnessControl({
+            sessionID: sessionID!,
+            directory,
+            body,
+          }),
+        )
+      } catch (error) {
+        if (finishMoveProgress) move.finishSubmit()
+        toast.show({
+          message: `Harness setup failed before execution: ${errorMessage(error)}`,
+          variant: "error",
+        })
+        return true
+      }
     }
 
     const inputText = expandTrackedPastedText(
@@ -1671,7 +1688,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {domainShortcut()} <span style={{ fg: theme.textMuted }}>domains</span>
                       </text>
                     </Match>
                   </Switch>

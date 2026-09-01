@@ -857,7 +857,7 @@ export const RunCommand = effectCmd({
           | { type: "planning.plan_once" }
           | { type: "planning.execute"; planId?: string }
         const kernelClient = client.session as unknown as {
-          harnessControl(input: { sessionID: string; directory?: string } & KernelControl): Promise<unknown>
+          harnessControl(input: { sessionID: string; directory?: string; body: KernelControl }): Promise<unknown>
           harness(input: { sessionID: string; directory?: string }): Promise<unknown>
         }
 
@@ -867,23 +867,20 @@ export const RunCommand = effectCmd({
         await kernelClient.harnessControl({
           sessionID,
           directory: cwd,
-          type: "domain.set",
-          domain: args.domain,
+          body: { type: "domain.set", domain: args.domain },
         })
         if (args.hackathon) {
           await kernelClient.harnessControl({
             sessionID,
             directory: cwd,
-            type: "skill.set",
-            skill: "hackathon",
-            enabled: true,
+            body: { type: "skill.set", skill: "hackathon", enabled: true },
           })
         }
         if (args.plan) {
           await kernelClient.harnessControl({
             sessionID,
             directory: cwd,
-            type: "planning.plan_once",
+            body: { type: "planning.plan_once" },
           })
         }
 
@@ -950,8 +947,7 @@ export const RunCommand = effectCmd({
             await kernelClient.harnessControl({
               sessionID,
               directory: cwd,
-              type: "planning.execute",
-              planId: args["execute-plan"],
+              body: { type: "planning.execute", planId: args["execute-plan"] },
             })
             await finish()
             return

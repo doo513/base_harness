@@ -676,9 +676,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "agent.list",
-        title: "Switch agent",
-        category: "Agent",
-        slashName: "agents",
+        title: "Select harness domain",
+        category: "Harness",
+        slashName: "domains",
         run: () => {
           dialog.replace(() => <DialogAgent />)
         },

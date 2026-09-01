@@ -3,6 +3,7 @@ import { useDialog } from "../ui/dialog"
 import { useSDK } from "../context/sdk"
 import { useRoute } from "../context/route"
 import { useToast } from "../ui/toast"
+import { queueHarnessControl, type HarnessControl } from "../harness/pending-control"
 
 export function DialogAgent() {
   const dialog = useDialog()
@@ -32,25 +33,28 @@ export function DialogAgent() {
       title="Select domain"
       options={options}
       onSelect={(option) => {
-        if (route.data.type !== "session") {
-          toast.show({ message: "Open a session before selecting a domain.", variant: "warning" })
-          return
-        }
-        const input =
+        const body: HarnessControl =
           option.value === "hackathon"
             ? {
-                sessionID: route.data.sessionID,
                 type: "skill.set" as const,
                 skill: "hackathon" as const,
                 enabled: true,
               }
             : {
-                sessionID: route.data.sessionID,
                 type: "domain.set" as const,
                 domain: option.value as "develop" | "general",
               }
+        if (route.data.type !== "session") {
+          queueHarnessControl(body)
+          toast.show({
+            message: `${option.title} will be applied before the first request.`,
+            variant: "success",
+          })
+          dialog.clear()
+          return
+        }
         void sdk.client.session
-          .harnessControl(input)
+          .harnessControl({ sessionID: route.data.sessionID, body })
           .then(() => dialog.clear())
           .catch(toast.error)
       }}

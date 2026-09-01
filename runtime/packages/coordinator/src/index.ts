@@ -788,6 +788,8 @@ export class CoordinatorRuntime implements CoordinatorService {
       maxSameFailureRepairs: 2,
       evidenceCount: 0,
       candidateCount: 0,
+      evidenceRefs: [],
+      candidateRefs: [],
       readyEligible: false,
       metrics: { observedActions: 0, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0, sandboxRuns: 0 },
     }
@@ -816,6 +818,8 @@ export class CoordinatorRuntime implements CoordinatorService {
       maxSameFailureRepairs: run.verification.maxSameFailureRepairs,
       evidenceCount: run.verification.evidenceRefs.length,
       candidateCount: run.verification.candidateRefs.length,
+      evidenceRefs: run.verification.evidenceRefs.map(String),
+      candidateRefs: run.verification.candidateRefs.map(String),
       readyEligible: run.verification.readyEligible === true,
       message: run.verification.message,
       isolation: run.isolation,
