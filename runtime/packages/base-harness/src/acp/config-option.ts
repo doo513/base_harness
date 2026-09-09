@@ -1,11 +1,23 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import type { ReasoningModel } from "@/provider/reasoning-capabilities"
 
-export const DEFAULT_VARIANT_VALUE = "default"
+export const DEFAULT_VARIANT_VALUE = "provider_default"
 
 export type ConfigOptionModel = {
   id: string
   name: string
   variants?: Record<string, Record<string, unknown>>
+  capabilities?: ReasoningModel["capabilities"]
+}
+
+/** The Host publishes validated names, not private provider option payloads. */
+export function supportedReasoningVariants(model: ConfigOptionModel | undefined) {
+  if (!model?.capabilities?.reasoning) return {}
+  return Object.fromEntries(
+    [...new Set(model.capabilities.reasoningEfforts?.supported ?? [])]
+      .filter((id) => Object.hasOwn(model.variants ?? {}, id))
+      .map((id) => [id, model.variants![id]!]),
+  )
 }
 
 export type ConfigOptionProvider = {
@@ -62,10 +74,13 @@ export function buildEffortSelectOption(input: {
     category: "thought_level",
     type: "select",
     currentValue: selectVariant(input.currentVariant, input.variants),
-    options: input.variants.map((variant) => ({
-      value: variant,
-      name: formatVariantName(variant),
-    })),
+    options: [
+      { value: DEFAULT_VARIANT_VALUE, name: "Provider default" },
+      ...input.variants.filter((variant) => variant !== DEFAULT_VARIANT_VALUE).map((variant) => ({
+        value: variant,
+        name: formatVariantName(variant),
+      })),
+    ],
   }
 }
 
@@ -124,7 +139,7 @@ export function parseModelSelection(modelId: string, providers: readonly ConfigO
     if (separator > -1) {
       const baseModelID = modelID.slice(0, separator)
       const variant = modelID.slice(separator + 1)
-      if (provider.models[baseModelID]?.variants?.[variant]) {
+      if (Object.hasOwn(supportedReasoningVariants(provider.models[baseModelID]), variant)) {
         return { model: { providerID: provider.id, modelID: baseModelID }, variant }
       }
     }
@@ -152,15 +167,12 @@ export function formatCurrentModelId(input: {
   includeVariant?: boolean
 }) {
   const base = `${input.model.providerID}/${input.model.modelID}`
-  if (!input.includeVariant || !input.variants?.length) return base
-  return `${base}/${selectVariant(input.variant, input.variants)}`
+  if (!input.includeVariant || !input.variant || !input.variants?.includes(input.variant)) return base
+  return `${base}/${input.variant}`
 }
 
 export function formatVariantName(variant: string) {
   return variant
-    .split(/[_-]/)
-    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
-    .join(" ")
 }
 
 function buildModelSelectOptions(
@@ -179,7 +191,7 @@ function buildModelSelectOptions(
 
         return [
           base,
-          ...Object.keys(model.variants)
+          ...Object.keys(supportedReasoningVariants(model))
             .filter((variant) => variant !== DEFAULT_VARIANT_VALUE)
             .map((variant) => ({
               value: `${provider.id}/${model.id}/${variant}`,
@@ -191,13 +203,12 @@ function buildModelSelectOptions(
 }
 
 function variantsForModel(providers: readonly ConfigOptionProvider[], model: ModelSelection["model"]) {
-  return Object.keys(
-    providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.variants ?? {},
-  )
+  return Object.keys(supportedReasoningVariants(
+    providers.find((provider) => provider.id === model.providerID)?.models[model.modelID],
+  ))
 }
 
 function selectVariant(variant: string | undefined, variants: readonly string[]) {
   if (variant && variants.includes(variant)) return variant
-  if (variants.includes(DEFAULT_VARIANT_VALUE)) return DEFAULT_VARIANT_VALUE
-  return variants[0]
+  return DEFAULT_VARIANT_VALUE
 }

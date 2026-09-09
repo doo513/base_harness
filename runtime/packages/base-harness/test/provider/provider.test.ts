@@ -585,13 +585,14 @@ it.instance(
 )
 
 it.instance(
-  "model config regenerates variants when overriding the provider package",
+  "provider package override does not infer undeclared native reasoning levels",
   Effect.gen(function* () {
     yield* set("ANTHROPIC_API_KEY", "test-api-key")
     const providers = yield* list
     const model = providers[ProviderV2.ID.anthropic].models["claude-sonnet-4-6"]
-    expect(model.variants?.low).toEqual({ reasoningEffort: "low" })
-    expect(model.variants?.max).toBeUndefined()
+    expect(model.api.npm).toBe("@ai-sdk/openai-compatible")
+    expect(model.variants).toEqual({})
+    expect(model.capabilities.reasoningEfforts).toBeUndefined()
   }),
   {
     config: {
@@ -599,6 +600,33 @@ it.instance(
         anthropic: {
           npm: "@ai-sdk/openai-compatible",
           models: { "claude-sonnet-4-6": { name: "Claude via OpenAI" } },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "provider package override accepts explicitly configured native reasoning levels",
+  Effect.gen(function* () {
+    yield* set("ANTHROPIC_API_KEY", "test-api-key")
+    const providers = yield* list
+    const model = providers[ProviderV2.ID.anthropic].models["claude-sonnet-4-6"]
+    expect(model.variants).toEqual({ service_exact: { reasoningEffort: "service_exact" } })
+    expect(model.capabilities.reasoningEfforts).toEqual({
+      default: "provider_default", supported: ["service_exact"],
+    })
+  }),
+  {
+    config: {
+      provider: {
+        anthropic: {
+          npm: "@ai-sdk/openai-compatible",
+          models: {
+            "claude-sonnet-4-6": {
+              variants: { service_exact: { reasoningEffort: "service_exact" } },
+            },
+          },
         },
       },
     },

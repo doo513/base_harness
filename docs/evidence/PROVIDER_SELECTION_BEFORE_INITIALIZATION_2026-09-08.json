@@ -1,0 +1,44 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Provider allowlist enforcement before provider-specific initialization",
+  "source": "runtime/packages/base-harness/src/provider/provider.ts",
+  "newTest": "runtime/packages/base-harness/test/provider/selection-initialization.test.ts",
+  "changes": {
+    "earlyAllowlistGuards": 5,
+    "configReapplyGuard": true,
+    "publicConfigChanged": false,
+    "nativeReasoningNamesChanged": false
+  },
+  "tests": {
+    "selectionAndMetadataAndReasoning": {
+      "passed": 21,
+      "failed": 0,
+      "assertions": 78,
+      "durationSeconds": 87.17
+    },
+    "existingProviderSelection": {
+      "passed": 9,
+      "failed": 0,
+      "filteredOut": 93,
+      "assertions": 17,
+      "durationSeconds": 13.34
+    },
+    "perTestTimeoutMs": 15000
+  },
+  "hostTypecheck": {
+    "exitCode": 0
+  },
+  "supervisorExitCode": 0,
+  "observedBoundary": "An excluded Bedrock custom loader no longer sets AWS_BEARER_TOKEN_BEDROCK from an in-memory fake auth record; allowed/default cases retain that existing behavior",
+  "limitations": [
+    "Only custom-loader side effects were directly instrumented by the new tests; plugin-specific loaders were not individually spied",
+    "Plugin registration/config hooks still initialize before provider selection is read",
+    "Shared auth/environment/catalog reads still occur",
+    "No before/after startup benchmark or actual OAuth/model invocation in this turn",
+    "No application-wide full regression suite"
+  ],
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

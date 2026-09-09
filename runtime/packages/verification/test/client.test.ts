@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { resolve } from "node:path"
 import { ProcessVerificationClient, VerificationClientError } from "../src/client"
-import { createGoalContract, goalSource } from "../src/types"
+import { createGoalContract, goalSource, materializeProposal } from "../src/types"
 
 const source = goalSource("exercise protocol v3", "test-source")
 const contract = createGoalContract(source)
@@ -67,8 +67,10 @@ test("child scope verifies assigned Claims without issuing root Ready", async ()
     patchHash: "c".repeat(64),
     overlayRoot: process.cwd(),
   }
-  await client.attachCandidate(candidate)
-  await client.observe({ scopeId: "worker-1", claimIds: [claimId], tool: "write", status: "completed" })
+  const attached = await client.attachCandidate(candidate)
+  expect(attached.scopeId).toBe("worker-1")
+  const observed = await client.observe({ scopeId: "worker-1", claimIds: [claimId], tool: "write", status: "completed" })
+  expect(observed.scopeId).toBe("worker-1")
   const child = await client.verify("completion", "worker-1", {
     claimIds: [claimId],
     criterionIds: [criterionId],
@@ -79,10 +81,12 @@ test("child scope verifies assigned Claims without issuing root Ready", async ()
     candidateRevision: candidate.revision,
     patchHash: candidate.patchHash,
   })
-  await client.commitCandidate(child.scopeAttestation!, "worker-1")
+  const committed = await client.commitCandidate(child.scopeAttestation!, "worker-1")
+  expect(committed.scopeId).toBe("worker-1")
   expect(child.readyRef).toBeNull()
   const root = await client.verify("completion")
   expect(root.outcome).toBe("ready")
+  expect(root.scopeId).toBe("root")
   await client.dispose()
 })
 
@@ -120,4 +124,29 @@ test("sidecar version mismatch is fail-closed", async () => {
 test("sidecar crash is fail-closed", async () => {
   const result = startWithMode("crash")
   await expect(result).rejects.toBeInstanceOf(Error)
+})
+
+for (const mode of ["wrong-run", "wrong-scope", "clean-exit"]) {
+  test(mode + " sidecar response cannot be accepted", async () => {
+    await expect(startWithMode(mode)).rejects.toBeInstanceOf(VerificationClientError)
+  })
+}
+
+test("materialization preserves each claim's predicate and verifier policy", () => {
+  const first = contract.claims[0]!
+  const criterion = contract.criteria[0]!
+  const proposal = {
+    goal: source.text,
+    criteria: [{ ...criterion, claimIds: ["artifact-claim", "exit-claim"] }],
+    claims: [
+      { ...first, claimId: "artifact-claim", kind: "artifact" as const, predicate: { type: "exists" },
+        scope: { targets: ["result.txt"], capabilities: [], exclusions: [] },
+        verifierPolicy: { minimumStrength: "structural" as const, allowedVerifierIds: ["file"], minIndependentFamilies: 1 } },
+      { ...first, claimId: "exit-claim", predicate: { type: "command_exit", expectedExitCode: 7 } },
+    ],
+  }
+  const materialized = materializeProposal(source, proposal)
+  expect(materialized.claims[0]!.predicate).toEqual({ type: "exists" })
+  expect(materialized.claims[0]!.verifierPolicy.allowedVerifierIds).toEqual(["file"])
+  expect(materialized.claims[1]!.predicate).toEqual({ type: "command_exit", expectedExitCode: 7 })
 })

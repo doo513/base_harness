@@ -1,0 +1,30 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "change": "Make kill of an already completed child idempotent, checking completion when the Effect runs.",
+  "core": {
+    "typecheckExitCode": 0,
+    "passed": 27,
+    "failed": 0,
+    "assertions": 32,
+    "durationSeconds": 8.14
+  },
+  "host": {
+    "typecheckExitCode": 0,
+    "passed": 2,
+    "failed": 0,
+    "filtered": 57,
+    "assertions": 11,
+    "durationSeconds": 22.2
+  },
+  "regressionsAdded": [
+    "repeated kill after successful exit",
+    "late kill after non-zero exit",
+    "kill Effect constructed before completion but executed afterward"
+  ],
+  "fullHostRerun": false,
+  "acpInitializeTimeoutResolved": false,
+  "shellResumeTimeoutResolved": false,
+  "crossPlatformValidationComplete": false
+}

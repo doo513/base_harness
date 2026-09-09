@@ -3,6 +3,14 @@ import path from "path"
 import fs from "fs/promises"
 import { Glob } from "@base-harness/core/util/glob"
 import { tmpdir } from "../fixture/fixture"
+import { probeSymlinkCapabilities, requireSymlinkCapabilities } from "../lib/symlink-capability"
+
+const symlinks = await probeSymlinkCapabilities()
+requireSymlinkCapabilities(symlinks, process.env.BASE_HARNESS_REQUIRE_SYMLINK_TESTS === "1")
+const directorySymlinkTest = symlinks.directory.supported ? test : test.skip
+if (!symlinks.directory.supported) {
+  console.warn("glob: native directory symlink cases are unsupported, not validated", symlinks.directory)
+}
 
 describe("Glob", () => {
   describe("scan()", () => {
@@ -74,22 +82,24 @@ describe("Glob", () => {
       expect(results).toEqual([])
     })
 
-    test("does not follow symlinks by default", async () => {
+    directorySymlinkTest("does not follow symlinks by default", async () => {
       await using tmp = await tmpdir()
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
-      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))
+      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"), "dir")
+      expect((await fs.lstat(path.join(tmp.path, "linkdir"))).isSymbolicLink()).toBe(true)
 
       const results = await Glob.scan("**/*.txt", { cwd: tmp.path })
 
       expect(results).toEqual([path.join("realdir", "file.txt")])
     })
 
-    test("follows symlinks when symlink option is true", async () => {
+    directorySymlinkTest("follows symlinks when symlink option is true", async () => {
       await using tmp = await tmpdir()
       await fs.mkdir(path.join(tmp.path, "realdir"))
       await fs.writeFile(path.join(tmp.path, "realdir", "file.txt"), "", "utf-8")
-      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"))
+      await fs.symlink(path.join(tmp.path, "realdir"), path.join(tmp.path, "linkdir"), "dir")
+      expect((await fs.lstat(path.join(tmp.path, "linkdir"))).isSymbolicLink()).toBe(true)
 
       const results = await Glob.scan("**/*.txt", { cwd: tmp.path, symlink: true })
 

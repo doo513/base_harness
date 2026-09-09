@@ -7,6 +7,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { Duration, Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
+import { acpTimeoutError } from "../../lib/acp-diagnostics"
 import { expectOk, selectConfigOption } from "./acp-test-client"
 import { createAcpClient, initialize, newSession, verifierConfig } from "./helpers"
 
@@ -18,8 +19,24 @@ describe("opencode acp lifecycle subprocess", () => {
         const acp = yield* opencode.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeoutOrElse({
+          duration: Duration.seconds(5),
+          orElse: () => Effect.fail(acpTimeoutError(acp, "stdin_eof")),
+        }))
         expect(code).toBe(0)
+        const receiveError = yield* acp.receive.pipe(
+          Effect.map(() => "unexpected_response"),
+          Effect.catch((error) => Effect.succeed(error.code)),
+          Effect.timeoutOrElse({
+            duration: Duration.seconds(1),
+            orElse: () => Effect.fail(new Error("ACP response queue remained open after process exit")),
+          }),
+        )
+        expect(receiveError).toBe("ACP_STDOUT_CLOSED")
+        const stages = acp.diagnostics?.().startup.map((entry) => entry.stage) ?? []
+        expect(stages).toContain("cli.input_eof")
+        expect(stages).not.toContain("runtime.import_start")
+        expect(stages).not.toContain("runtime.services_start")
       }),
     60_000,
   )

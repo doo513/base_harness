@@ -1,0 +1,47 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "hypotheses": {
+    "eagerBundledProviderImports": "not supported by inspected code; loaders are already dynamic",
+    "discoveryAlone": "timeout did not reproduce",
+    "llmTestsBeforeAcp": "timeout did not reproduce"
+  },
+  "discoveryOnly": {
+    "passed": 1,
+    "failed": 0,
+    "filtered": 3336,
+    "files": 253,
+    "assertions": 8,
+    "durationSeconds": 19.66
+  },
+  "llmThenAcp": {
+    "passed": 34,
+    "failed": 0,
+    "files": 2,
+    "assertions": 114,
+    "durationSeconds": 41.34
+  },
+  "resourceDiagnostics": {
+    "typecheckExitCode": 0,
+    "passed": 11,
+    "failed": 0,
+    "files": 2,
+    "assertions": 54,
+    "durationSeconds": 31.19,
+    "fields": [
+      "parentRssBytes",
+      "parentHeapUsedBytes",
+      "systemFreeBytes",
+      "systemTotalBytes"
+    ],
+    "points": [
+      "atSpawn",
+      "atObservation"
+    ],
+    "optional": true
+  },
+  "fullHostRerun": false,
+  "acpTimeoutResolved": false,
+  "memoryPressureEstablished": false
+}

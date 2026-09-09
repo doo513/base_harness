@@ -124,7 +124,9 @@
     "venice-ai-sdk-provider": "2.1.1",
     "which": "6.0.1",
     "xdg-basedir": "5.1.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@base-harness/workspace": "workspace:*",
+    "@base-harness/security": "workspace:*"
   },
   "overrides": {
     "drizzle-orm": "catalog:"

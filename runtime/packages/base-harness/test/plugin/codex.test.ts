@@ -283,47 +283,78 @@ describe("plugin.codex", () => {
     await hooks.dispose?.()
   })
 
-  test("filters unsupported modes and uses Codex context limits for OAuth GPT models", async () => {
-    const hooks = await CodexAuthPlugin({} as never)
-    const limit = { context: 1_050_000, input: 922_000, output: 128_000 }
-    const provider = {
-      models: {
-        ...Object.fromEntries(
-          ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.7-pro"].map((id) => [
-            id,
-            { id, api: { id }, limit, cost: {}, options: {} },
-          ]),
-        ),
-        "gpt-5.4-pro": {
-          id: "gpt-5.4-pro",
-          api: { id: "gpt-5.4" },
-          limit,
-          cost: {},
-          options: { reasoningMode: "pro" },
-        },
-        "gpt-5.6-sol-high": {
-          id: "gpt-5.6-sol-high",
-          api: { id: "gpt-5.6-sol" },
-          limit,
-          cost: {},
-          options: { reasoningEffort: "high" },
-        },
+  test("OAuth catalog preserves service effort names without model-name heuristics", async () => {
+    let discoveries = 0
+    const hooks = await CodexAuthPlugin({} as never, {
+      discoverCatalog: async () => {
+        discoveries += 1
+        return { models: [{
+          id: "fixture-reasoner",
+          model: "fixture-provider-model",
+          displayName: "Fixture discovered reasoning",
+          defaultReasoningEffort: "max",
+          supportedReasoningEfforts: ["high", "max", "VendorExact", "max"],
+          inputModalities: ["text"],
+          isDefault: true,
+        }] }
       },
-    }
+    })
+    const limit = { context: 777_000, input: 700_000, output: 77_000 }
+    const provider = { models: {
+      "fixture-reasoner": {
+        id: "fixture-reasoner", api: { id: "fixture-provider-model" },
+        limit, cost: {}, options: {}, capabilities: {},
+        variants: { low: { reasoningEffort: "low" }, max: { reasoningEffort: "wrong", marker: "preserved" } },
+      },
+      "local-only": { id: "local-only", api: { id: "local-only" }, limit, cost: {}, options: {} },
+    } }
+    const before = structuredClone(provider.models)
+    const [models, again] = await Promise.all([
+      hooks.provider!.models!(provider as never, { auth: { type: "oauth" } } as never),
+      hooks.provider!.models!(provider as never, { auth: { type: "oauth" } } as never),
+    ])
+    expect(discoveries).toBe(1)
+    expect(again).toEqual(models)
+    expect(Object.keys(models)).toEqual(["fixture-reasoner"])
+    expect(models["fixture-reasoner"]?.limit).toEqual(limit)
+    expect(models["fixture-reasoner"]?.name).toBe("Fixture discovered reasoning")
+    expect(models["fixture-reasoner"]?.api.id).toBe("fixture-provider-model")
+    expect(models["fixture-reasoner"]?.capabilities.reasoningEfforts).toEqual({
+      default: "provider_default", supported: ["high", "max", "VendorExact"],
+    })
+    expect(models["fixture-reasoner"]?.variants).toEqual({
+      high: { reasoningEffort: "high" },
+      max: { reasoningEffort: "max", marker: "preserved" },
+      VendorExact: { reasoningEffort: "VendorExact" },
+    })
+    expect(provider.models).toEqual(before)
+  })
 
-    const models = await hooks.provider!.models!(provider as never, { auth: { type: "oauth" } } as never)
-
-    expect(models["gpt-5.4"]?.limit).toEqual(limit)
-    expect(models["gpt-5.5"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
-    expect(models["gpt-5.6-sol"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
-    expect(models["gpt-5.6-terra"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
-    expect(models["gpt-5.6-luna"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
-    expect(models["gpt-5.4-pro"]).toBeUndefined()
-    expect(models["gpt-5.7-pro"]).toBeDefined()
-    expect(models["gpt-5.6-sol-high"]).toBeDefined()
+  test("API authentication bypasses Codex app-server model discovery", async () => {
+    let discoveries = 0
+    const hooks = await CodexAuthPlugin({} as never, {
+      discoverCatalog: async () => {
+        discoveries += 1
+        throw new Error("API authentication must not discover a Codex catalog")
+      },
+    })
+    const provider = { models: { "api-fixture": { id: "api-fixture" } } }
     expect(await hooks.provider!.models!(provider as never, { auth: { type: "api" } } as never)).toBe(
       provider.models as never,
     )
+    expect(discoveries).toBe(0)
+  })
+
+  test("unavailable catalog keeps the existing legacy fallback without inventing limits", async () => {
+    const hooks = await CodexAuthPlugin({} as never, { discoverCatalog: async () => undefined })
+    const limit = { context: 123_000, input: 100_000, output: 23_000 }
+    const provider = { models: {
+      "gpt-5.4": { id: "gpt-5.4", api: { id: "gpt-5.4" }, limit, cost: {}, options: {} },
+      "not-in-fallback": { id: "not-in-fallback", api: { id: "not-in-fallback" }, limit, cost: {}, options: {} },
+    } }
+    const models = await hooks.provider!.models!(provider as never, { auth: { type: "oauth" } } as never)
+    expect(Object.keys(models)).toEqual(["gpt-5.4"])
+    expect(models["gpt-5.4"]?.limit).toEqual(limit)
   })
 
   test("deduplicates concurrent Codex token refreshes", async () => {

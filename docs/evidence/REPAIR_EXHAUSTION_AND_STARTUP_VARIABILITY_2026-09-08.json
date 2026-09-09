@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "promotionReady": false,
+  "productionCodeChanged": false,
+  "defaultStartupResolved": false,
+  "attempts": [
+    {
+      "mode": "default_inherited",
+      "success": false,
+      "healthStartupMs": 30259.705,
+      "modelRequests": 0,
+      "failure": "AssertionError [ERR_ASSERTION]: Host health readiness deadline\n    at C:\\Users\\doo33\\Downloads\\base_harness\\runtime\\script\\verify-provider-public-boundary.mjs:120:3\n    at processTicksAndRejections (native:7:39)",
+      "hostExitCode": 143
+    },
+    {
+      "mode": "unchanged_repeat",
+      "success": false,
+      "healthStartupMs": 30069.952999999998,
+      "modelRequests": 0,
+      "failure": "AssertionError [ERR_ASSERTION]: Host health readiness deadline\n    at C:\\Users\\doo33\\Downloads\\base_harness\\runtime\\script\\verify-provider-public-boundary.mjs:120:3\n    at processTicksAndRejections (native:7:39)",
+      "hostExitCode": 143
+    },
+    {
+      "mode": "explicit_pure",
+      "diagnosticPassed": true,
+      "taskExitCode": 1,
+      "hostExitCode": 143,
+      "healthStartupMs": 10148.8179,
+      "providerListingMs": 13809.021700000001,
+      "clientMs": 38222.5571
+    }
+  ],
+  "isolatedProbes": {
+    "help": {
+      "exitCode": 0,
+      "durationMs": 14476
+    },
+    "serve": {
+      "healthy": true,
+      "durationMs": 21613,
+      "intentionallyStopped": true
+    }
+  },
+  "runId": "run-b5a248f5-50c9-4229-a1fa-23435c1c4c14",
+  "sessionID": "ses_f813e8516ffeJLTk2X8eiNuxy3",
+  "outcome": "blocked",
+  "failureKind": "implementation_error",
+  "readyEligible": false,
+  "workers": [
+    {
+      "workUnitId": "unit-0",
+      "title": "Write result-0.txt",
+      "state": "repair_exhausted",
+      "repairCount": 2,
+      "scopeId": "ses_f813e3913ffeURNW6dguE7p0aB",
+      "failureFingerprint": "4f54d4149b80f5146bcc9141807bd545c73e3cd54ca71810309a015912eaaa36"
+    },
+    {
+      "workUnitId": "unit-1",
+      "title": "Write result-1.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f813e390effes1SegOXJBB4n6A"
+    },
+    {
+      "workUnitId": "unit-2",
+      "title": "Write result-2.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f813e0773ffeK9vgUKXmbXlyq8"
+    }
+  ],
+  "exhaustion": {
+    "scope": "repair_exhaustion",
+    "workUnitId": "unit-0",
+    "scopeId": "ses_f813e3913ffeURNW6dguE7p0aB",
+    "attempts": 3,
+    "automaticRepairs": 2,
+    "oneFingerprint": true,
+    "sameSessionWriteCount": 3,
+    "rejectedCandidateCommitted": false,
+    "storedRootReadyCount": 0,
+    "unrelatedCompletedUnits": [
+      "unit-1",
+      "unit-2"
+    ],
+    "queuedStart": 1788833036777,
+    "exhaustedAt": 1788833036286,
+    "barrier": {
+      "heldAt": 1788833026167,
+      "releasedAt": 1788833036777
+    },
+    "rejections": [
+      {
+        "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-gcIkDe\\state\\base-harness\\runs\\8310ca1c1c170591-1e5cc98a\\artifacts\\ee\\ee7b7ee3ec1ccf0072e12dac65d96294eb3bdef9e672df38eb4ca20ecf40fd69.json",
+        "details": [
+          {
+            "claimIds": [
+              "claim-0"
+            ],
+            "coverage": "none",
+            "criterionId": "criterion-0",
+            "required": true,
+            "result": "refuted",
+            "risk": "low"
+          }
+        ],
+        "failedCriterion": "criterion-0",
+        "failureFingerprint": "4f54d4149b80f5146bcc9141807bd545c73e3cd54ca71810309a015912eaaa36",
+        "failureKind": "implementation_error",
+        "missingEvidence": [
+          "claim-0: No allowed verifier produced the expected observation."
+        ],
+        "outcome": "repair",
+        "rejectionCount": 1,
+        "repairCount": 1,
+        "repairScope": "Repair only the failed Claim or add the required independent verifier evidence.",
+        "repairScopeId": "ses_f813e3913ffeURNW6dguE7p0aB",
+        "repairable": true
+      },
+      {
+        "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-gcIkDe\\state\\base-harness\\runs\\8310ca1c1c170591-1e5cc98a\\artifacts\\38\\3812f9f034d7642ab7fbe303ceb089c83ae6cd743957369062310f2029cd9887.json",
+        "details": [
+          {
+            "claimIds": [
+              "claim-0"
+            ],
+            "coverage": "none",
+            "criterionId": "criterion-0",
+            "required": true,
+            "result": "refuted",
+            "risk": "low"
+          }
+        ],
+        "failedCriterion": "criterion-0",
+        "failureFingerprint": "4f54d4149b80f5146bcc9141807bd545c73e3cd54ca71810309a015912eaaa36",
+        "failureKind": "implementation_error",
+        "missingEvidence": [
+          "claim-0: No allowed verifier produced the expected observation."
+        ],
+        "outcome": "repair",
+        "rejectionCount": 2,
+        "repairCount": 2,
+        "repairScope": "Repair only the failed Claim or add the required independent verifier evidence.",
+        "repairScopeId": "ses_f813e3913ffeURNW6dguE7p0aB",
+        "repairable": true
+      },
+      {
+        "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-gcIkDe\\state\\base-harness\\runs\\8310ca1c1c170591-1e5cc98a\\artifacts\\dd\\dd3d4a40395f491ec5f2288d289d85bfcfb405f17a8321da1c9c190427b9e002.json",
+        "details": [
+          {
+            "claimIds": [
+              "claim-0"
+            ],
+            "coverage": "none",
+            "criterionId": "criterion-0",
+            "required": true,
+            "result": "refuted",
+            "risk": "low"
+          }
+        ],
+        "failedCriterion": "criterion-0",
+        "failureFingerprint": "4f54d4149b80f5146bcc9141807bd545c73e3cd54ca71810309a015912eaaa36",
+        "failureKind": "implementation_error",
+        "missingEvidence": [
+          "claim-0: No allowed verifier produced the expected observation."
+        ],
+        "outcome": "repair_exhausted",
+        "rejectionCount": 3,
+        "repairCount": 2,
+        "repairScope": "Repair only the failed Claim or add the required independent verifier evidence.",
+        "repairScopeId": "ses_f813e3913ffeURNW6dguE7p0aB",
+        "repairable": false
+      }
+    ],
+    "replanned": false
+  },
+  "fullSuiteRun": false,
+  "typechecksRun": false,
+  "pendingFreshnessTestFix": {
+    "path": "tests/test_verified_sidecar.py",
+    "test": "test_disputed_history_cannot_supply_missing_independence",
+    "line": 907,
+    "cause": "The execution verifier fixture omits freshnessSeconds, so existing policy correctly excludes it from historical reuse before the disputed-case assertion is reached.",
+    "proposedFix": "Set a positive freshness_seconds in this test's verifier fixture and rerun it.",
+    "authorization": "asked_user_pending",
+    "productionBugProven": false
+  },
+  "gitUsed": false,
+  "netMonitorTouched": false
+}

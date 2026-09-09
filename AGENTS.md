@@ -1,36 +1,41 @@
-# Base Harness V2 Agent Rules
-
-`develop` is active. `main` is the explicit promotion target.
+# Base Harness Runtime Agent Rules
 
 ## Product boundary
 
-- `runtime/packages/base-harness` is the only execution host.
-- `runtime/packages/tui` is the default interactive interface.
-- `src/harness/verification_v2.py` is the only verification core.
-- `src/harness/verified_sidecar.py` is transport only.
-- `base-harness.jsonc` is the only current configuration format.
-- Do not restore the Python V1 runtime, `verified-harness`, Python TUI, or `harness.toml`.
-
-The inherited `runtime/packages/core/src/v1` namespace is TypeScript configuration/API plumbing, not the removed Python Verified Core and not completion authority.
+- `runtime/src/cli.ts` only launches the bundled Host; it has no policy authority.
+- `runtime/packages/base-harness` owns execution adapters, model/tool invocation and Host API.
+- `runtime/packages/kernel` owns pure contract, domain and planning policy.
+- `runtime/packages/kernel-host` owns plan persistence and meta-review ports.
+- `runtime/packages/coordinator` owns run, scope, scheduler, repair and verifier lifecycle.
+- `runtime/packages/workspace` owns instance-scoped Overlay and Candidate transactions.
+- `runtime/packages/security` owns redaction, platform containment and sandbox facilities.
+- `runtime/packages/tui` only requests and displays Host state.
+- `runtime/experiments/minimal-v3` is archived and must not become an alternate product entry point.
+- `src/harness/verification_v2.py` alone may promote Evidence or Ready.
+- OpenCode, Gajae-Code and Hermes executables are not runtime dependencies.
 
 ## Authority invariants
 
-1. Actor, model, tool, MCP, plugin, and retrieval output is candidate data.
-2. Only Core V2 may create trusted Evidence or Ready.
-3. State-changing tools require an accepted root GoalContract.
-4. Subagents cannot issue final Ready.
-5. Verifier and protocol failures are fail-closed.
-6. Repair is criterion-scoped and bounded by failure fingerprint.
-7. Historical retrieval cannot self-promote.
+1. Model, tool, MCP, plugin and subagent output is candidate data.
+2. State-changing tools require an accepted GoalContract.
+3. Tool risk cannot exceed the accepted contract risk.
+4. The host creates FailureEnvelope values; actor-supplied envelopes are untrusted.
+5. Only the Python verifier may create trusted Evidence and Ready.
+6. Verification and protocol failures are fail-closed.
+7. Repair is criterion-scoped and bounded.
 
-## Working agreement
+## Runtime principles
 
-1. Read the two current documents under `docs/handoff/` before product-boundary changes.
-2. Keep TypeScript host and Python sidecar protocol changes synchronized.
-3. Record causal architecture changes under `docs/verification-v2/`.
-4. Accept only implemented public settings.
-5. Run validation only when requested by the user or controlling instructions.
-6. Keep Python and runtime product versions aligned.
-7. Continue on `develop` unless the user requests another branch.
+- Keep the agent loop, tool registry and provider registry independent of the CLI.
+- Provider capabilities come from provider responses or explicit provider configuration, never model-name guessing.
+- Plugins are loaded only from explicit trusted paths.
+- MCP tools pass through the same ToolRegistry and Kernel gates as built-in tools.
+- Add policy in executable code rather than relying on prompt wording.
+- Keep historical documents as provenance, not current runtime authority.
 
-Historical Stage documents are provenance only. Current source, this file, the V2 handoff, and protocol V2 are authoritative.
+## Preservation
+
+- Keep pre-existing local changes and `net_monitor.py` untouched.
+- Re-export bridges must not own a second state store or bypass the Coordinator.
+- A rejected contract is not permission to mutate, even in the fast profile.
+- A reviewed plan is not Evidence or Ready; only explicit execute may start plan-only work.

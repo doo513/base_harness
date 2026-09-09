@@ -6,14 +6,14 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
 import { OpenAIWebSocketPool } from "./ws-pool"
 import { OauthCallbackPage } from "@base-harness/core/oauth/page"
+import { discoverCodexAppServerCatalog, type CodexAppServerModel } from "./codex-app-server"
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
-const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
+const LEGACY_CODEX_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
 
 interface PkceCodes {
   verifier: string
@@ -112,6 +112,8 @@ interface CodexAuthPluginOptions {
   issuer?: string
   codexApiEndpoint?: string
   experimentalWebSockets?: boolean
+  /** Internal dependency seam; production uses app-server discovery by default. */
+  discoverCatalog?: typeof discoverCodexAppServerCatalog
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
@@ -275,6 +277,24 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
   const codexApiEndpoint = options.codexApiEndpoint ?? CODEX_API_ENDPOINT
   let websocketFetchInstalled = false
   const websocketFetches: Array<ReturnType<typeof OpenAIWebSocketPool.createWebSocketFetch>> = []
+  let catalog: ReturnType<typeof discoverCodexAppServerCatalog> | undefined
+
+  const legacyModels = (models: Parameters<NonNullable<NonNullable<Hooks["provider"]>["models"]>>[0]["models"]) =>
+    Object.fromEntries(Object.entries(models).filter(([, model]) => LEGACY_CODEX_MODELS.has(model.api.id)))
+
+  const catalogModel = (
+    models: Parameters<NonNullable<NonNullable<Hooks["provider"]>["models"]>>[0]["models"],
+    discovered: CodexAppServerModel,
+  ) =>
+    Object.entries(models).find(
+      ([modelID, model]) =>
+        modelID === discovered.id ||
+        modelID === discovered.model ||
+        model.id === discovered.id ||
+        model.id === discovered.model ||
+        model.api.id === discovered.id ||
+        model.api.id === discovered.model,
+    )
 
   return {
     async dispose() {
@@ -289,37 +309,53 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
       id: "openai",
       async models(provider, ctx) {
         if (ctx.auth?.type !== "oauth") return provider.models
+        catalog ??= (options.discoverCatalog ?? discoverCodexAppServerCatalog)()
+        const discovered = await catalog
+        if (!discovered) return legacyModels(provider.models)
 
-        return Object.fromEntries(
-          Object.entries(provider.models)
-            .filter(([, model]) => {
-              if (model.options.reasoningMode === "pro") return false
-              if (ALLOWED_MODELS.has(model.api.id)) return true
-              if (DISALLOWED_MODELS.has(model.api.id)) return false
-              if (model.api.id === "gpt-5.6") return false
-              const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
-              return match ? parseFloat(match[1]) > 5.4 : false
-            })
-            .map(([modelID, model]) => [
+        const models = discovered.models.flatMap((item) => {
+          const existing = catalogModel(provider.models, item)
+          if (!existing) return []
+          const [modelID, model] = existing
+          const supported = [...new Set(item.supportedReasoningEfforts)]
+          const variants = Object.fromEntries(
+            supported.map((effort) => [
+              effort,
+              {
+                ...(model.variants?.[effort] ?? {}),
+                reasoningEffort: effort,
+              },
+            ]),
+          )
+          return [
+            [
               modelID,
               {
                 ...model,
+                name: item.displayName,
+                api: { ...model.api, id: item.model },
+                capabilities: {
+                  ...model.capabilities,
+                  reasoning: supported.length > 0,
+                  reasoningEfforts: supported.length
+                    ? {
+                        default: "provider_default" as const,
+                        supported,
+                      }
+                    : undefined,
+                },
+                variants,
                 cost: {
                   input: 0,
                   output: 0,
                   cache: { read: 0, write: 0 },
                 },
-                limit:
-                  model.id.includes("gpt-5.5") || model.id.includes("gpt-5.6")
-                    ? {
-                        context: 400_000,
-                        input: 272_000,
-                        output: 128_000,
-                      }
-                    : model.limit,
               },
-            ]),
-        )
+            ] as const,
+          ]
+        })
+
+        return models.length ? Object.fromEntries(models) : legacyModels(provider.models)
       },
     },
     auth: {

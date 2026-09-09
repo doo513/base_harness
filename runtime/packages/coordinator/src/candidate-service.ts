@@ -1,19 +1,25 @@
-import * as Orchestration from "@base-harness/core/orchestration"
+import * as Orchestration from "@base-harness/workspace/orchestration"
 
 export class CandidateService {
   readonly store = new Orchestration.WorkspaceCandidateStore()
+  private readonly scoped = new Proxy(Orchestration, {
+    get: (target, property, receiver) => {
+      const value = Reflect.get(target, property, receiver)
+      if (typeof value !== "function" || property === "OrchestrationError" || property === "WorkspaceCandidateStore") return value
+      return (...args: unknown[]) => Orchestration.withWorkspaceCandidateStore(this.store, () => Reflect.apply(value, target, args))
+    },
+  })
 
   activate() {
-    Orchestration.bindWorkspaceCandidateStore(this.store)
+    // Retained for callers that acquired the service before instance-scoped APIs.
+    // No process-global store is switched.
   }
 
   get api() {
-    this.activate()
-    return Orchestration
+    return this.scoped
   }
 
   reset() {
-    this.activate()
-    Orchestration.resetForTest()
+    this.store.clear()
   }
 }

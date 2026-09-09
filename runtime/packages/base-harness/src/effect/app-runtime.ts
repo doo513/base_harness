@@ -1,5 +1,7 @@
 import { Layer, ManagedRuntime } from "effect"
+import { traceStartup } from "@/util/startup-trace"
 import { attach } from "./run-service"
+import { appRuntimeFinalizer } from "./app-runtime-lifecycle"
 import * as Observability from "@base-harness/core/observability"
 
 import { FSUtil } from "@base-harness/core/fs-util"
@@ -55,6 +57,7 @@ import { LayerNode } from "@base-harness/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@base-harness/core/session/projector"
 
+traceStartup("runtime.modules_ready")
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
     Npm.node,
@@ -108,7 +111,10 @@ export const AppLayer = AppNodeBuilderV1.build(
   ]),
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
+traceStartup("runtime.layer_ready")
 const rt = ManagedRuntime.make(AppLayer, { memoMap })
+traceStartup("runtime.managed_ready")
+appRuntimeFinalizer.register(() => rt.dispose())
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">
 
 /** Services provided by AppRuntime — i.e. what an Effect run via AppRuntime.runPromise can yield. */
@@ -131,5 +137,5 @@ export const AppRuntime: Runtime = {
   runCallback(effect) {
     return rt.runCallback(wrap(effect))
   },
-  dispose: () => rt.dispose(),
+  dispose: () => appRuntimeFinalizer.dispose(),
 }

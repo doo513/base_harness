@@ -529,6 +529,10 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
   test("azure chat completions omit Responses-only reasoning options after variants merge", async () => {
     const model = {
       ...createGpt5Model("gpt-5.4"),
+      capabilities: {
+        ...createGpt5Model("gpt-5.4").capabilities,
+        reasoningEfforts: { default: "provider_default" as const, supported: ["high"] },
+      },
       id: "azure/gpt-5.4",
       providerID: "azure",
       api: {

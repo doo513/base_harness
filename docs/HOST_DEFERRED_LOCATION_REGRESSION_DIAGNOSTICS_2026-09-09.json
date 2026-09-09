@@ -1,0 +1,58 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "terminal": true,
+  "exitCode": 1,
+  "passed": 3274,
+  "skipped": 60,
+  "todo": 1,
+  "failed": 2,
+  "additionalErrors": 0,
+  "tests": 3337,
+  "files": 253,
+  "snapshots": 45,
+  "assertions": 8856,
+  "durationSeconds": 2074.43,
+  "failures": [
+    {
+      "name": "loop waits while shell runs and starts after shell exits",
+      "file": "test/session/prompt.test.ts",
+      "durationMs": 10052.34,
+      "deadlineMs": 10000
+    },
+    {
+      "name": "model option is listed with category \"model\"",
+      "file": "test/cli/acp/config-options.test.ts",
+      "operation": "request:initialize",
+      "durationMs": 17197.63,
+      "elapsedMs": 15059,
+      "pid": 31600,
+      "stdoutLines": 0,
+      "lastStartupStage": "runtime.import_start",
+      "runtimeImportStartMs": 1269,
+      "cliModulesReadyMs": 1025
+    }
+  ],
+  "followup": {
+    "shellResume": {
+      "firstIsolated": {
+        "passed": 1,
+        "failed": 1,
+        "filtered": 57,
+        "assertions": 11,
+        "durationSeconds": 25.85
+      },
+      "instrumented": {
+        "passed": 1,
+        "failed": 1,
+        "filtered": 57,
+        "assertions": 11,
+        "durationSeconds": 24.11,
+        "phaseDiagnosticEmitted": false
+      },
+      "typecheckExitCode": 0
+    },
+    "fullSuiteRestarted": false
+  }
+}

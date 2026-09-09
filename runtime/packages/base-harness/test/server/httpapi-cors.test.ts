@@ -60,10 +60,10 @@ describe("HttpApi CORS", () => {
     }),
   )
 
-  it.live("adds CORS headers to unauthorized responses", () =>
+  it.live("adds CORS headers to unauthorized responses for explicitly allowed origins", () =>
     Effect.gen(function* () {
       const handler = HttpRouter.toWebHandler(
-        HttpApiApp.createRoutes().pipe(
+        HttpApiApp.createRoutes({ cors: ["https://custom.example"] }).pipe(
           Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ BASE_HARNESS_SERVER_PASSWORD: "secret" }))),
         ),
         { disableLogger: true },
@@ -71,14 +71,21 @@ describe("HttpApi CORS", () => {
       const response = yield* Effect.promise(() =>
         handler(
           new Request(new URL("/global/config", "http://localhost"), {
-            headers: { origin: "https://app.base-harness.ai" },
+            headers: { origin: "https://custom.example" },
           }),
           HttpApiApp.context,
         ),
       )
 
       expect(response.status).toBe(401)
-      expect(response.headers.get("access-control-allow-origin")).toBe("https://app.base-harness.ai")
+      expect(response.headers.get("access-control-allow-origin")).toBe("https://custom.example")
+      for (const origin of ["https://opencode.ai", "https://app.opencode.ai", "https://app.base-harness.ai"]) {
+        const rejected = yield* Effect.promise(() =>
+          handler(new Request("http://localhost/global/config", { headers: { origin } }), HttpApiApp.context),
+        )
+        expect(rejected.status).toBe(401)
+        expect(rejected.headers.get("access-control-allow-origin")).toBeNull()
+      }
     }),
   )
 

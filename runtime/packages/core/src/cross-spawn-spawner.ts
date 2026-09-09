@@ -438,17 +438,21 @@ export const make = Effect.gen(function* () {
                 ),
               )
             }),
-            kill: (opts?: ChildProcess.KillOptions) => {
-              const sig = opts?.killSignal ?? "SIGTERM"
-              const send = (s: NodeJS.Signals) =>
-                Effect.catch(killGroup(command, proc, s), () => killOne(command, proc, s))
-              const attempt = send(sig).pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid)
-              if (!opts?.forceKillAfter) return attempt
-              return Effect.timeoutOrElse(attempt, {
-                duration: opts.forceKillAfter,
-                orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
-              })
-            },
+            kill: (opts?: ChildProcess.KillOptions) =>
+              Effect.gen(function* () {
+                // Check when the Effect executes, not when the caller creates it.
+                // A late cancellation must not signal a completed child again.
+                if (yield* Deferred.isDone(signal)) return
+                const sig = opts?.killSignal ?? "SIGTERM"
+                const send = (s: NodeJS.Signals) =>
+                  Effect.catch(killGroup(command, proc, s), () => killOne(command, proc, s))
+                const attempt = send(sig).pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid)
+                if (!opts?.forceKillAfter) return yield* attempt
+                return yield* Effect.timeoutOrElse(attempt, {
+                  duration: opts.forceKillAfter,
+                  orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
+                })
+              }),
             unref: Effect.sync(() => {
               if (ref) {
                 proc.unref()

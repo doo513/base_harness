@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-08",
+  "status": "runtime_pass_typecheck_pending",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "targeted": {
+    "passed": 20,
+    "failed": 0,
+    "assertions": 62,
+    "files": 2
+  },
+  "coreRuntime": {
+    "passed": 1109,
+    "skipped": 7,
+    "failed": 0,
+    "tests": 1116,
+    "files": 146,
+    "assertions": 3046,
+    "seconds": 231.65,
+    "exitCode": 0
+  },
+  "coreTypecheck": {
+    "exitCode": 2,
+    "code": "TS2769",
+    "file": "runtime/packages/core/test/git.test.ts",
+    "lines": [
+      95,
+      114,
+      115
+    ]
+  },
+  "hostTypecheck": {
+    "exitCode": 0
+  },
+  "syntaxErrorResolved": true,
+  "newGitFixturesExecuted": true,
+  "pending": {
+    "status": "incomplete",
+    "syntaxError": "resolved",
+    "targetedRuntime": {
+      "passed": 20,
+      "failed": 0,
+      "assertions": 62,
+      "files": 2
+    },
+    "typecheck": {
+      "exitCode": 2,
+      "code": "TS2769",
+      "file": "runtime/packages/core/test/git.test.ts",
+      "lines": [
+        95,
+        114,
+        115
+      ],
+      "cause": "Expected filesystem paths are plain strings, while received Repository path fields have the AbsolutePath brand.",
+      "fix": "Wrap the three expected path values with AbsolutePath.make, preserving equality assertions and avoiding unsafe casts."
+    },
+    "requiresResumption": true
+  },
+  "commands": {
+    "targeted": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000 ./test/git.test.ts ./test/models.test.ts; $tests=$LASTEXITCODE; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $types=$LASTEXITCODE; Write-Output \"GIT_TEST_REPAIR tests=$tests typecheck=$types\"; if ($tests -ne 0 -or $types -ne 0) { exit 1 }; exit 0",
+    "fullRuntime": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; $output = & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000 2>&1; $tests=$LASTEXITCODE; $output | Select-Object -Last 160; Write-Output \"CORE_RUNTIME_AFTER_DISCOVERY_REPAIR tests=$tests\"; exit $tests",
+    "host": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $code=$LASTEXITCODE; Write-Output \"HOST_TYPES_AFTER_GIT_DISCOVERY_REPAIR exit=$code\"; exit $code"
+  },
+  "terminalSummaries": {
+    "coreTypecheck": "test/git.test.ts(95,89): error TS2769: No overload matches this call.\n  The last overload gave the following error.\n    Argument of type 'string' is not assignable to parameter of type 'string & Brand<\"AbsolutePath\">'.\n      Type 'string' is not assignable to type 'Brand<\"AbsolutePath\">'.\ntest/git.test.ts(114,43): error TS2769: No overload matches this call.\n  The last overload gave the following error.\n    Argument of type 'string' is not assignable to parameter of type 'string & Brand<\"AbsolutePath\">'.\n      Type 'string' is not assignable to type 'Brand<\"AbsolutePath\">'.\ntest/git.test.ts(115,47): error TS2769: No overload matches this call.\n  The last overload gave the following error.\n    Argument of type 'string' is not assignable to parameter of type 'string & Brand<\"AbsolutePath\">'.\n      Type 'string' is not assignable to type 'Brand<\"AbsolutePath\">'.\nGIT_TEST_REPAIR tests=0 typecheck=2\r\n",
+    "coreRuntime": " the graph does not require it [1.02ms]\r\n(pass) node build > detects cycles through a replaced location service map [0.55ms]\r\n[05:07:25.080] INFO (#192331): watcher backend {\r\n  directory: \"C:\\\\Users\\\\doo33\\\\AppData\\\\Local\\\\Temp\\\\opencode-core-test-MvPcCK\",\r\n  platform: \"win32\",\r\n  backend: \"windows\",\r\n}\r\n[05:07:25.085] INFO (#192442): project copy refresh started {\r\n  projectID: \"global\",\r\n}\r\n[05:07:25.088] INFO (#192442): project copy refresh done {\r\n  projectID: \"global\",\r\n  updated: [],\r\n  removed: [],\r\n}\r\n[05:07:25.245] INFO (#192331): booting location services {\r\n  directory: \"C:\\\\Users\\\\doo33\\\\AppData\\\\Local\\\\Temp\\\\opencode-core-test-MvPcCK\",\r\n  workspaceID: undefined,\r\n}\r\n(pass) node build > shares top-level project with location services [298.30ms]\r\n(pass) node build > returns a composed application layer [1.33ms]\r\n\r\n7 tests skipped:\r\n(skip) Watcher > symlinked .git > publishes .git/HEAD events through a symlinked .git directory\r\n(skip) pty > retains exited sessions until removed\r\n(skip) pty > replays buffered output and streams live output to attachments\r\n(skip) pty > stops delivering output after detach\r\n(skip) pty > isolates output between sessions\r\n(skip) pty > notifies attachments with the exit code and rejects attach after exit\r\n(skip) pty create defaults > defaults command, login args, and cwd from config and location\r\n\r\n 1109 pass\r\n 7 skip\r\n 0 fail\r\n 3046 expect() calls\r\nRan 1116 tests across 146 files. [231.65s]\r\nCORE_RUNTIME_AFTER_DISCOVERY_REPAIR tests=0\r\n",
+    "host": "HOST_TYPES_AFTER_GIT_DISCOVERY_REPAIR exit=0\r\n"
+  },
+  "productionSourceChangedThisStep": false,
+  "pushed": false,
+  "netMonitorTouched": false
+}

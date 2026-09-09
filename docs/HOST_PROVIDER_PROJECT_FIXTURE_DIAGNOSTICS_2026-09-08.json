@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "baseline": {
+    "log": ".tools/validation/host-suite-expanded-1788847294624.log",
+    "testsRun": 1401,
+    "files": 117,
+    "seconds": 499.24,
+    "bailAfterFailures": 20,
+    "exitCode": 1,
+    "unhandledErrorObserved": true
+  },
+  "targeted": {
+    "log": ".tools/validation/host-provider-project-fixtures-1788848099600.log",
+    "passed": 109,
+    "skipped": 2,
+    "failed": 0,
+    "assertions": 314,
+    "files": 6,
+    "seconds": 124.77,
+    "typecheckExitCode": 0
+  },
+  "resolvedBaselineFailures": 15,
+  "remainingBaselineFailures": [
+    "digitalocean provider autoloads from DIGITALOCEAN_ACCESS_TOKEN",
+    "model config regenerates variants when overriding the provider package",
+    "custom model inherits api.url from models.dev provider",
+    "variant config merges with generated variants",
+    "azure chat completions omit Responses-only reasoning options after variants merge"
+  ],
+  "productionChange": "Optional internal Codex catalog discovery dependency; production discovery remains the default.",
+  "fullSuitePass": false
+}

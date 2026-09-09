@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { cmd } from "./cmd"
 import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
@@ -252,8 +253,7 @@ const AgentListCommand = effectCmd({
 })
 
 export const AgentCommand = cmd({
-  command: "agent",
-  describe: "manage agents",
+  ...EntryCommand.agent,
   builder: (yargs) => yargs.command(AgentCreateCommand).command(AgentListCommand).demandCommand(),
   async handler() {},
 })

@@ -1,0 +1,86 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "status": "completed_with_failures",
+  "lastObservedAt": "2026-09-08T12:07:30.966Z",
+  "sessionId": 56927,
+  "command": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PYTHON='C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\verifier\\Scripts\\python.exe'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 30000 --only-failures 2>&1 | Tee-Object -FilePath 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\host-full-regression-1788862363863.log'; exit $LASTEXITCODE",
+  "log": ".tools/validation/host-full-regression-1788862363863.log",
+  "earlyFailureBail": false,
+  "snapshotUpdateMode": false,
+  "fullCompletionProven": false,
+  "nativeSymlinkVerificationComplete": false,
+  "note": "Original full run exited 1. Do not poll or restart session 56927. Fresh WebSocket tests pass without code changes, but the full-run failure is retained. Native symlink requirements remain unverified.",
+  "observedFailures": [
+    "plugin.openai.ws-pool > keeps websocket retry state until the failed stream becomes idle [4850716.13ms], configured per-test timeout 30000ms"
+  ],
+  "observationInterruption": {
+    "staleCodeModeCell": "1016",
+    "sessionId": 56927,
+    "unifiedSessionStillLive": true,
+    "cacheLost": true,
+    "restarted": false,
+    "elapsedAnomaly": true
+  },
+  "progress": {
+    "lastObservedTest": "snapshot symlink capability probe",
+    "processId": 37444,
+    "cpuSecondsBefore": 274.78125,
+    "cpuSecondsAfter": 340.0625,
+    "advancedPastWebSocketTests": true,
+    "advancedPastServerTests": true,
+    "nativeSymlinkUnavailableConfirmedInFullRun": true
+  },
+  "result": {
+    "sessionId": 56927,
+    "exitCode": 1,
+    "passed": 3247,
+    "skipped": 55,
+    "todo": 1,
+    "failed": 16,
+    "errors": 1,
+    "snapshotsPassed": 16,
+    "snapshotsFailed": 1,
+    "assertions": 8648,
+    "files": 250,
+    "testsReported": 3319,
+    "durationSeconds": 6707.43,
+    "completeExecution": true,
+    "fullCompletionProven": false
+  },
+  "failures": [
+    "(fail) plugin.openai.ws-pool > keeps websocket retry state until the failed stream becomes idle [4850716.13ms]\r",
+    "(fail) tool.shell permissions > asks for external_directory permission when file arg is outside project [bash] [60713.70ms]\r",
+    "(fail) Truncate > output > loads truncate effect in a fresh process [20005.70ms]\r",
+    "(fail) filesystem > resolve() > resolves symlinked directory to canonical path [62.45ms]\r",
+    "(fail) filesystem > resolve() > throws ELOOP on symlink cycle [65.84ms]\r",
+    "(fail) Glob > scan() > does not follow symlinks by default [4.22ms]\r",
+    "(fail) Glob > scan() > follows symlinks when symlink option is true [87.95ms]\r",
+    "(fail) opencode acp config option subprocess > model option is listed with category \"model\" [17207.53ms]\r",
+    "(fail) opencode acp lifecycle subprocess > stdin EOF exits cleanly [6102.61ms]\r",
+    "(fail) opencode acp prompt content subprocess > accepts embedded text resource image and file resource link prompt content [7420.65ms]\r",
+    "(fail) opencode CLI help-text snapshots > every documented command emits stable help text [23229.35ms]\r",
+    "(fail) resolveZedDbPath skips candidates that cannot be stated [40.13ms]\r",
+    "(fail) createTuiAttention > supports focused-only requests [1.16ms]\r",
+    "(fail) createTuiAttention > notification can deliver while focused when requested [0.68ms]\r",
+    "(fail) createTuiAttention > can play sound always while notification is blurred-only [0.98ms]\r",
+    "(fail) createTuiAttention > plays named sounds from the active sound pack [2.61ms]\r"
+  ],
+  "websocketIsolated": {
+    "targeted": {
+      "passed": 1,
+      "failed": 0,
+      "assertions": 5,
+      "durationSeconds": 4.34
+    },
+    "fileSuite": {
+      "passed": 31,
+      "failed": 0,
+      "assertions": 145,
+      "durationSeconds": 4.05
+    },
+    "resolved": false,
+    "reproducedInFreshRuns": false
+  }
+}

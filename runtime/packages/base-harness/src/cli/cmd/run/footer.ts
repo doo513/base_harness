@@ -38,6 +38,7 @@ import { RunScrollbackStream } from "./scrollback.surface"
 import { RUN_THEME_FALLBACK, resolveRunTheme, type RunTheme } from "./theme"
 import { modelInfo } from "./variant.shared"
 import type {
+  ExecutionPickerSelection,
   FooterApi,
   FooterEvent,
   FooterPatch,
@@ -92,6 +93,7 @@ type RunFooterOptions = {
   onCycleVariant?: () => CycleResult | void
   onModelSelect?: (model: NonNullable<RunInput["model"]>) => CycleResult | void | Promise<CycleResult | void>
   onVariantSelect?: (variant: string | undefined) => CycleResult | void | Promise<CycleResult | void>
+  onExecutionSelect?: (selection: ExecutionPickerSelection) => void | Promise<void>
   onInterrupt?: () => void
   onBackground?: () => void
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
@@ -337,6 +339,8 @@ export class RunFooter implements FooterApi {
               onExit: () => footer.close(),
               onModelSelect: footer.handleModelSelect,
               onVariantSelect: footer.handleVariantSelect,
+              onExecutionSelect: (selection) => options.onExecutionSelect?.(selection),
+              onExecutionClose: footer.handleExecutionClose,
               onRows: footer.syncRows,
               onLayout: footer.syncLayout,
               onStatus: footer.setStatus,
@@ -700,7 +704,9 @@ export class RunFooter implements FooterApi {
         ? this.base + PERMISSION_ROWS
         : type === "question"
           ? this.base + QUESTION_ROWS
-          : this.promptRoute.type === "command"
+          : type === "execution"
+            ? 1 + MODEL_ROWS
+            : this.promptRoute.type === "command"
             ? 1 + COMMAND_ROWS
             : this.promptRoute.type === "skill"
               ? 1 + SKILL_ROWS
@@ -789,6 +795,10 @@ export class RunFooter implements FooterApi {
     }
 
     await this.options.onQuestionReject(input)
+  }
+
+  private handleExecutionClose = (): void => {
+    this.present({ type: "prompt" })
   }
 
   private handleCycle = (): void => {

@@ -1,0 +1,26 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "basis": "Static inspection of installed bun-pty 0.4.8 src/terminal.ts and prior isolated TUI observations.",
+  "forcedTermination": {
+    "reportedExitCode": 0,
+    "source": "Terminal.kill emits a synthetic zero with the requested signal after native kill/close.",
+    "normalExitVerified": false
+  },
+  "observedExit": {
+    "ptyExitCode": -1,
+    "osProcessExitCode": null,
+    "interpretation": "Unresolved: the PTY status alone does not establish an application crash or successful exit."
+  },
+  "practicalValidation": {
+    "home": true,
+    "modelPicker": true,
+    "modelSelection": true,
+    "planStaging": true,
+    "realProviderExecution": false,
+    "fullTaskCompletion": false,
+    "normalExit": false
+  },
+  "policy": "Do not promote parent driver success, a synthetic PTY zero, or an unresolved negative PTY code into successful application completion."
+}

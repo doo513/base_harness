@@ -111,7 +111,7 @@ describe("plugin.install.concurrent", () => {
     expectPlugins(tui.plugin, all)
   }, 25_000)
 
-  test("preserves updates when existing config uses .json", async () => {
+  test("preserves concurrent updates to existing canonical JSONC config", async () => {
     await using tmp = await tmpdir()
     const target = await plugin(tmp.path, ["server"])
     const cfg = path.join(tmp.path, ".base-harness", "base-harness.jsonc")
@@ -135,6 +135,6 @@ describe("plugin.install.concurrent", () => {
 
     const json = await read(cfg)
     expectPlugins(json.plugin, ["seed@1.0.0", ...next])
-    expect(await Filesystem.exists(path.join(tmp.path, ".base-harness", "base-harness.jsonc"))).toBe(false)
+    expect(await Filesystem.exists(path.join(tmp.path, ".base-harness", "base-harness.json"))).toBe(false)
   }, 25_000)
 })

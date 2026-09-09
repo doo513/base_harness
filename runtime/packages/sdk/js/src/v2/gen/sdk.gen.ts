@@ -198,6 +198,8 @@ import type {
   SessionHarnessControlErrors,
   SessionHarnessControlResponses,
   SessionHarnessErrors,
+  SessionHarnessPlanErrors,
+  SessionHarnessPlanResponses,
   SessionHarnessResponses,
   SessionHarnessVerifyErrors,
   SessionHarnessVerifyResponses,
@@ -4335,6 +4337,38 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Resolve a reviewed plan
+   *
+   * Resolve an unconsumed, integrity-checked plan to its original root session and workspace.
+   */
+  public harnessPlan<ThrowOnError extends boolean = false>(
+    parameters: {
+      planID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "planID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionHarnessPlanResponses, SessionHarnessPlanErrors, ThrowOnError>({
+      url: "/session/harness/plan/{planID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get harness status
    *
    * Retrieve the authoritative Host Coordinator state for this root session.
@@ -4448,7 +4482,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Control harness kernel
    *
-   * Apply a typed domain, skill, planning, discard, or execute control.
+   * Apply a typed domain, skill, execution, planning, discard, or execute control.
    */
   public harnessControl<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4457,6 +4491,10 @@ export class Session2 extends HeyApiClient {
       workspace?: string
       body?:
         | {
+            type: "execution.discover"
+            adapterID: string
+          }
+        | {
             type: "domain.set"
             domain: "develop" | "general"
           }
@@ -4464,6 +4502,17 @@ export class Session2 extends HeyApiClient {
             type: "skill.set"
             skill: "hackathon"
             enabled: boolean
+          }
+        | {
+            type: "execution.select"
+            selection?: {
+              adapterID: string
+              modelID?: string
+              options?: {
+                [key: string]: string
+              }
+              capabilityRevision?: string
+            }
           }
         | {
             type: "planning.plan_once"

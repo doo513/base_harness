@@ -1,0 +1,33 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Lazy CLI adapter type-boundary repair",
+  "changedSource": "runtime/packages/base-harness/src/cli/lazy-command.ts",
+  "change": "Preserve CommandModule loader type; narrow optional middleware shape only at inspection",
+  "runtime": "Bun 1.3.14",
+  "tests": {
+    "passed": 16,
+    "failed": 0,
+    "assertions": 38,
+    "files": [
+      "test/cli/lazy-command.test.ts",
+      "test/util/startup-trace.test.ts"
+    ],
+    "exitCode": 0
+  },
+  "hostTypecheck": {
+    "command": "bun run typecheck",
+    "exitCode": 0
+  },
+  "supervisorExitCode": 0,
+  "actualCLIRerun": false,
+  "priorActualCLIResults": "CLI_HELP_REPAIR_PARTIAL_RESULT_2026-09-08.json (previous revision; not rerun this turn)",
+  "limitations": [
+    "No full product regression suite in this turn",
+    "No real model/OAuth/native TUI user trial",
+    "No startup performance claim"
+  ],
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

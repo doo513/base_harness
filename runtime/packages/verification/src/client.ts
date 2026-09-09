@@ -1,4 +1,4 @@
-import { delimiter, dirname, resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import {
   SIDECAR_PROTOCOL_VERSION,
   type ActionCloseInput,
@@ -23,6 +23,7 @@ export interface ClientOptions {
 }
 
 interface PendingRequest {
+  scopeId: string
   resolve(value: VerificationStatus | Record<string, unknown>): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
@@ -63,6 +64,20 @@ const asStatus = (
 ): VerificationStatus => ({
   ...current,
   ...value,
+  // Responses are snapshots, not patches. A prior scope's rejection or authority
+  // must never fill fields omitted by the next response.
+  outcome: typeof value.outcome === "string" ? value.outcome as VerificationStatus["outcome"] : undefined,
+  failureKind: typeof value.failureKind === "string" ? value.failureKind : undefined,
+  failedCriterion: typeof value.failedCriterion === "string" ? value.failedCriterion : undefined,
+  missingEvidence: Array.isArray(value.missingEvidence) ? value.missingEvidence as string[] : [],
+  repairScope: typeof value.repairScope === "string" ? value.repairScope : undefined,
+  repairScopeId: typeof value.repairScopeId === "string" ? value.repairScopeId : undefined,
+  repairCount: typeof value.repairCount === "number" ? value.repairCount : 0,
+  failureFingerprint: typeof value.failureFingerprint === "string" ? value.failureFingerprint : undefined,
+  message: typeof value.message === "string" ? value.message : undefined,
+  readyRef: isRecord(value.readyRef) ? value.readyRef as unknown as VerificationStatus["readyRef"] : null,
+  readyEligible: value.readyEligible === true,
+  scopeAttestation: isRecord(value.scopeAttestation) ? value.scopeAttestation as unknown as ScopeAttestation : null,
   state: typeof value.state === "string" ? (value.state as VerificationStatus["state"]) : current.state,
   criterionResults: Array.isArray(value.criterionResults)
     ? (value.criterionResults as VerificationStatus["criterionResults"])
@@ -108,21 +123,26 @@ export class ProcessVerificationClient implements VerificationClient {
   private current: VerificationStatus
   private sequence = 0
   private disposed = false
+  private failed = false
 
   private constructor(runId: string, rootScopeId: string, options: ClientOptions) {
     this.runId = runId
     this.rootScopeId = rootScopeId
-    this.timeoutMs = options.timeoutMs ?? 30_000
+    this.timeoutMs = options.timeoutMs ?? 180_000
     this.redactor = options.redactor ?? ((value) => value)
     this.current = inactiveStatus(runId, rootScopeId)
     const pythonPath = resolve(import.meta.dir, "../../../../src")
-    const existingPythonPath = process.env.PYTHONPATH
+    const inherited = Object.fromEntries([
+      "PATH", "Path", "PATHEXT", "SystemRoot", "WINDIR", "HOME", "USERPROFILE",
+      "TEMP", "TMP", "LOCALAPPDATA", "XDG_STATE_HOME", "LANG", "LC_ALL",
+    ].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]!]]))
     this.process = Bun.spawn(options.command ?? defaultCommand(), {
-      cwd: options.cwd,
+      cwd: options.cwd ?? resolve(pythonPath, ".."),
       env: {
-        ...process.env,
+        ...inherited,
         ...options.env,
-        PYTHONPATH: existingPythonPath ? pythonPath + delimiter + existingPythonPath : pythonPath,
+        PYTHONPATH: pythonPath,
+        PYTHONIOENCODING: "utf-8",
       },
       stdin: "pipe",
       stdout: "pipe",
@@ -141,9 +161,9 @@ export class ProcessVerificationClient implements VerificationClient {
     this.input = this.process.stdin
     this.output = this.process.stdout
     this.errorOutput = this.process.stderr
-    void this.readStdout()
-    void this.readStderr()
-    void this.watchExit()
+    void this.readStdout().catch(() => this.fail("harness_protocol_error", "Verifier stdout could not be read."))
+    void this.readStderr().catch(() => this.fail("harness_protocol_error", "Verifier stderr could not be drained."))
+    void this.watchExit().catch(() => this.fail("harness_verifier_unavailable", "Verifier process could not be observed."))
   }
 
   static async start(
@@ -152,19 +172,21 @@ export class ProcessVerificationClient implements VerificationClient {
   ): Promise<ProcessVerificationClient> {
     const client = new ProcessVerificationClient(input.runId, input.scopeId, options)
     client.update({ ...client.current, state: "starting" })
-    const hello = await client.request<Record<string, unknown>>("hello", {}, input.scopeId)
-    if (hello.protocolVersion !== SIDECAR_PROTOCOL_VERSION) {
+    try {
+      const hello = await client.request<Record<string, unknown>>("hello", {}, input.scopeId)
+      if (hello.protocolVersion !== SIDECAR_PROTOCOL_VERSION) {
+        throw new VerificationClientError("harness_protocol_version_mismatch", "Verifier protocol version mismatch")
+      }
+      await client.open(input)
+      return client
+    } catch (error) {
       await client.fail(
-        "harness_protocol_version_mismatch",
-        "Verifier protocol version does not match the execution core.",
+        error instanceof VerificationClientError ? error.failureKind : "harness_verifier_unavailable",
+        error instanceof Error ? error.message : "Verifier startup failed",
       )
-      throw new VerificationClientError(
-        "harness_protocol_version_mismatch",
-        "Verifier protocol version mismatch",
-      )
+      await client.dispose()
+      throw error
     }
-    await client.open(input)
-    return client
   }
 
   snapshot(): VerificationStatus {
@@ -183,6 +205,9 @@ export class ProcessVerificationClient implements VerificationClient {
       {
         workspace: input.workspace,
         goalSources: input.goalSources,
+        configuredProfile: input.configuredProfile,
+        effectiveProfile: input.effectiveProfile,
+        escalationReasons: input.escalationReasons,
         ...(input.goalContract ? { goalContract: input.goalContract } : {}),
       },
       input.scopeId,
@@ -225,7 +250,7 @@ export class ProcessVerificationClient implements VerificationClient {
       },
       scopeId,
     )
-    if (status.outcome === "repair" || status.outcome === "blocked" || status.outcome === "needs_input") {
+    if (status.outcome && ["repair", "blocked", "needs_input", "failure", "repair_exhausted"].includes(status.outcome)) {
       throw new VerificationClientError(
         status.failureKind ?? "verification_failed",
         status.failedCriterion ?? "Verifier rejected action.open",
@@ -253,7 +278,7 @@ export class ProcessVerificationClient implements VerificationClient {
       status: input.status,
       output: input.output,
       error: input.error,
-      metadata: input.metadata,
+      metadata: input.status === "error" ? { ...input.metadata, failureEnvelope: input.error } : input.metadata,
     })
   }
 
@@ -270,7 +295,24 @@ export class ProcessVerificationClient implements VerificationClient {
   }
 
   async commitCandidate(attestation: ScopeAttestation, scopeId = this.rootScopeId): Promise<VerificationStatus> {
-    return this.statusRequest("candidate.commit", { attestation }, scopeId)
+    const response = await this.request<Record<string, unknown>>("candidate.commit", { attestation }, scopeId)
+    const status = asStatus(response, this.current)
+    if (response.state === "failure" || response.outcome === "failure") {
+      this.update(status)
+      throw new VerificationClientError(status.failureKind ?? "harness_verifier_error", status.message ?? "Verifier refused candidate commit")
+    }
+    const acknowledged = response.committedCandidate
+    if (
+      !isRecord(acknowledged) ||
+      acknowledged.candidateId !== attestation.candidateId ||
+      acknowledged.candidateRevision !== attestation.candidateRevision ||
+      acknowledged.patchHash !== attestation.patchHash
+    ) {
+      await this.fail("harness_protocol_error", "Verifier did not acknowledge the committed candidate identity")
+      throw new VerificationClientError("harness_protocol_error", "Missing or mismatched candidate commit acknowledgment")
+    }
+    this.update(status)
+    return status
   }
 
   async reopenScope(scopeId: string): Promise<VerificationStatus> {
@@ -288,7 +330,7 @@ export class ProcessVerificationClient implements VerificationClient {
   async dispose(): Promise<void> {
     if (this.disposed) return
     try {
-      if (this.current.state !== "closed") await this.close()
+      if (!this.failed && this.current.state !== "closed") await this.close()
     } catch {
       // A crashed verifier is already fail-closed.
     }
@@ -318,7 +360,7 @@ export class ProcessVerificationClient implements VerificationClient {
     payload: Record<string, unknown>,
     scopeId: string,
   ): Promise<T> {
-    if (this.disposed) return Promise.reject(new Error("Verifier client is disposed"))
+    if (this.disposed || this.failed) return Promise.reject(new VerificationClientError("harness_verifier_unavailable", "Verifier client is not available"))
     const id = this.runId + ":" + String(++this.sequence)
     const envelope: ProtocolEnvelope = {
       version: SIDECAR_PROTOCOL_VERSION,
@@ -335,12 +377,19 @@ export class ProcessVerificationClient implements VerificationClient {
         reject(new VerificationClientError("harness_verifier_timeout", "Verifier request timed out: " + type))
       }, this.timeoutMs)
       this.pending.set(id, {
+        scopeId,
         resolve: (value) => resolveRequest(value as T),
         reject,
         timer,
       })
-      this.input.write(JSON.stringify(envelope) + "\n")
-      void this.input.flush()
+      try {
+        this.input.write(JSON.stringify(envelope) + "\n")
+        void Promise.resolve(this.input.flush()).catch(() =>
+          this.fail("harness_verifier_unavailable", "Verifier stdin could not be flushed."),
+        )
+      } catch {
+        void this.fail("harness_verifier_unavailable", "Verifier stdin could not be written.")
+      }
     })
   }
 
@@ -352,6 +401,10 @@ export class ProcessVerificationClient implements VerificationClient {
       const next = await reader.read()
       if (next.done) break
       buffer += decoder.decode(next.value, { stream: true })
+      if (Buffer.byteLength(buffer, "utf8") > 10 * 1024 * 1024) {
+        await this.fail("harness_protocol_error", "Verifier response exceeded the NDJSON frame limit.")
+        return
+      }
       let newline = buffer.indexOf("\n")
       while (newline >= 0) {
         const line = buffer.slice(0, newline).trim()
@@ -385,6 +438,14 @@ export class ProcessVerificationClient implements VerificationClient {
     const id = typeof envelope.id === "string" ? envelope.id : ""
     const pending = this.pending.get(id)
     if (!pending) return
+    if (
+      envelope.runId !== this.runId ||
+      envelope.scopeId !== pending.scopeId ||
+      (envelope.type !== "response" && envelope.type !== "failure")
+    ) {
+      void this.fail("harness_protocol_error", "Verifier response identity or type does not match the request.")
+      return
+    }
     this.pending.delete(id)
     clearTimeout(pending.timer)
     const payload = envelope.payload
@@ -393,24 +454,52 @@ export class ProcessVerificationClient implements VerificationClient {
       void this.fail("harness_protocol_error", "Verifier response payload is invalid.")
       return
     }
+    if (
+      (payload.runId !== undefined && payload.runId !== this.runId) ||
+      (payload.scopeId !== undefined && payload.scopeId !== pending.scopeId) ||
+      (payload.rootScopeId !== undefined && payload.rootScopeId !== this.rootScopeId)
+    ) {
+      pending.reject(new VerificationClientError("harness_protocol_error", "Verifier payload identity does not match the request"))
+      void this.fail("harness_protocol_error", "Verifier payload identity does not match the request.")
+      return
+    }
+    const correlated = { ...payload, runId: this.runId, scopeId: pending.scopeId, rootScopeId: this.rootScopeId }
     if (envelope.type === "failure") {
       const message = typeof payload.message === "string" ? payload.message : "Verifier rejected the protocol request"
       const failureKind = typeof payload.failureKind === "string" ? payload.failureKind : "harness_protocol_error"
       pending.reject(new VerificationClientError(failureKind, message))
-      this.update(asStatus(payload, this.current))
+      this.update(asStatus(correlated, this.current))
       return
     }
-    pending.resolve(payload)
+    if (
+      (payload.outcome === "ready" && (
+        pending.scopeId !== this.rootScopeId ||
+        !isRecord(payload.readyRef) ||
+        payload.readyRef.trust !== "verifier_attested"
+      )) ||
+      (payload.outcome === "scope_verified" && (
+        pending.scopeId === this.rootScopeId ||
+        !isRecord(payload.scopeAttestation)
+      ))
+    ) {
+      pending.reject(new VerificationClientError("harness_protocol_error", "Verifier attestation scope is invalid"))
+      void this.fail("harness_protocol_error", "Verifier attestation scope is invalid.")
+      return
+    }
+    pending.resolve(correlated)
   }
 
   private async watchExit(): Promise<void> {
     const code = await this.process.exited
-    if (!this.disposed && code !== 0) {
+    if (!this.disposed && !this.failed && this.current.state !== "closed") {
       await this.fail("harness_verifier_unavailable", "Verifier exited unexpectedly with code " + String(code) + ".")
     }
   }
 
   private async fail(failureKind: string, message: string): Promise<void> {
+    if (this.failed || this.disposed) return
+    this.failed = true
+    try { this.process.kill() } catch { /* A terminated verifier is already closed. */ }
     this.update({
       ...this.current,
       state: "failure",
@@ -418,6 +507,8 @@ export class ProcessVerificationClient implements VerificationClient {
       failureKind,
       message,
       readyRef: null,
+      readyEligible: false,
+      scopeAttestation: null,
     })
     for (const request of this.pending.values()) {
       clearTimeout(request.timer)

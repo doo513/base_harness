@@ -1,0 +1,31 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "status": "incomplete_with_regressions",
+  "unit": {
+    "passed": 131,
+    "failed": 1,
+    "assertions": 281,
+    "seconds": 7.22
+  },
+  "subprocess": {
+    "passed": 10,
+    "failed": 2,
+    "assertions": 80,
+    "seconds": 90.53
+  },
+  "hostTypecheckExitCode": 2,
+  "positiveContentFixturePassed": true,
+  "unsafeWorkspaceRejectedBeforeModelCall": true,
+  "newRegressions": [
+    "ACP revalidates redacted private variant options; effort selector missing in two subprocess tests",
+    "Negative test TS2339 on unknown RPC error"
+  ],
+  "fixtureAlignmentPending": [
+    "Directory fixture lacks explicit reasoningEfforts.supported"
+  ],
+  "fullHostRerun": false,
+  "paidProviderCalls": false,
+  "repositoryGitOperations": false
+}

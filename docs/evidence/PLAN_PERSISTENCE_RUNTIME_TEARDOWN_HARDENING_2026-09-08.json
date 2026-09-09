@@ -1,0 +1,216 @@
+{
+  "schemaVersion": "diagnostic-validation-v1",
+  "trust": "diagnostic_only",
+  "phase": 36,
+  "date": "2026-09-08",
+  "changedSource": [
+    "runtime/packages/kernel-host/src/reviewed-plan-store.ts",
+    "runtime/packages/kernel-host/package.json",
+    "runtime/packages/kernel-host/test/reviewed-plan-recovery.test.ts",
+    "runtime/packages/base-harness/src/effect/app-runtime-lifecycle.ts",
+    "runtime/packages/base-harness/src/effect/app-runtime.ts",
+    "runtime/packages/base-harness/test/preload.ts",
+    "runtime/packages/base-harness/test/effect/app-runtime-lifecycle.test.ts",
+    "runtime/script/verify-tui-plan-recovery.mjs"
+  ],
+  "generatedDependencyArtifact": "runtime/bun.lock",
+  "sourcePolicyChanges": {
+    "reviewedPlanWriter": "shared same-directory atomic snapshot replacement with bounded Windows lock retries",
+    "exclusivePlanRights": "existing hard-link publication/consumption and signatures retained",
+    "finalizer": "registration-only lifecycle module; unused runtime cleanup does not import AppRuntime",
+    "startupFixture": "spawn recorded before readiness; primary failure survives cleanup"
+  },
+  "gates": {
+    "initial": [
+      {
+        "package": "workspace",
+        "tests": 0,
+        "testElapsedMs": 2619.5799,
+        "typecheck": 0
+      },
+      {
+        "package": "coordinator",
+        "tests": 0,
+        "testElapsedMs": 16880.4884,
+        "typecheck": 0
+      },
+      {
+        "package": "kernel-host",
+        "tests": 1,
+        "testElapsedMs": 128.8715,
+        "typecheck": 2
+      },
+      {
+        "package": "base-harness",
+        "tests": 1,
+        "testElapsedMs": 7173.6461,
+        "typecheck": 2
+      },
+      {
+        "package": "tui",
+        "tests": 0,
+        "testElapsedMs": 10682.5108,
+        "typecheck": 0
+      }
+    ],
+    "afterDependencyInstallation": [
+      {
+        "package": "kernel-host",
+        "tests": 0,
+        "testElapsedMs": 3830.6323,
+        "typecheck": 0
+      },
+      {
+        "package": "base-harness",
+        "tests": 0,
+        "testElapsedMs": 8098.6289,
+        "typecheck": 0
+      }
+    ],
+    "latest": [
+      {
+        "package": "workspace",
+        "tests": 0,
+        "testElapsedMs": 2619.5799,
+        "typecheck": 0
+      },
+      {
+        "package": "coordinator",
+        "tests": 0,
+        "testElapsedMs": 16880.4884,
+        "typecheck": 0
+      },
+      {
+        "package": "kernel-host",
+        "tests": 0,
+        "testElapsedMs": 3830.6323,
+        "typecheck": 0
+      },
+      {
+        "package": "base-harness",
+        "tests": 0,
+        "testElapsedMs": 8098.6289,
+        "typecheck": 0
+      },
+      {
+        "package": "tui",
+        "tests": 0,
+        "testElapsedMs": 10682.5108,
+        "typecheck": 0
+      }
+    ],
+    "latestTestCounts": {
+      "workspace": {
+        "pass": 34,
+        "skip": 1,
+        "fail": 0
+      },
+      "coordinator": {
+        "pass": 43,
+        "fail": 0
+      },
+      "kernel-host": {
+        "pass": 63,
+        "fail": 0
+      },
+      "base-harness": {
+        "pass": 12,
+        "fail": 0
+      },
+      "tui": {
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    "sameHostSuite": {
+      "sameSuiteTests": 0,
+      "sameSuiteElapsedMs": 1275.1374,
+      "cliHelp": 1,
+      "runHelp": 1
+    }
+  },
+  "setupFailuresPreserved": [
+    "The first gate run followed lockfile-only generation; the new package-local workspace dependency was not linked.",
+    "The initial CLI probe omitted the required BASE_HARNESS_LAUNCH_CWD; the correctly configured probe subsequently passed."
+  ],
+  "teardownBaseline": {
+    "stage": "probe_complete",
+    "kind": "diagnostic_only",
+    "timings": [
+      {
+        "phase": "projectors_import",
+        "elapsedMs": 1.290200000000027
+      },
+      {
+        "phase": "control_errors_import",
+        "elapsedMs": 340.91239999999993
+      },
+      {
+        "phase": "runtime_import",
+        "elapsedMs": 3439.4689
+      },
+      {
+        "phase": "runtime_dispose",
+        "elapsedMs": 0.7866999999996551
+      },
+      {
+        "phase": "scratch_remove",
+        "elapsedMs": 156.07489999999962
+      }
+    ],
+    "scratch": "C:\\Users\\doo33\\AppData\\Local\\Temp\\opencode-test-data-18588"
+  },
+  "forcedStartupProbe": {
+    "probePassed": true,
+    "fixtureExit": 1,
+    "result": {
+      "success": false,
+      "scratch": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-ktFM8c",
+      "recoveryObserved": false,
+      "cleanupFailures": [],
+      "hosts": [
+        {
+          "pid": 26532,
+          "url": "http://127.0.0.1:65348",
+          "startupMs": 15.324200000000005,
+          "ready": false,
+          "exitCode": 143
+        }
+      ],
+      "clients": [],
+      "observations": [],
+      "timings": {},
+      "requests": [],
+      "modelHttpTrace": [],
+      "failure": "Error: Injected Host startup failure before readiness\n    at startHost (C:\\Users\\doo33\\Downloads\\base_harness\\runtime\\script\\verify-tui-plan-recovery.mjs:44:17)\n    at C:\\Users\\doo33\\Downloads\\base_harness\\runtime\\script\\verify-tui-plan-recovery.mjs:121:9\n    at processTicksAndRejections (native:7:39)"
+    }
+  },
+  "completionScope": "Selected regression gates and controlled startup-failure cleanup, not whole-product readiness",
+  "preservedBoundaries": [
+    "signatures and exclusive plan consumption",
+    "canonical-before-publication ordering",
+    "no destination unlink/copy fallback",
+    "incomplete revisions remain non-executable",
+    "candidate attestation and root-only Ready unchanged"
+  ],
+  "limitations": [
+    "The previous 40-second test hook timeout was not reproduced by the standalone timing probe; its entire cause is not established.",
+    "The unused-runtime cold-import path was removed and the identical Host test set passed without a timeout.",
+    "A native TUI end-to-end Ready run was performed in phase35, not repeated in phase36.",
+    "No live OAuth/provider, Linux/WSL, package-release, or whole-suite readiness claim.",
+    "The POSIX executable-mode test was skipped on Windows."
+  ],
+  "artifacts": {
+    "initialGates": ".tools/validation/restoration-phase36-initial-gates.log",
+    "installedGates": ".tools/validation/restoration-phase36-linked-gates.log",
+    "entrypoints": ".tools/validation/restoration-phase36-entrypoints.log",
+    "teardown": ".tools/validation/restoration-phase36-teardown-probe.json",
+    "forcedStartup": ".tools/validation/restoration-phase36-forced-startup.result.json"
+  },
+  "git": {
+    "used": false,
+    "commit": false,
+    "push": false,
+    "netMonitorTouched": false
+  }
+}

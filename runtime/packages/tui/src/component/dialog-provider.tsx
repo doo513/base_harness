@@ -394,7 +394,7 @@ function ApiMethod(props: ApiMethodProps) {
       }
       onConfirm={async (value) => {
         if (!value) return
-        await sdk.client.auth.set({
+        const result = await sdk.client.auth.set({
           providerID: props.providerID,
           auth: {
             type: "api",
@@ -402,6 +402,13 @@ function ApiMethod(props: ApiMethodProps) {
             ...(props.metadata ? { metadata: props.metadata } : {}),
           },
         })
+        if (result.error) {
+          toast.show({
+            variant: "error",
+            message: "The Host could not store this credential. Check the provider connection and retry.",
+          })
+          return
+        }
         await sdk.client.instance.dispose()
         await sync.bootstrap()
         if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {

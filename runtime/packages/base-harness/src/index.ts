@@ -2,32 +2,54 @@ process.env.BASE_HARNESS_DISABLE_AUTOUPDATE ??= "1"
 import "./plugin/builtin-module"
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
 import { GenerateCommand } from "./cli/cmd/generate"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { ModelsCommand } from "./cli/cmd/models"
+
+
+
+
 import { UI } from "./cli/ui"
 import { InstallationVersion } from "@base-harness/core/installation/version"
 import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { ExportCommand } from "./cli/cmd/export"
-import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui"
-import { AcpCommand } from "./cli/cmd/acp"
-import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
-import { errorMessage } from "./util/error"
-import { PluginCommand } from "./cli/cmd/plug"
-import { Heap } from "./cli/heap"
 
+
+
+
+
+import { EOL } from "os"
+
+
+
+import { errorMessage } from "./util/error"
+
+import { Heap } from "./cli/heap"
+import { traceStartup } from "./util/startup-trace"
+import { EntryCommand } from "./cli/entry-command-metadata"
+import { lazyCommand } from "./cli/lazy-command"
+import { TuiCommandBuilder } from "./cli/tui-options"
+
+const ConsoleCommand = lazyCommand(EntryCommand.console, () => import("./cli/cmd/account").then(module => module.ConsoleCommand))
+const AgentCommand = lazyCommand(EntryCommand.agent, () => import("./cli/cmd/agent").then(module => module.AgentCommand))
+const ModelsCommand = lazyCommand(EntryCommand.models, () => import("./cli/cmd/models").then(module => module.ModelsCommand))
+const StatsCommand = lazyCommand(EntryCommand.stats, () => import("./cli/cmd/stats").then(module => module.StatsCommand))
+const ExportCommand = lazyCommand(EntryCommand.export, () => import("./cli/cmd/export").then(module => module.ExportCommand))
+const ImportCommand = lazyCommand(EntryCommand.import, () => import("./cli/cmd/import").then(module => module.ImportCommand))
+const SessionCommand = lazyCommand(EntryCommand.session, () => import("./cli/cmd/session").then(module => module.SessionCommand))
+const PluginCommand = lazyCommand(EntryCommand.plugin, () => import("./cli/cmd/plug").then(module => module.PluginCommand))
+const DbCommand = lazyCommand(EntryCommand.db, () => import("./cli/cmd/db").then(module => module.DbCommand))
+const ServeCommand = lazyCommand(EntryCommand.serve, () => import("./cli/cmd/serve").then(module => module.ServeCommand))
+const WebCommand = lazyCommand(EntryCommand.web, () => import("./cli/cmd/web").then(module => module.WebCommand))
+const ProvidersCommand = lazyCommand(EntryCommand.providers, () => import("./cli/cmd/providers").then(module => module.ProvidersCommand))
+const McpCommand = lazyCommand(EntryCommand.mcp, () => import("./cli/cmd/mcp").then(module => module.McpCommand))
+
+const DebugCommand = lazyCommand(EntryCommand.debug, () => import("./cli/cmd/debug").then(module => module.DebugCommand))
+const AcpCommand = lazyCommand(EntryCommand.acp, () => import("./cli/cmd/acp").then(module => module.AcpCommand))
+
+const RunCommand = lazyCommand(EntryCommand.run, () => import("./cli/cmd/run").then(module => module.RunCommand))
+const ExecuteCommand = lazyCommand(EntryCommand.execute, () => import("./cli/cmd/run").then(module => module.ExecuteCommand))
+const AttachCommand = lazyCommand(EntryCommand.attach, () => import("./cli/cmd/attach").then(module => module.AttachCommand))
+const TuiThreadCommand = lazyCommand(EntryCommand.tui, () => import("./cli/cmd/tui").then(module => module.TuiThreadCommand), TuiCommandBuilder)
+
+traceStartup("cli.modules_ready")
 const args = hideBin(process.argv)
 
 function show(out: string) {
@@ -68,6 +90,7 @@ const cli = yargs(args)
       process.env.BASE_HARNESS_PURE = "1"
     }
 
+    traceStartup("cli.options_ready")
     Heap.start()
 
     process.env.AGENT = "1"
@@ -80,6 +103,7 @@ const cli = yargs(args)
   .command(TuiThreadCommand)
   .command(AttachCommand)
   .command(RunCommand)
+  .command(ExecuteCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
   .command(ConsoleCommand)
@@ -109,6 +133,7 @@ const cli = yargs(args)
   .strict()
 
 try {
+  traceStartup("cli.parse_start")
   if (args.includes("-h") || args.includes("--help")) {
     await cli.parse(args, (err: Error | undefined, _argv: unknown, out: string) => {
       if (err) throw err
@@ -119,6 +144,7 @@ try {
     await cli.parse()
   }
 } catch (e) {
+  traceStartup("cli.failed")
   const formatted = FormatError(e)
   if (formatted) UI.error(formatted)
   if (formatted === undefined) {
@@ -127,6 +153,7 @@ try {
   }
   process.exitCode = 1
 } finally {
+  traceStartup("cli.exiting")
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
   // run using `docker run --init`.

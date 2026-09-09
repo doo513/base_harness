@@ -1,0 +1,251 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "scenario": "incorrect_candidate_then_one_local_repair",
+  "diagnosticPassed": true,
+  "broaderEvidenceConsistencyProven": false,
+  "runId": "run-8f8bc71d-e0ce-4f68-a37d-7bdf898ae6d3",
+  "sessionID": "ses_f815921f7ffediGNR7uopXFs4V",
+  "checks": [
+    {
+      "route": "/provider",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "route": "/config/providers",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "scope": "worker_catalog",
+      "workUnits": 2,
+      "forbiddenToolsAdvertised": false,
+      "structuredEditorsAvailable": true
+    },
+    {
+      "scope": "worker_local_repair",
+      "workUnitId": "unit-0",
+      "scopeId": "ses_f8158dcadffeoDj2JGXk6wvj5x",
+      "repairCount": 1,
+      "sameSessionWriteCount": 2,
+      "unaffectedWorkerWriteCount": 1,
+      "baseWorkspaceAbsentBeforeRepair": true,
+      "model": "fixture-reasoner",
+      "exactEffort": "high",
+      "replanned": false
+    },
+    {
+      "scope": "private_runtime",
+      "authenticated": true,
+      "exactEffort": "high",
+      "fileMatches": true,
+      "currentRootReady": true
+    }
+  ],
+  "workers": [
+    {
+      "workUnitId": "unit-0",
+      "title": "Write result-0.txt",
+      "state": "completed",
+      "repairCount": 1,
+      "scopeId": "ses_f8158dcadffeoDj2JGXk6wvj5x",
+      "failureFingerprint": "89aad3fc8b57bf875103c43894febd47fd1cadce9bc2625ebb657161056830bd"
+    },
+    {
+      "workUnitId": "unit-1",
+      "title": "Write result-1.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f8158dca8ffeyqrfsw7hNwOTEv"
+    }
+  ],
+  "rootRepairCount": 0,
+  "claim0Trace": [
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\88\\881b14fe2cd9ca92176e3e64794af93f560b619cd4e90a8011bd6364fe968ece.json",
+      "claimId": "claim-0",
+      "verified": true,
+      "candidateBinding": null,
+      "familyId": "6bdead03d102d5ea684225a2cdbf1273894bfd311fb05959bc255b507b046eec",
+      "createdAt": "2026-09-08T10:34:51.684593+09:00",
+      "result": [
+        {
+          "exists": true,
+          "matched": true,
+          "path": "result-0.txt",
+          "sha256": "4697298f13d7f10fdaad0ef08adf00979da3a0391dcf999c3712ff14bcb92245",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\c8\\c8f0fdd128e18df2c2cb36b3a96cfe15965217321cae59563c2ef545f36f01ed.json",
+      "claimId": "claim-0",
+      "verified": false,
+      "candidateBinding": {
+        "candidateId": "ses_f8158dcadffeoDj2JGXk6wvj5x-1-2cdad6e46c1bcb40",
+        "candidateRevision": 1,
+        "observedFiles": [
+          {
+            "path": "c:\\users\\doo33\\appdata\\local\\temp\\base-harness-real-host-my5zol\\workspace\\result-0.txt",
+            "sha256": "e381c40311d0820e7291d949bfd2b41cc84bdb3a44c8fb5f51983c5a11e4f49e",
+            "size": 18
+          }
+        ],
+        "patchHash": "2cdad6e46c1bcb405a50ed8d71328e9699ac01cec926361b0d2754ed03333775"
+      },
+      "familyId": "41fad37a104a278de58813d7e76772e232f13c459740839743f3a7e6a091a90d",
+      "createdAt": "2026-09-08T10:34:44.663549+09:00",
+      "result": [
+        {
+          "exists": true,
+          "matched": false,
+          "path": "result-0.txt",
+          "sha256": "e381c40311d0820e7291d949bfd2b41cc84bdb3a44c8fb5f51983c5a11e4f49e",
+          "size": 18
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\f9\\f9752a636dad89725214621d15755499a5454bb8966d95589b16396c0a2ab3af.json",
+      "claimId": "claim-0",
+      "verified": true,
+      "candidateBinding": {
+        "candidateId": "ses_f8158dcadffeoDj2JGXk6wvj5x-2-387cb5d68cbf9efb",
+        "candidateRevision": 2,
+        "observedFiles": [
+          {
+            "path": "c:\\users\\doo33\\appdata\\local\\temp\\base-harness-real-host-my5zol\\workspace\\result-0.txt",
+            "sha256": "4697298f13d7f10fdaad0ef08adf00979da3a0391dcf999c3712ff14bcb92245",
+            "size": 16
+          }
+        ],
+        "patchHash": "387cb5d68cbf9efb05e8f7cc005ca3880ee85df1fcc4fea69daa6d6f013bceed"
+      },
+      "familyId": "d0a309f7e9b1fc63be30de53b833cb6509a5288adaaadae0c59632aa5e547d66",
+      "createdAt": "2026-09-08T10:34:49.546745+09:00",
+      "result": [
+        {
+          "exists": true,
+          "matched": true,
+          "path": "result-0.txt",
+          "sha256": "4697298f13d7f10fdaad0ef08adf00979da3a0391dcf999c3712ff14bcb92245",
+          "size": 16
+        }
+      ]
+    }
+  ],
+  "scopeAttestations": [
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\59\\5935efa8607d27e92bd1eb1cb0789218827edb8dbebc538d1e31e14f115fddf0.json",
+      "createdAt": "2026-09-08T10:34:49.582824+09:00",
+      "scopeId": "ses_f8158dcadffeoDj2JGXk6wvj5x",
+      "candidateId": "ses_f8158dcadffeoDj2JGXk6wvj5x-2-387cb5d68cbf9efb",
+      "candidateRevision": 2,
+      "patchHash": "387cb5d68cbf9efb05e8f7cc005ca3880ee85df1fcc4fea69daa6d6f013bceed"
+    },
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\71\\710eba2ec8fda525848eb7d90c22b201fd4061558de0b0b145dfe622084b4e12.json",
+      "createdAt": "2026-09-08T10:34:45.780976+09:00",
+      "scopeId": "ses_f8158dca8ffeyqrfsw7hNwOTEv",
+      "candidateId": "ses_f8158dca8ffeyqrfsw7hNwOTEv-1-21719828beef08b8",
+      "candidateRevision": 1,
+      "patchHash": "21719828beef08b80787e3f3721d89e6e159a374f119d4997f2fb825b30ca901"
+    }
+  ],
+  "rootReady": {
+    "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\5f\\5f043f70d63135398892958604c4cd0fc8744c4687e6c5ef5d16420f9fce23f6.json",
+    "createdAt": "2026-09-08T10:34:51.772138+09:00",
+    "claimResults": [
+      {
+        "claimId": "claim-0",
+        "coverage": "full",
+        "evidenceIds": [
+          "881b14fe2cd9ca92176e3e64794af93f560b619cd4e90a8011bd6364fe968ece"
+        ],
+        "familyIds": [
+          "6bdead03d102d5ea684225a2cdbf1273894bfd311fb05959bc255b507b046eec"
+        ],
+        "historicalIndependentMethods": [],
+        "reason": "Typed predicate and adaptive independence policy are satisfied.",
+        "result": "verified"
+      },
+      {
+        "claimId": "claim-1",
+        "coverage": "full",
+        "evidenceIds": [
+          "ce544791c65a30d9f72492b0633b6e9242bc632eee5d159187ce7a212ed0353c"
+        ],
+        "familyIds": [
+          "ec309c77f1d9737f6ca4211b10f9d8fe2383bd083015622b460d74522d3a30dc"
+        ],
+        "historicalIndependentMethods": [],
+        "reason": "Typed predicate and adaptive independence policy are satisfied.",
+        "result": "verified"
+      }
+    ],
+    "criterionResults": [
+      {
+        "claimIds": [
+          "claim-0"
+        ],
+        "coverage": "full",
+        "criterionId": "criterion-0",
+        "required": true,
+        "result": "verified",
+        "risk": "low"
+      },
+      {
+        "claimIds": [
+          "claim-1"
+        ],
+        "coverage": "full",
+        "criterionId": "criterion-1",
+        "required": true,
+        "result": "verified",
+        "risk": "low"
+      }
+    ]
+  },
+  "openFinding": {
+    "kind": "selected_ready_family_still_disputed_after_repair",
+    "classification": "observed_metadata_policy_inconsistency_requires_investigation",
+    "runId": "run-8f8bc71d-e0ce-4f68-a37d-7bdf898ae6d3",
+    "readyPath": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-MY5Zol\\state\\base-harness\\runs\\13a3a38b0929c0b4-863e47d9\\artifacts\\5f\\5f043f70d63135398892958604c4cd0fc8744c4687e6c5ef5d16420f9fce23f6.json",
+    "selectedDisputedFamilies": [
+      {
+        "claimId": "claim-0",
+        "familyId": "6bdead03d102d5ea684225a2cdbf1273894bfd311fb05959bc255b507b046eec",
+        "methodId": "builtin:file",
+        "runId": "run-8f8bc71d-e0ce-4f68-a37d-7bdf898ae6d3",
+        "status": "disputed",
+        "trustTier": "supported"
+      }
+    ],
+    "next": "Inspect family contradiction/supersession and final selection policy; distinguish prior candidate content from current revision before changing readiness rules.",
+    "notProven": "Incorrect final file contents or a forged Ready"
+  },
+  "lifecycle": {
+    "supervisorExitCode": 0,
+    "clientExitCode": 0,
+    "hostExitCode": 143,
+    "hostTerminationIntentional": true
+  },
+  "productionCodeChanged": false,
+  "fullSuiteRun": false,
+  "typechecksRun": false,
+  "gitUsed": false,
+  "netMonitorTouched": false
+}

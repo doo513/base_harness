@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "change": "Lazy-load peripheral debug and ACP commands",
+  "targetedTests": {
+    "passed": 20,
+    "failed": 0,
+    "assertions": 64,
+    "files": 2
+  },
+  "hostTypecheckExitCode": 0,
+  "cli": [
+    {
+      "args": [
+        "--help"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "elapsedMs": 5499.4722,
+      "runtimeStarted": false
+    },
+    {
+      "args": [
+        "debug",
+        "--help"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "elapsedMs": 4035.428,
+      "runtimeStarted": false
+    },
+    {
+      "args": [
+        "acp",
+        "--help"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "elapsedMs": 3697.1020000000008,
+      "runtimeStarted": false
+    },
+    {
+      "args": [
+        "debug",
+        "paths"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "elapsedMs": 3982.0930000000008,
+      "runtimeStarted": false
+    }
+  ],
+  "hostRuns": [
+    {
+      "path": ".tools/validation/lazy-peripheral-host-1788845075709.result.json",
+      "success": true,
+      "timings": {
+        "/global/health": 269.8184000000001,
+        "healthStartupMs": 8076.2099,
+        "/provider": 1870.4062000000004,
+        "/config/providers": 5.669499999999971,
+        "/session": 92.01879999999983,
+        "clientMs": 28994.283600000002,
+        "/session/ses_f80862272ffetUqpSdWM1vlriv/harness": 15.105300000002899,
+        "/session/ses_f8085e382ffezpD7EQWbPgaNxS/message": 8.424599999998463
+      },
+      "checks": [
+        {
+          "route": "/provider",
+          "credentialsOmitted": true,
+          "privateOptionsOmitted": true,
+          "exactEfforts": [
+            "high",
+            "max"
+          ]
+        },
+        {
+          "route": "/config/providers",
+          "credentialsOmitted": true,
+          "privateOptionsOmitted": true,
+          "exactEfforts": [
+            "high",
+            "max"
+          ]
+        },
+        {
+          "scope": "worker_catalog",
+          "workUnits": 2,
+          "forbiddenToolsAdvertised": false,
+          "structuredEditorsAvailable": true
+        },
+        {
+          "scope": "ready_family_consistency",
+          "selectedFamiliesActive": true,
+          "historicalDisputePreserved": true,
+          "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-PJ978G\\state\\base-harness\\runs\\9603b786dce11cc7-22b887c4\\artifacts\\a9\\a9d19c35c221e6c7fbb4be4adb2a797b5d41f51dcb98f42660a0ff6086bf82f4.json"
+        },
+        {
+          "scope": "worker_local_repair",
+          "workUnitId": "unit-0",
+          "scopeId": "ses_f8085e382ffezpD7EQWbPgaNxS",
+          "repairCount": 1,
+          "sameSessionWriteCount": 2,
+          "unaffectedWorkerWriteCount": 1,
+          "baseWorkspaceAbsentBeforeRepair": true,
+          "model": "fixture-reasoner",
+          "exactEffort": "high",
+          "replanned": false
+        },
+        {
+          "scope": "private_runtime",
+          "authenticated": true,
+          "exactEffort": "high",
+          "fileMatches": true,
+          "retainedFilesMatch": true,
+          "currentRootReady": true
+        }
+      ],
+      "runId": "run-5691d6b2-908d-4e7a-a05a-49eee3bf9253",
+      "phase": "ready",
+      "planningState": "idle",
+      "modelRequests": 14,
+      "hostExitCode": 143
+    },
+    {
+      "path": ".tools/validation/lazy-peripheral-host-trace-1788845208253.result.json",
+      "success": true,
+      "timings": {
+        "/global/health": 257.3594000000003,
+        "healthStartupMs": 7817.2307,
+        "/provider": 1751.699999999999,
+        "/config/providers": 10.999800000001414,
+        "/session": 99.65200000000004,
+        "clientMs": 28451.692799999997,
+        "/session/ses_f808422b8ffeGAzpqVaY5pLx7L/harness": 18.080300000001444,
+        "/session/ses_f8083e61bffeWNo0XdzxIZf42g/message": 6.530500000000757
+      },
+      "checks": [
+        {
+          "route": "/provider",
+          "credentialsOmitted": true,
+          "privateOptionsOmitted": true,
+          "exactEfforts": [
+            "high",
+            "max"
+          ]
+        },
+        {
+          "route": "/config/providers",
+          "credentialsOmitted": true,
+          "privateOptionsOmitted": true,
+          "exactEfforts": [
+            "high",
+            "max"
+          ]
+        },
+        {
+          "scope": "worker_catalog",
+          "workUnits": 2,
+          "forbiddenToolsAdvertised": false,
+          "structuredEditorsAvailable": true
+        },
+        {
+          "scope": "ready_family_consistency",
+          "selectedFamiliesActive": true,
+          "historicalDisputePreserved": true,
+          "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-GnrCkh\\state\\base-harness\\runs\\03c0f6efaaac5eaf-93e8be23\\artifacts\\34\\342e77601603b0021b374e9a75b9812359ad26ba1f0bc1c493a83d013b3dee72.json"
+        },
+        {
+          "scope": "worker_local_repair",
+          "workUnitId": "unit-0",
+          "scopeId": "ses_f8083e61bffeWNo0XdzxIZf42g",
+          "repairCount": 1,
+          "sameSessionWriteCount": 2,
+          "unaffectedWorkerWriteCount": 1,
+          "baseWorkspaceAbsentBeforeRepair": true,
+          "model": "fixture-reasoner",
+          "exactEffort": "high",
+          "replanned": false
+        },
+        {
+          "scope": "private_runtime",
+          "authenticated": true,
+          "exactEffort": "high",
+          "fileMatches": true,
+          "retainedFilesMatch": true,
+          "currentRootReady": true
+        }
+      ],
+      "runId": "run-c2be1e08-60e7-468b-95ed-fe325a050d2b",
+      "phase": "ready",
+      "planningState": "idle",
+      "modelRequests": 14,
+      "hostExitCode": 143
+    }
+  ],
+  "observedTraceSpans": {
+    "cliImportMs": 3980,
+    "runtimeImportMs": 1273,
+    "hostImportMs": 656
+  },
+  "limitations": [
+    "Local deterministic provider and MCP fixtures, not real OAuth accounts.",
+    "Small unpaired samples with possible warm-cache effects; no causal performance claim.",
+    "Host exit 143 is intentional diagnostic cleanup, not proof of full process-tree isolation.",
+    "Full Host suite, platform isolation, packaging and independent user validation remain incomplete."
+  ]
+}

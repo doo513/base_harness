@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import type { AppServices } from "@/effect/app-runtime"
 import type { InstanceStore } from "@/project/instance-store"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
+import { traceStartup } from "../util/startup-trace"
 
 /**
  * User-visible command failure. Throw via `fail("...")` from an effectCmd handler
@@ -73,10 +74,13 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
     describe: opts.describe,
     builder: opts.builder as never,
     async handler(rawArgs) {
+      traceStartup("runtime.import_start")
       const { AppRuntime } = await import("@/effect/app-runtime")
+      traceStartup("runtime.import_ready")
       // yargs typing wraps Args in ArgumentsCamelCase<WithDoubleDash<...>>; cast at the boundary.
       const args = rawArgs as unknown as WithDoubleDash<Args>
       const useInstance = typeof opts.instance === "function" ? opts.instance(args) : opts.instance !== false
+      traceStartup("runtime.services_start")
       if (!useInstance) {
         await AppRuntime.runPromise(opts.handler(args))
         return

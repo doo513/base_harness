@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { Session } from "@/session/session"
 import { SessionV1 } from "@base-harness/core/v1/session"
 import { MessageV2 } from "../../session/message-v2"
@@ -220,8 +221,7 @@ function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] })
 }
 
 export const ExportCommand = effectCmd({
-  command: "export [sessionID]",
-  describe: "export session data as JSON",
+  ...EntryCommand.export,
   builder: (yargs) =>
     yargs
       .positional("sessionID", {

@@ -9,6 +9,7 @@ import { ModelV2 } from "@base-harness/core/model"
 import { Provider } from "@/provider/provider"
 import { Context, Effect, Layer, SynchronizedRef } from "effect"
 import type * as ACPError from "./error"
+import { supportedReasoningVariants } from "./config-option"
 
 export type ModelOption = {
   readonly providerID: ProviderV2.ID
@@ -91,7 +92,7 @@ export const build = (input: {
     variantsByModel: Object.fromEntries(
       Object.values(input.providers).flatMap((provider) =>
         Object.values(provider.models).flatMap((model) =>
-          model.variants ? [[modelKey({ providerID: provider.id, modelID: model.id }), model.variants]] : [],
+          model.variants ? [[modelKey({ providerID: provider.id, modelID: model.id }), supportedReasoningVariants(model)]] : [],
         ),
       ),
     ),

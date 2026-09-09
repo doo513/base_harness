@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "checkpoint": "user-requested pause",
+  "exitObservation": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "homeObserved": true,
+    "exitRequested": true,
+    "forcedCleanup": false,
+    "osExitCode": 0,
+    "ptyExitCode": -1,
+    "driverExitCode": 0,
+    "modelRequests": 0,
+    "error": null,
+    "normalExitObserved": true
+  },
+  "fullSuiteAfterFinalTuiFix": false,
+  "realOAuthProviderTaskValidated": false,
+  "excluded": [
+    "net_monitor.py",
+    ".tools/"
+  ]
+}

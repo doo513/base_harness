@@ -8,6 +8,7 @@ import { FSUtil } from "@base-harness/core/fs-util"
 import { Global } from "@base-harness/core/global"
 import { Config } from "@/config/config"
 import { ConfigPlugin } from "@/config/plugin"
+import { ConfigPaths } from "@/config/paths"
 import { CurrentWorkingDirectory } from "@/config/tui-cwd"
 import { TuiConfig } from "../../src/config/tui"
 import { TestInstance } from "../fixture/fixture"
@@ -152,7 +153,7 @@ it.instance("resolves attention config defaults and overrides", () =>
         notifications: true,
         sound: true,
         volume: 0.4,
-        sound_pack: "opencode.default",
+        sound_pack: "base-harness.default",
         sounds: {},
       })
 
@@ -889,6 +890,60 @@ it.instance("missing tui.json - silently treated as empty (ENOENT path)", () =>
       const config = yield* getTuiConfig(test.directory)
       expect(config).toBeDefined()
       expect(config.theme).toBeUndefined()
+    }),
+  ),
+)
+
+
+it.instance("project tui.jsonc overrides tui.json while preserving JSON-only settings", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const test = yield* TestInstance
+      yield* fs.writeJson(path.join(test.directory, "tui.json"), {
+        theme: "json-theme", diff_style: "stacked", scroll_speed: 2,
+      })
+      yield* fs.writeFileString(path.join(test.directory, "tui.jsonc"), `{
+        // JSONC wins within the same directory.
+        "theme": "jsonc-theme",
+        "diff_style": "auto"
+      }`)
+      const config = yield* getTuiConfig(test.directory)
+      expect(config.theme).toBe("jsonc-theme")
+      expect(config.diff_style).toBe("auto")
+      expect(config.scroll_speed).toBe(2)
+    }),
+  ),
+)
+
+it.instance("nearer project tui.json overrides ancestor tui.jsonc", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const test = yield* TestInstance
+      const nested = path.join(test.directory, "app")
+      yield* fs.makeDirectory(nested, { recursive: true })
+      yield* fs.writeJson(path.join(test.directory, "tui.jsonc"), {
+        theme: "ancestor-jsonc", scroll_speed: 3,
+      })
+      yield* fs.writeJson(path.join(nested, "tui.json"), { theme: "nearer-json" })
+      const config = yield* getTuiConfig(nested)
+      expect(config.theme).toBe("nearer-json")
+      expect(config.scroll_speed).toBe(3)
+    }),
+  ),
+)
+
+it.instance("server project discovery remains JSONC-only", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const test = yield* TestInstance
+      yield* fs.writeJson(path.join(test.directory, "base-harness.json"), { model: "ignored/model" })
+      yield* fs.writeJson(path.join(test.directory, "base-harness.jsonc"), { model: "selected/model" })
+      expect(yield* ConfigPaths.files("base-harness", test.directory, test.directory)).toEqual([
+        path.join(test.directory, "base-harness.jsonc"),
+      ])
     }),
   ),
 )

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-08",
+  "status": "incomplete",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "targeted": {
+    "passed": 87,
+    "failed": 1,
+    "unhandledErrors": 1,
+    "assertions": 176,
+    "reportedTests": 88,
+    "files": 10,
+    "typecheckExitCode": 2,
+    "commandExitCode": 1
+  },
+  "newGitFixturesExecuted": false,
+  "fullCoreRerun": false,
+  "pending": {
+    "status": "incomplete",
+    "resolvedExistingRuntimeFailures": [
+      "ProjectV2.resolve > returns global for non-git directory",
+      "ProjectCopy > refresh ignores existing directories that are no longer git checkouts",
+      "Snapshot > treats capture outside Git as unavailable"
+    ],
+    "introducedTestFailure": {
+      "path": "runtime/packages/core/test/git.test.ts",
+      "line": 145,
+      "kind": "syntax_error",
+      "cause": "String.replace was given inserted source as a replacement string; the Bun shell tagged-template sequence dollar-backtick expanded the original string prefix inside that source.",
+      "nextAction": "Reconstruct the intended insertion from the cached pre-edit file and use a replacement callback, not replacement-string interpolation. Keep native discovery and Object.is changes. Correct the Windows alternate-path test construction without ambiguous escaping."
+    },
+    "remainingValidation": [
+      "All six new Git discovery fixtures and the pre-existing Git test cases",
+      "Core targeted tests and typecheck",
+      "Full Core package regression after the targeted gate passes",
+      "Host consumer typecheck"
+    ],
+    "requiresResumption": true
+  },
+  "command": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; $output = & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000 ./test/git.test.ts ./test/global.test.ts ./test/models.test.ts ./test/orchestration.test.ts ./test/project.test.ts ./test/project-copy.test.ts ./test/snapshot.test.ts ./test/effect/cross-spawn-spawner.test.ts ./test/plugin/provider-cloudflare-ai-gateway.test.ts ./test/plugin/provider-cloudflare-workers-ai.test.ts 2>&1; $tests=$LASTEXITCODE; $output | Select-Object -Last 180; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $types=$LASTEXITCODE; Write-Output \"GIT_DISCOVERY_TARGETED_GATE tests=$tests typecheck=$types\"; if ($tests -ne 0 -or $types -ne 0) { exit 1 }; exit 0",
+  "terminalSummary": "cross-spawn spawner > Windows-specific > runs cmd scripts with spaces on Windows without shell [83.17ms]\r\n\r\ntest\\plugin\\provider-cloudflare-ai-gateway.test.ts:\r\n(pass) CloudflareAIGatewayPlugin > requires account, gateway, and token before creating the unified SDK [388.72ms]\r\n(pass) CloudflareAIGatewayPlugin > passes legacy metadata, cache, log, and User-Agent values under the AI Gateway options key [372.09ms]\r\n(pass) CloudflareAIGatewayPlugin > parses legacy cf-aig-metadata header when metadata option is absent [397.58ms]\r\n(pass) CloudflareAIGatewayPlugin > prefers Cloudflare env values over auth/config-derived options [435.85ms]\r\n(pass) CloudflareAIGatewayPlugin > accepts gatewayId metadata copied from auth into provider options [480.02ms]\r\n(pass) CloudflareAIGatewayPlugin > falls back to CF_AIG_TOKEN when CLOUDFLARE_API_TOKEN is unset [374.20ms]\r\n(pass) CloudflareAIGatewayPlugin > does not create an SDK when account and gateway IDs are missing [361.49ms]\r\n(pass) CloudflareAIGatewayPlugin > does not create an SDK when the token is missing [401.59ms]\r\n(pass) CloudflareAIGatewayPlugin > does not replace a configured baseURL with the Cloudflare AI Gateway SDK [363.80ms]\r\n(pass) CloudflareAIGatewayPlugin > maps provider/model IDs through the unified Cloudflare provider unchanged [394.69ms]\r\n(pass) CloudflareAIGatewayPlugin > ignores non Cloudflare AI Gateway packages [365.60ms]\r\n\r\ntest\\plugin\\provider-cloudflare-workers-ai.test.ts:\r\n(pass) CloudflareWorkersAIPlugin > maps account ID to endpoint URL and creates an OpenAI-compatible SDK [168.53ms]\r\n(pass) CloudflareWorkersAIPlugin > preserves a configured endpoint URL instead of deriving one from account ID [333.26ms]\r\n(pass) CloudflareWorkersAIPlugin > allows a configured baseURL without account ID [310.78ms]\r\n(pass) CloudflareWorkersAIPlugin > uses env account ID over configured account ID [313.05ms]\r\n(pass) CloudflareWorkersAIPlugin > uses env API key over auth or configured API key and keeps the Cloudflare User-Agent [316.97ms]\r\n(pass) CloudflareWorkersAIPlugin > expands account ID vars in endpoint URLs [334.39ms]\r\n(pass) CloudflareWorkersAIPlugin > selects languageModel with the API model ID [330.33ms]\r\n(pass) CloudflareWorkersAIPlugin > does not create an SDK for non OpenAI-compatible packages [330.01ms]\r\n\r\n1 tests failed:\r\n\r\n 87 pass\r\n 1 fail\r\n 1 error\r\n 176 expect() calls\r\nRan 88 tests across 10 files. [52.50s]\r\n$ tsgo --noEmit\ntest/git.test.ts(145,37): error TS1005: '{' expected.\ntest/git.test.ts(202,1): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(202,12): error TS1005: ';' expected.\ntest/git.test.ts(202,16): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(253,11): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(253,19): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(254,11): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(254,15): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(254,37): error TS1005: ';' expected.\ntest/git.test.ts(254,42): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(255,11): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(255,15): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(255,37): error TS1005: ';' expected.\ntest/git.test.ts(255,42): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(256,11): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(256,15): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(256,33): error TS1005: ';' expected.\ntest/git.test.ts(257,11): error TS1146: Declaration expected.\ntest/git.test.ts(257,15): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(257,32): error TS1005: ';' expected.\ntest/git.test.ts(257,36): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(258,11): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(258,24): error TS1005: ';' expected.\ntest/git.test.ts(258,39): error TS1005: ';' expected.\ntest/git.test.ts(258,43): error TS1443: Module declaration names may only use ' or \" quoted strings.\ntest/git.test.ts(270,43): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(304,17): error TS1005: ';' expected.\ntest/git.test.ts(304,26): error TS1003: Identifier expected.\ntest/git.test.ts(305,17): error TS1434: Unexpected keyword or identifier.\ntest/git.test.ts(305,31): error TS1005: ';' expected.\ntest/git.test.ts(344,1): error TS1160: Unterminated template literal.\nGIT_DISCOVERY_TARGETED_GATE tests=1 typecheck=2\r\n",
+  "repositoryCommit": false,
+  "pushed": false,
+  "netMonitorTouched": false
+}

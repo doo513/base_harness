@@ -211,7 +211,7 @@ export async function create(input: {
   const initialized = await withTimeout(
     connection.sendRequest<{ capabilities?: ServerCapabilities }>("initialize", {
       rootUri: pathToFileURL(input.root).href,
-      processId: input.server.process.pid,
+      processId: process.pid,
       workspaceFolders: [
         {
           name: "workspace",

@@ -163,7 +163,15 @@ export interface EvidenceFamily {
   runId: string
   claimId: string
   trustTier: "candidate" | "supported" | "reproduced" | "established"
+  /** Verdict for the latest recorded observation of this claim-family. */
   status: "active" | "disputed" | "quarantined"
+  /** Absent on legacy artifacts whose status reflected the whole memory case. */
+  statusScope?: "verification_observation"
+  memoryCaseStatus?: "active" | "disputed" | "quarantined"
+  evidenceIds?: string[]
+  candidateId?: string
+  candidateRevision?: number
+  patchHash?: string
 }
 
 export interface VerificationStatus {

@@ -1,4 +1,7 @@
 import { SessionID } from "@/session/schema"
+import { Option, Schema } from "effect"
+
+const decodeSessionID = Schema.decodeUnknownOption(SessionID)
 
 type Rule = { method?: string; path: string; exact?: boolean; action: "local" | "forward" }
 
@@ -25,7 +28,9 @@ export function getWorkspaceRouteSessionID(url: URL) {
     url.pathname.match(/^\/experimental\/session\/([^/]+)\/background$/)?.[1]
   if (!id) return null
 
-  return SessionID.make(id)
+  // Static namespaces are not session-routing hints. Endpoint schemas still validate their own parameters.
+  const decoded = decodeSessionID(id)
+  return Option.isSome(decoded) ? decoded.value : null
 }
 
 export function workspaceProxyURL(target: string | URL, requestURL: URL) {

@@ -1,0 +1,31 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "changeKind": "test_contract_alignment",
+  "productionRuntimeChanged": false,
+  "baseline": {
+    "passed": 14,
+    "failed": 5
+  },
+  "snapshotGeneration": {
+    "passed": 1,
+    "failed": 0,
+    "added": 29,
+    "assertions": 94,
+    "seconds": 19.12
+  },
+  "cleanRegression": {
+    "passed": 19,
+    "failed": 0,
+    "snapshots": 29,
+    "assertions": 158,
+    "seconds": 19.8
+  },
+  "hostTypecheckExitCode": 0,
+  "tuiTypecheckExitCode": 0,
+  "watchdogTimeout": false,
+  "fullHostRerun": false,
+  "repositoryGitOperations": false,
+  "netMonitorTouched": false
+}

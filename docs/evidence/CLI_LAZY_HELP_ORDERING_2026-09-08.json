@@ -1,0 +1,57 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "results": [
+    {
+      "mode": "sync",
+      "events": [
+        {
+          "event": "builder"
+        },
+        {
+          "event": "parse_callback",
+          "error": false,
+          "outputBytes": 282,
+          "hasMini": true
+        },
+        {
+          "event": "parse_return",
+          "promise": false
+        },
+        {
+          "event": "await_return"
+        }
+      ],
+      "handlerCalls": 0
+    },
+    {
+      "mode": "lazy",
+      "events": [
+        {
+          "event": "parse_callback",
+          "error": false,
+          "outputBytes": 0,
+          "hasMini": false
+        },
+        {
+          "event": "parse_return",
+          "promise": false
+        },
+        {
+          "event": "await_return"
+        },
+        {
+          "event": "builder"
+        },
+        {
+          "event": "console",
+          "hasMini": true
+        }
+      ],
+      "handlerCalls": 0
+    }
+  ],
+  "rootCause": "Detached async default-builder help rendering is not included in parse completion; entrypoint exits before rendering",
+  "applicationCodeChanged": false
+}

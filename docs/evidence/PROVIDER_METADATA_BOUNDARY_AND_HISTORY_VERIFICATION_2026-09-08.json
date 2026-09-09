@@ -1,0 +1,660 @@
+{
+  "schemaVersion": "diagnostic-report-v1",
+  "diagnosticOnly": true,
+  "authority": "Not Harness Evidence, Ready, or independent user acceptance. Includes a separately identified genuine verifier artifact.",
+  "date": "2026-09-08",
+  "goalTurnClassification": "progress",
+  "filesChanged": [
+    "runtime/packages/base-harness/src/provider/public-info.ts",
+    "runtime/packages/base-harness/src/provider/provider.ts",
+    "runtime/packages/base-harness/test/provider/public-info-projection.test.ts",
+    "runtime/script/verify-provider-public-boundary.mjs"
+  ],
+  "selectedGates": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "expectations": 37,
+    "typechecks": [
+      "Host",
+      "TUI"
+    ],
+    "overallExitCode": 0,
+    "log": ".tools/validation/restoration-phase41-provider-public-boundary-gates.log",
+    "output": "GATE_START public provider projection tests\r\nbun test v1.3.14 (0d9b296a)\r\n\r\ntest\\provider\\public-info-projection.test.ts:\r\n(pass) credential containers, endpoint credentials and arbitrary extensions never enter provider metadata [2.82ms]\r\n(pass) provider-native effort names and capabilities survive without exposing private override payloads [0.33ms]\r\n(pass) the Host retains its original authenticated provider, endpoint and reasoning options [0.22ms]\r\n(pass) public projection never invokes provider or model serialization hooks [0.40ms]\r\n(pass) pricing, limits, connectivity metadata and advertised model identity remain intact [0.10ms]\r\n(pass) models without variants or optional pricing/limits keep their optional shape [0.11ms]\r\n\r\n 6 pass\r\n 0 fail\r\n 37 expect() calls\r\nRan 6 tests across 1 file. [912.00ms]\r\nGATE_END public provider projection tests exit=0\r\nGATE_START Host typecheck\r\n$ tsgo --noEmit\r\nGATE_END Host typecheck exit=0\r\nGATE_START TUI typecheck\r\n$ tsgo --noEmit\r\nGATE_END TUI typecheck exit=0\r\nGATE_START real HTTP and authenticated provider fixture\r\n{\"stage\":\"host_ready\",\"hostURL\":\"http://127.0.0.1:64811\",\"pid\":6788}\r\n{\"stage\":\"metadata_boundary_passed\"}\r\n{\"stage\":\"authenticated_execution_passed\",\"sessionID\":\"ses_f818241d8ffe7zjSaFfvFuEE1Y\",\"runId\":\"run-dc847191-d067-4dc3-a6ff-762df2cd2bbe\"}\r\n{\"success\":true,\"resultPath\":\"C:\\\\Users\\\\doo33\\\\Downloads\\\\base_harness\\\\.tools\\\\validation\\\\restoration-phase41-provider-public-boundary.result.json\"}\r\nGATE_END real HTTP and authenticated provider fixture exit=0\r\n"
+  },
+  "runtime": {
+    "diagnosticOnly": true,
+    "success": true,
+    "scope": "Local deterministic provider HTTP metadata and authenticated private Host execution, not OAuth or user reliability",
+    "scratch": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq",
+    "workspace": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\workspace",
+    "state": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state",
+    "checks": [
+      {
+        "route": "/provider",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "route": "/config/providers",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "scope": "private_runtime",
+        "authenticated": true,
+        "exactEffort": "high",
+        "fileMatches": true,
+        "currentRootReady": true
+      }
+    ],
+    "timings": {
+      "/global/health": 22.002699999999095,
+      "healthStartupMs": 15576.277,
+      "/provider": 2212.2392999999993,
+      "/config/providers": 20.055099999997765,
+      "/session": 35.86249999999927,
+      "clientMs": 19244.541299999997,
+      "/session/ses_f818241d8ffe7zjSaFfvFuEE1Y/harness": 34.769899999999325
+    },
+    "lifecycle": {
+      "hostPID": 6788,
+      "healthAttempts": [
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "Error: Unable to connect. Is the computer able to access the url?",
+        "TimeoutError: The operation timed out."
+      ],
+      "clientPID": 31200,
+      "clientExitCode": 0,
+      "hostExitCode": 143
+    },
+    "finalStatus": {
+      "sessionID": "ses_f818241d8ffe7zjSaFfvFuEE1Y",
+      "workspace": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\workspace",
+      "runId": "run-dc847191-d067-4dc3-a6ff-762df2cd2bbe",
+      "goal": "\"Use the local MCP echo tool to obtain fixture success, then create result-0.txt containing exactly fixture success and a trailing newline.\"",
+      "phase": "ready",
+      "workers": [],
+      "activeCount": 0,
+      "queuedCount": 0,
+      "outcome": "ready",
+      "verificationState": "ready",
+      "contractStatus": "accepted",
+      "configuredProfile": "adaptive",
+      "effectiveProfile": "adaptive",
+      "assuranceLevel": "adaptive",
+      "missingEvidence": [],
+      "repairCount": 0,
+      "maxSameFailureRepairs": 2,
+      "evidenceCount": 1,
+      "candidateCount": 5,
+      "evidenceRefs": [
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179.json"
+      ],
+      "candidateRefs": [
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a75c40b375c03673b1f962701978082e9dc5fa30a081363d39c7b333a7f0f6e.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\e4\\e40b858b969b23b8f61c780e59f73d9a5ee8fddfe7e908a1496a4a27f26811de.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\53\\53bf1d626656978350264a196643eb4b439f2d888366d9e87b66ba19ee90d474.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\68\\680dac82a129d174705025044b0212f3bb2f44bca1d78f01057ec686c8896b97.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\25\\254cdda6a8757e032f6a7aeb2721fd8fd533572581010339f1c7f175fa2a3fab.json"
+      ],
+      "readyEligible": true,
+      "metrics": {
+        "observedActions": 4,
+        "workers": 0,
+        "activeWorkers": 0,
+        "repairs": 0,
+        "evidence": 1,
+        "sandboxRuns": 0
+      },
+      "domain": "develop",
+      "skills": [],
+      "planningPreference": "auto",
+      "planningState": "executing",
+      "planOnly": false,
+      "planningDecision": "direct",
+      "goalContract": {
+        "revision": 1,
+        "hash": "21d6b6188666e6da8e1582c623ac15b41204157d0b8ef924703a7de593a6f07a",
+        "claims": [
+          {
+            "id": "claim",
+            "statement": "result-0.txt contains the requested content",
+            "required": true,
+            "criterionIds": [
+              "criterion"
+            ]
+          }
+        ],
+        "criteria": [
+          {
+            "id": "criterion",
+            "statement": "result-0.txt has the exact requested content",
+            "required": true,
+            "risk": "low",
+            "claimIds": [
+              "claim"
+            ]
+          }
+        ]
+      },
+      "preflight": {
+        "version": 1,
+        "decision": "accept",
+        "reasons": [],
+        "affectedClaimIds": [],
+        "affectedCriterionIds": [],
+        "mutatingActionAllowed": true,
+        "candidateCount": 0,
+        "questionCount": 0,
+        "assumptionCount": 0,
+        "reviewerCallCount": 0,
+        "requiredDecisions": [],
+        "assumptions": []
+      }
+    },
+    "modelRequests": [
+      {
+        "receivedAt": 1788828575977,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788828577344,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "question",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_contract",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788828579440,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "question",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "fixture_echo",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788828581000,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "question",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "write",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788828582773,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "question",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      }
+    ],
+    "timedOut": false
+  },
+  "verifierArtifact": {
+    "visited": 9,
+    "readyArtifacts": [
+      {
+        "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\cf\\cfa7164403cc664c8de94651c6450268459bfdda9e3b1d3f1aab4b1e1f370210.json",
+        "artifact": {
+          "artifactType": "ready_attestation",
+          "createdAt": "2026-09-08T09:49:43.940111+09:00",
+          "payload": {
+            "assuranceLevel": "adaptive",
+            "claimResults": [
+              {
+                "claimId": "claim",
+                "coverage": "full",
+                "evidenceIds": [
+                  "1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179"
+                ],
+                "familyIds": [
+                  "99b31ab70cdb592b366e21ec9aebbd0df42eaffc6245d4645e1cd6348248d612"
+                ],
+                "historicalIndependentMethods": [],
+                "reason": "Typed predicate and adaptive independence policy are satisfied.",
+                "result": "verified"
+              }
+            ],
+            "configuredProfile": "adaptive",
+            "criterionResults": [
+              {
+                "claimIds": [
+                  "claim"
+                ],
+                "coverage": "full",
+                "criterionId": "criterion",
+                "required": true,
+                "result": "verified",
+                "risk": "low"
+              }
+            ],
+            "effectiveProfile": "adaptive",
+            "escalationReasons": [],
+            "eventHead": "6506afa7c346e45c515110913815fd5ed793a182cbcf9ea8ab012230452b1872",
+            "evidenceFamilies": [
+              {
+                "claimId": "claim",
+                "familyId": "99b31ab70cdb592b366e21ec9aebbd0df42eaffc6245d4645e1cd6348248d612",
+                "methodId": "builtin:file",
+                "runId": "run-dc847191-d067-4dc3-a6ff-762df2cd2bbe",
+                "status": "active",
+                "trustTier": "supported"
+              }
+            ],
+            "evidenceRefs": [
+              {
+                "artifactType": "claim_evidence",
+                "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179.json",
+                "sha256": "1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179",
+                "trust": "verifier_observed"
+              }
+            ],
+            "goalContract": {
+              "claims": [
+                {
+                  "applicability": {
+                    "arch": "x64",
+                    "configHash": "unknown",
+                    "dependencyLockHash": "unknown",
+                    "model": "fixture-reasoner",
+                    "os": "win32",
+                    "provider": "fixture",
+                    "runtime": "bun-1.3.14",
+                    "tools": {},
+                    "workspaceRevision": "unknown"
+                  },
+                  "claimId": "claim",
+                  "criterionIds": [
+                    "criterion"
+                  ],
+                  "kind": "artifact",
+                  "origin": "user",
+                  "predicate": {
+                    "type": "content_equals",
+                    "value": "fixture success\n"
+                  },
+                  "scope": {
+                    "capabilities": [
+                      "write"
+                    ],
+                    "exclusions": [],
+                    "targets": [
+                      "result-0.txt"
+                    ]
+                  },
+                  "statement": "result-0.txt contains the requested content",
+                  "verifierPolicy": {
+                    "allowedVerifierIds": [
+                      "file"
+                    ],
+                    "minIndependentFamilies": 1,
+                    "minimumStrength": "structural"
+                  }
+                }
+              ],
+              "constraints": [],
+              "contractId": "contract-4d71ac13834b6df87f4fd58ea681f331507671539cac2201633772c4ef1d3b89",
+              "criteria": [
+                {
+                  "claimIds": [
+                    "claim"
+                  ],
+                  "criterionId": "criterion",
+                  "required": true,
+                  "risk": "low",
+                  "sourceRefs": [
+                    {
+                      "sha256": "ce7da290aa7f77ca1be5cc54c0796359844c982564525c939e2216618235c19d",
+                      "sourceId": "session-ses_f818241d8ffe7zjSaFfvFuEE1Y",
+                      "sourceType": "user_message"
+                    }
+                  ],
+                  "statement": "result-0.txt has the exact requested content"
+                }
+              ],
+              "goal": "Use the local MCP echo tool to obtain fixture success, then create result-0.txt containing exactly fixture success and a trailing newline.",
+              "revision": 1,
+              "schemaVersion": "goal-contract-v2",
+              "sourceRefs": [
+                {
+                  "sha256": "ce7da290aa7f77ca1be5cc54c0796359844c982564525c939e2216618235c19d",
+                  "sourceId": "session-ses_f818241d8ffe7zjSaFfvFuEE1Y",
+                  "sourceType": "user_message"
+                }
+              ]
+            },
+            "requestedBy": {
+              "reason": "automatic"
+            },
+            "scopeId": "ses_f818241d8ffe7zjSaFfvFuEE1Y"
+          },
+          "runId": "run-dc847191-d067-4dc3-a6ff-762df2cd2bbe",
+          "schemaVersion": "verification-artifact-v2",
+          "trust": "verifier_attested"
+        }
+      }
+    ]
+  },
+  "coldHistory": {
+    "status": {
+      "sessionID": "ses_f818241d8ffe7zjSaFfvFuEE1Y",
+      "workspace": "",
+      "runId": "",
+      "goal": "",
+      "phase": "inactive",
+      "workers": [],
+      "activeCount": 0,
+      "queuedCount": 0,
+      "verificationState": "inactive",
+      "missingEvidence": [],
+      "repairCount": 0,
+      "maxSameFailureRepairs": 2,
+      "evidenceCount": 0,
+      "candidateCount": 0,
+      "evidenceRefs": [],
+      "candidateRefs": [],
+      "readyEligible": false,
+      "metrics": {
+        "observedActions": 0,
+        "workers": 0,
+        "activeWorkers": 0,
+        "repairs": 0,
+        "evidence": 0,
+        "sandboxRuns": 0
+      },
+      "domain": "develop",
+      "skills": [],
+      "planningPreference": "auto",
+      "planningState": "idle",
+      "planOnly": false,
+      "history": {
+        "runId": "run-dc847191-d067-4dc3-a6ff-762df2cd2bbe",
+        "recordedAt": "2026-09-08T00:49:44.178Z",
+        "recordedPhase": "ready",
+        "phase": "ready",
+        "readOnly": true,
+        "revalidated": false,
+        "goal": "\"Use the local MCP echo tool to obtain fixture success, then create result-0.txt containing exactly fixture success and a trailing newline.\"",
+        "goalTruncated": false,
+        "workers": [],
+        "evidenceCount": 1,
+        "candidateCount": 5,
+        "evidenceRefs": [
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179.json"
+        ],
+        "candidateRefs": [
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a75c40b375c03673b1f962701978082e9dc5fa30a081363d39c7b333a7f0f6e.json",
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\e4\\e40b858b969b23b8f61c780e59f73d9a5ee8fddfe7e908a1496a4a27f26811de.json",
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\53\\53bf1d626656978350264a196643eb4b439f2d888366d9e87b66ba19ee90d474.json",
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\68\\680dac82a129d174705025044b0212f3bb2f44bca1d78f01057ec686c8896b97.json",
+          "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\25\\254cdda6a8757e032f6a7aeb2721fd8fd533572581010339f1c7f175fa2a3fab.json"
+        ],
+        "referencesTruncated": false,
+        "repairCount": 0,
+        "assuranceLevel": "adaptive"
+      }
+    },
+    "mcpCalls": "{\"name\": \"echo\", \"arguments\": {\"message\": \"fixture success\"}, \"_meta\": {\"progressToken\": 2}}\r\n"
+  },
+  "afterTuiStatus": {
+    "sessionID": "ses_f818241d8ffe7zjSaFfvFuEE1Y",
+    "workspace": "",
+    "runId": "",
+    "goal": "",
+    "phase": "inactive",
+    "workers": [],
+    "activeCount": 0,
+    "queuedCount": 0,
+    "verificationState": "inactive",
+    "missingEvidence": [],
+    "repairCount": 0,
+    "maxSameFailureRepairs": 2,
+    "evidenceCount": 0,
+    "candidateCount": 0,
+    "evidenceRefs": [],
+    "candidateRefs": [],
+    "readyEligible": false,
+    "metrics": {
+      "observedActions": 0,
+      "workers": 0,
+      "activeWorkers": 0,
+      "repairs": 0,
+      "evidence": 0,
+      "sandboxRuns": 0
+    },
+    "domain": "develop",
+    "skills": [],
+    "planningPreference": "auto",
+    "planningState": "idle",
+    "planOnly": false,
+    "history": {
+      "runId": "run-dc847191-d067-4dc3-a6ff-762df2cd2bbe",
+      "recordedAt": "2026-09-08T00:49:44.178Z",
+      "recordedPhase": "ready",
+      "phase": "ready",
+      "readOnly": true,
+      "revalidated": false,
+      "goal": "\"Use the local MCP echo tool to obtain fixture success, then create result-0.txt containing exactly fixture success and a trailing newline.\"",
+      "goalTruncated": false,
+      "workers": [],
+      "evidenceCount": 1,
+      "candidateCount": 5,
+      "evidenceRefs": [
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a03535914b0397b3e7eb06625fc25a2cc57df4d3a472e0de780473f519ac179.json"
+      ],
+      "candidateRefs": [
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\1a\\1a75c40b375c03673b1f962701978082e9dc5fa30a081363d39c7b333a7f0f6e.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\e4\\e40b858b969b23b8f61c780e59f73d9a5ee8fddfe7e908a1496a4a27f26811de.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\53\\53bf1d626656978350264a196643eb4b439f2d888366d9e87b66ba19ee90d474.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\68\\680dac82a129d174705025044b0212f3bb2f44bca1d78f01057ec686c8896b97.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-jR1Vhq\\state\\base-harness\\runs\\79ef22d43c2b16d1-7481615f\\artifacts\\25\\254cdda6a8757e032f6a7aeb2721fd8fd533572581010339f1c7f175fa2a3fab.json"
+      ],
+      "referencesTruncated": false,
+      "repairCount": 0,
+      "assuranceLevel": "adaptive"
+    }
+  },
+  "nativePty": {
+    "frames": [
+      {
+        "chunk_id": "926f6c",
+        "wall_time_seconds": 5.0149862,
+        "session_id": 61462,
+        "original_token_count": 2324,
+        "output": "\u001b[?2031h\u001b[>0q\u001b[?u\u001b]99;i=opentui-notifications:p=?;\u001b\\\u001b[2J\u001b[m\u001b]0;C:\\Users\\doo33\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe\u0007\u001b[?25l\u001b]1337;Capabilities\u001b\\\u001b]66;w=1; \u001b\\\u001b]66;s=2; \u001b\\\u001b[?1049h\u001b[>4;1m\u001b[?2027h\u001b[?2004h\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h\u001b[14t\u001b[H\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[80C\u001b]4;0;?\u0007\u001b[?2027h\u001b[?2004h\u001b[?2027h\u001b[?2004h\u001b[?2027h\u001b[?2004h\u001b[?2027h\u001b[?2004h\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[?2026h\u001b[?2026l\u001b[38;2;255;255;255m\u001b[H                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                \u001b[24;161H\u001b[?2027h\u001b[?2004h\u001b[?1004h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[38;2;255;255;255m\u001b[H                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                \u001b[24;161H\u001b[?2026h\u001b[?2026l\u001b[m\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[H                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                \u001b[24;161H\u001b[m\u001b]0;Base Harness\u0007\u001b]0;Base Harness | Provider metadata and private runtime...\u0007\u001b[?2026h\u001b]12;#eeeeee\u0007\u001b[1 q\u001b[?2026l\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[16;3H┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[75X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[17;3H┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[75X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[18;3H┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[75X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[19;3H┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m  \u001b[38;2;92;156;245mBase Harness \u001b[38;2;128;128;128m· \u001b[38;2;238;238;238mFixture model \u001b[38;2;128;128;128mLocal fixture\u001b[31X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[20;3H╹\u001b[38;2;30;30;30m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\u001b[38;2;128;128;128m\u001b[21;4HC:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-\u001b[38;2;238;238;238mctrl+x a \u001b[4Cctrl+p \u001b[38;2;128;128;128m\u001b[22;4Hhost-jR1Vhq\\workspace\u001b[31Cdomains\u001b[6Ccommands\u001b[38;2;122;162;200m\u001b[24;2HHARNESS develop\u001b[17;6H\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;122;162;200m\u001b[48;2;10;10;10m\u001b[24;17H / history_ready\u001b[17;6H\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;128;128;128m\u001b[48;2;10;10;10m\u001b[1;8Hand a trailing newline.]\u001b[2;6H⚙\u001b[1Cfixture_echo [message=fixture success]\u001b[38;2;10;10;10m\u001b[48;2;20;20;20m\u001b[4;3H┃\u001b[75X\u001b[5;3H┃  \u001b[38;2;128;128;128m# Wrote result-0.txt\u001b[53X\u001b[38;2;10;10;10m\u001b[6;3H┃\u001b[75X\u001b[7;3H┃   \u001b[38;2;128;128;128m1 \u001b[38;2;238;238;238mfixture success\u001b[55X\u001b[38;2;10;10;10m\u001b[8;3H┃   \u001b[38;2;128;128;128m2\u001b[71X\u001b[38;2;10;10;10m\u001b[9;3H┃\u001b[75X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[14;6H▣ \u001b[38;2;238;238;238m\u001b[1CBase Harness \u001b[38;2;128;128;128m· Fixture reasoner · 13.1s\u001b[38;2;238;238;238m\u001b[48;2;30;30;30m\u001b[19;29Hreasoner \u001b[38;2;128;128;128mLocal fixture\u001b[48;2;10;10;10m\u001b[21;56Hhost32 (0%\u001b[38;2;238;238;238m\u001b[1Cctrl+p   \u001b[38;2;128;128;128m\u001b[22;4HjR1Vhq\\workspace     \u001b[38;2;255;255;255m\u001b[31C       \u001b[38;2;128;128;128m\u001b[4Ccommands  \u001b[17;6H\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[1;8H\u001b[24X\u001b[38;2;238;238;238m\u001b[11;6HThe requested artifact has been written. The Host must independently \u001b[12;6Hverify completion.\u001b[38;2;34;34;34m\u001b[48;2;30;30;30m\u001b[19;52H·\u001b[38;2;38;35;31m\u001b[1m\u001b[1Chigh\u001b[17;6H\u001b[?25h\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[m\u001b[38;2;91;91;91m\u001b[48;2;30;30;30m\u001b[19;52H·\u001b[38;2;164;115;52m\u001b[1m\u001b[1Chigh\u001b[17;6H\u001b[?25h\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[m\u001b[38;2;105;105;105m\u001b[48;2;30;30;30m\u001b[19;52H·\u001b[38;2;194;134;57m\u001b[1m\u001b[1Chigh\u001b[17;6H\u001b[?25h\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[m\u001b[38;2;124;124;124m\u001b[48;2;30;30;30m\u001b[19;52H·\u001b[38;2;236;161;64m\u001b[1m\u001b[1Chigh\u001b[17;6H\u001b[?25h\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[m\u001b[38;2;128;128;128m\u001b[48;2;30;30;30m\u001b[19;52H·\u001b[38;2;245;167;66m\u001b[1m\u001b[1Chigh\u001b[17;6H\u001b[?25h\u001b[m"
+      },
+      {
+        "chunk_id": "36e7f3",
+        "wall_time_seconds": 1.0129256,
+        "session_id": 61462,
+        "original_token_count": 848,
+        "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[2;15H╭──────────────────────────────────────────────────────────────╮\u001b[3;15H│ HISTORY READY                                                │\u001b[4;15H│\u001b[38;2;230;181;102m\u001b[1CPast run only. Not reverified against the current workspace\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[5;15H│\u001b[10X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[6;15H│\u001b[38;2;168;179;199m\u001b[1CCurrent domain develop\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[37C█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[7;15H│ \u001b[38;2;168;179;199mHistory ready (not reverified)\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[29C█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[8;15H│\u001b[38;2;119;131;153m\u001b[1Crun-dc847191-d067-4dc3-a6ff-762df2cd2bbe / 2026-09-08T00:49\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[9;15H│\u001b[38;2;119;131;153m\u001b[1C44.178Z\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[52C█\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[10;15H│ \u001b[38;2;168;179;199mPrevious goal\u001b[46X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[46C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[11;15H│ \u001b[38;2;255;255;255m\"Use the local MCP echo tool to obtain fixture success,    \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[12;15H│ \u001b[38;2;255;255;255mthen create result-0.txt containing exactly fixture success\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[13;15H│ \u001b[38;2;255;255;255mand a trailing newline.\"\u001b[35X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[35C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[14;3H   \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase H\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m│ \u001b[38;2;168;179;199mPast workers 0 / Evidence 1 / Candidates 5 / Repairs 0     \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[15;3H\u001b[12X\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[12C│ \u001b[38;2;119;131;153mPast assurance: adaptive\u001b[35X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[35C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[16;15H│\u001b[60X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[17;6H        \u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│\u001b[60X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[18;15H│\u001b[60X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[19;15H│\u001b[60X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[20;15H│\u001b[60X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[60C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[21;15H│ \u001b[38;2;119;131;153mPgUp/PgDn scroll | /harness close\u001b[28X\u001b[38;2;122;162;200m\u001b[28C│\u001b[22;15H╰──────────────────────────────────────────────────────────────╯\u001b[17;6H\u001b[?25h\u001b[m"
+      },
+      {
+        "chunk_id": "30f594",
+        "wall_time_seconds": 0.18649,
+        "exit_code": 0,
+        "original_token_count": 199,
+        "output": "\u001b]0;\u0007\u001b]22;\u0007\u001b[>4;0m\u001b[?2004l\u001b[?1049l\u001b[?2031l\u001b]0;\u0007\u001b[0 q\u001b[?25l\u001b[H\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[H\u001b[?25h\u001b[?25l\u001b[42X\r\n  \u001b[90m╔╗ ╔═╗╔═╗╔═    \u001b[m╦ ╦╔═╗╦═╗╔╗╔╔═╗╔═╗╔═╗\r\n  \u001b[90m╠╩╗╠═╣╚═╗╠═    \u001b[m╠═╣╠═╣╠╦╝║║║║╣ ╚═╗╚═╗\r\n  \u001b[90m╚═╝╩ ╩╚═╝╚═    \u001b[m╩ ╩╩ ╩╩╚═╝╚╝╚═╝╚═╝╚═╝\u001b[6;1H  \u001b[90mSession   \u001b[m\u001b[1mProvider metadata and private runtime fixture\u001b[22m\r\n  \u001b[90mContinue  \u001b[m\u001b[1mbase-harness -s ses_f818241d8ffe7zjSaFfvFuEE1Y\u001b[9;1H\u001b[?25h\u001b[22m\u001b]0;C:\\Users\\doo33\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe\u0007"
+      }
+    ],
+    "exit": {
+      "chunk_id": "30f594",
+      "wall_time_seconds": 0.18649,
+      "exit_code": 0,
+      "original_token_count": 199,
+      "output": "\u001b]0;\u0007\u001b]22;\u0007\u001b[>4;0m\u001b[?2004l\u001b[?1049l\u001b[?2031l\u001b]0;\u0007\u001b[0 q\u001b[?25l\u001b[H\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[H\u001b[?25h\u001b[?25l\u001b[42X\r\n  \u001b[90m╔╗ ╔═╗╔═╗╔═    \u001b[m╦ ╦╔═╗╦═╗╔╗╔╔═╗╔═╗╔═╗\r\n  \u001b[90m╠╩╗╠═╣╚═╗╠═    \u001b[m╠═╣╠═╣╠╦╝║║║║╣ ╚═╗╚═╗\r\n  \u001b[90m╚═╝╩ ╩╚═╝╚═    \u001b[m╩ ╩╩ ╩╩╚═╝╚╝╚═╝╚═╝╚═╝\u001b[6;1H  \u001b[90mSession   \u001b[m\u001b[1mProvider metadata and private runtime fixture\u001b[22m\r\n  \u001b[90mContinue  \u001b[m\u001b[1mbase-harness -s ses_f818241d8ffe7zjSaFfvFuEE1Y\u001b[9;1H\u001b[?25h\u001b[22m\u001b]0;C:\\Users\\doo33\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe\u0007"
+    },
+    "observations": {
+      "historyHeading": true,
+      "notReverifiedNotice": true,
+      "previousGoal": true,
+      "pastEvidenceCount": true,
+      "pastAssurance": true,
+      "restoredModelAndHighLabel": true,
+      "alternateScreenRestored": true
+    }
+  },
+  "restartedHost": {
+    "start": {
+      "chunk_id": "2d3919",
+      "wall_time_seconds": 10.0053991,
+      "session_id": 40444,
+      "original_token_count": 68,
+      "output": "\u001b[?9001h\u001b[?1004h\u001b[?25l\u001b[2J\u001b[m\u001b[HWarning: BASE_HARNESS_SERVER_PASSWORD is not set; server is unsecured.\r\n\u001b]0;C:\\Users\\doo33\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe\u0007\u001b[?25hbase-harness server listening on http://127.0.0.1:4096\r\n"
+    },
+    "stop": {
+      "chunk_id": "249a5a",
+      "wall_time_seconds": 0.0645838,
+      "exit_code": 1,
+      "original_token_count": 0,
+      "output": ""
+    }
+  },
+  "trustScope": [
+    "Only public provider catalog projection changed; private Provider.Service configuration remains untouched.",
+    "Both metadata endpoints omitted fake credentials and private payloads while preserving exact effort names.",
+    "The local fixture used an actual Host, headless client, local MCP, and configured Python verifier.",
+    "The resulting real verifier artifact matches the same run ID later restored as read-only history.",
+    "The fixture is deterministic and author-designed; this is not broad user-model reliability evidence."
+  ],
+  "residualRisks": [
+    "The general /config API remains an administrative configuration surface and was not redacted in this patch.",
+    "Public display names and IDs are not a guarantee that arbitrary user-authored text is secret-free.",
+    "Public options/headers/variant payloads and endpoint URLs are intentionally empty; third-party clients that instantiated SDKs from metadata need a different contract.",
+    "Only this direct task was completed and restarted in the real fixture. The earlier phase40 planned diagnostic remains failed and unchanged.",
+    "Full regression suite, complex WorkGraph repair, actual external OAuth/provider behavior, OS sandbox and standalone packaging remain unproven.",
+    "One cold source Host readiness sample was about 15.6 seconds. No startup-performance improvement is claimed.",
+    "The prior capitalization test expectation defect and phase40 readiness diagnostic were not silently corrected.",
+    "The fixture used a loopback-only server with no server password; this is not a recommendation for exposed deployments."
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "netMonitorTouched": false
+  }
+}

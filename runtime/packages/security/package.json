@@ -1,0 +1,21 @@
+{
+  "name": "@base-harness/security",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./secret-registry": "./src/secret-registry.ts",
+    "./sandbox": "./src/sandbox.ts",
+    "./platform-adapter": "./src/platform-adapter.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

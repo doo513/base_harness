@@ -1,0 +1,94 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "change": "Preserve private catalog data during runtime initialization; public projection remains at response boundary.",
+  "tests": {
+    "passed": 520,
+    "failed": 0,
+    "assertions": 1048,
+    "files": 4,
+    "durationSeconds": 54.5,
+    "hostTypecheckExitCode": 0,
+    "log": ".tools/validation/provider-catalog-boundary-1788849013457.log"
+  },
+  "host": {
+    "success": true,
+    "diagnosticOnly": true,
+    "scope": "Local deterministic provider HTTP metadata and authenticated private Host execution, not OAuth or user reliability",
+    "checks": [
+      {
+        "route": "/provider",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "route": "/config/providers",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "scope": "worker_catalog",
+        "workUnits": 2,
+        "forbiddenToolsAdvertised": false,
+        "structuredEditorsAvailable": true
+      },
+      {
+        "scope": "ready_family_consistency",
+        "selectedFamiliesActive": true,
+        "historicalDisputePreserved": true,
+        "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-1Gl1dk\\state\\base-harness\\runs\\20bc9eee9a9fed58-225c3ad9\\artifacts\\63\\63ddfcc170caf42b33ac1c6b0b63910cee10022d9fcbf7ed08719c452937dcbb.json"
+      },
+      {
+        "scope": "worker_local_repair",
+        "workUnitId": "unit-0",
+        "scopeId": "ses_f8048846bffego5gTEIcID63JP",
+        "repairCount": 1,
+        "sameSessionWriteCount": 2,
+        "unaffectedWorkerWriteCount": 1,
+        "baseWorkspaceAbsentBeforeRepair": true,
+        "model": "fixture-reasoner",
+        "exactEffort": "high",
+        "replanned": false
+      },
+      {
+        "scope": "private_runtime",
+        "authenticated": true,
+        "exactEffort": "high",
+        "fileMatches": true,
+        "retainedFilesMatch": true,
+        "currentRootReady": true
+      }
+    ],
+    "timings": {
+      "/global/health": 317.5023000000001,
+      "healthStartupMs": 10515.9224,
+      "/provider": 1985.8436000000002,
+      "/config/providers": 44.322400000000926,
+      "/session": 32.94350000000122,
+      "clientMs": 29638.3566,
+      "/session/ses_f8048c664ffe4bcYL0tL9mBTkU/harness": 6.987200000003213,
+      "/session/ses_f8048846bffego5gTEIcID63JP/message": 10.581500000000233
+    },
+    "lifecycle": {
+      "hostPID": 9504,
+      "clientPID": 9648,
+      "clientExitCode": 0,
+      "hostExitCode": 143,
+      "healthAttemptCount": 39
+    },
+    "modelRequestCount": 14,
+    "phase": "ready",
+    "outcome": "ready",
+    "failure": null
+  },
+  "resultPath": ".tools/validation/provider-catalog-host-1788849095640.result.json"
+}

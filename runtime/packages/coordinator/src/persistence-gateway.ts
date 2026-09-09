@@ -1,4 +1,4 @@
-import { GlobalSecretRegistryHub, type SecretFinding } from "@base-harness/core/secret-registry"
+import { GlobalSecretRegistryHub, type SecretFinding } from "@base-harness/security/secret-registry"
 
 export class PersistenceGateway {
   openRun(runId: string) {

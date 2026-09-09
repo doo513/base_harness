@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import type { Argv } from "yargs"
 import { Auth } from "../../auth"
 import { cmd } from "./cmd"
@@ -237,9 +238,8 @@ export function resolvePluginProviders(input: {
 }
 
 export const ProvidersCommand = cmd({
-  command: "providers",
-  aliases: ["auth"],
-  describe: "manage AI providers and credentials",
+  ...EntryCommand.providers,
+
   builder: (yargs) =>
     yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
   async handler() {},

@@ -1092,24 +1092,72 @@ it.instance(
       yield* llm.tool("task", {
         description: "inspect bug",
         prompt: "look into the cache key path",
-        subagent_type: "general",
+        subagent_type: "explore",
+        exploration: { thoroughness: "quick" },
       })
       yield* llm.hang
-      yield* user(chat.id, "hello")
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        noReply: true,
+        parts: [{ type: "text", text: "Inspect the cache key path without changing files." }],
+      })
 
       const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
 
+      let observed = "no message snapshot"
+      let modelCalls = 0
       const tool = yield* pollWithTimeout(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-          const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
+          modelCalls = yield* llm.calls
+          observed = JSON.stringify(msgs.slice(-6).map((message) => ({
+            role: message.info.role,
+            agent: message.info.agent,
+            messageID: message.info.id,
+            assistantError: message.info.role === "assistant" ? message.info.error?.name : undefined,
+            parts: message.parts.slice(-8).map((part) => part.type === "tool" ? {
+              type: part.type,
+              tool: part.tool,
+              callID: part.callID,
+              status: part.state.status,
+              hasMetadata: "metadata" in part.state && part.state.metadata !== undefined,
+              hasChildSession: "metadata" in part.state && typeof part.state.metadata?.sessionId === "string",
+            } : { type: part.type }),
+          })))
+          const assistant = msgs.findLast((item) =>
+            item.info.role === "assistant" && item.info.agent === "build"
+            && item.parts.some((part) => part.type === "tool" && part.tool === "task"),
+          )
           const tool = assistant?.parts.find(
             (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task",
           )
+          if (tool?.state.status === "error") {
+            throw new Error("Task failed before running metadata: " + tool.state.error)
+          }
+          if (assistant?.info.role === "assistant" && assistant.info.error) {
+            throw new Error("Assistant failed before running task metadata: " + assistant.info.error.name)
+          }
           if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
         }),
         "timed out waiting for running task metadata",
-      )
+      ).pipe(Effect.catchCause((cause) => {
+        const failure = Cause.squash(cause)
+        // Synthetic fixture only: keep the original reason, not a stack or
+        // arbitrary nested payload, and bound/redact the diagnostic text.
+        const reason = (failure instanceof Error ? failure.message : String(failure))
+          .replace(/(?:Bearer|Basic)\s+\S+/gi, "[REDACTED_AUTH]")
+          .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+          .split(/\r?\n/, 1)[0]
+          .slice(0, 1024)
+        return Effect.fail(new Error(
+          "TASK_METADATA_OBSERVATION " + JSON.stringify({
+            modelCalls, messages: JSON.parse(observed === "no message snapshot" ? "[]" : observed),
+            failure: "poll_failed", reason,
+          }),
+        ))
+      }))
 
       if (tool.state.status !== "running") return
       expect(typeof tool.state.metadata?.sessionId).toBe("string")
@@ -1492,7 +1540,13 @@ it.instance("prompt submitted during an active run is included in the next LLM i
     expect(inputs).toHaveLength(2)
     const messages = inputs.at(-1)?.messages
     if (!Array.isArray(messages)) throw new Error("expected LLM messages")
-    expect(messages.at(-1)).toEqual({ role: "user", content: "second" })
+    const latest = messages.at(-1)
+    expect(latest?.role).toBe("user")
+    const content = latest?.content
+    const parts = typeof content === "string" ? [{ type: "text", text: content }] : content
+    if (!Array.isArray(parts)) throw new Error("expected user content parts")
+    expect(parts.at(-1)).toEqual({ type: "text", text: "second" })
+    expect(parts.filter((part) => part.type === "text" && part.text === "second")).toHaveLength(1)
   }),
 )
 
@@ -1737,29 +1791,57 @@ unixNoLLMServer(
 
 it.instance(
   "loop waits while shell runs and starts after shell exits",
-  () =>
-    Effect.gen(function* () {
+  () => {
+    const startedAt = performance.now()
+    const stages: Array<{ stage: string; elapsedMs: number }> = []
+    const mark = (stage: string) => {
+      const entry = { stage, elapsedMs: Math.round(performance.now() - startedAt) }
+      stages.push(entry)
+      if (process.env.BASE_HARNESS_TRACE_TEST_PHASES !== "1") return
+      try {
+        process.stderr.write("PROMPT_SHELL_RESUME_DIAGNOSTIC " + JSON.stringify({
+          diagnosticOnly: true,
+          notHarnessEvidence: true,
+          notIndependentUserValidation: true,
+          ...entry,
+        }) + "\n")
+      } catch {
+        // Diagnostic output must not change the test outcome.
+      }
+    }
+    mark("server_config_start")
+    return Effect.gen(function* () {
       const { llm } = yield* useServerConfig(providerCfg)
+      mark("server_config_ready")
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
+      mark("session_services_ready")
       const chat = yield* sessions.create({
         title: "Pinned",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
+      mark("session_created")
       yield* llm.text("after-shell")
+      mark("llm_fixture_queued")
 
       const sh = yield* prompt
         .shell({ sessionID: chat.id, agent: "build", command: "sleep 0.2" })
         .pipe(Effect.forkChild)
+      mark("shell_forked")
       yield* waitForBusy(chat.id)
+      mark("busy_observed")
 
       const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      mark("loop_forked")
       yield* Effect.sleep(50)
 
       expect(yield* llm.calls).toBe(0)
+      mark("no_early_model_call")
 
       yield* Fiber.await(sh)
+      mark("shell_completed")
       const exit = yield* Fiber.await(loop)
+      mark("loop_completed")
 
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) {
@@ -1767,7 +1849,17 @@ it.instance(
         expect(exit.value.parts.some((part) => part.type === "text" && part.text === "after-shell")).toBe(true)
       }
       expect(yield* llm.calls).toBe(1)
-    }),
+      mark("completed")
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      if (stages.at(-1)?.stage === "completed") return
+      console.error("PROMPT_SHELL_RESUME_DIAGNOSTIC", JSON.stringify({
+        diagnosticOnly: true,
+        notHarnessEvidence: true,
+        notIndependentUserValidation: true,
+        stages,
+      }))
+    })))
+  },
   { git: true },
   10_000,
 )
@@ -2199,9 +2291,13 @@ noLLMServer.instance(
       })
       const text = stored.parts.filter((part) => part.type === "text").map((part) => part.text)
 
-      expect(text[0]?.startsWith("Called the Read tool with the following input:")).toBe(true)
-      expect(text[1]?.includes("Read tool failed to read")).toBe(true)
-      expect(text[2]).toBe("after-file")
+      // Kernel policy context can precede user parts; the file expansion itself
+      // must remain adjacent and precede the following user text.
+      const readIndex = text.findIndex((value) => value.startsWith("Called the Read tool with the following input:"))
+      expect(readIndex).toBeGreaterThanOrEqual(0)
+      expect(text[readIndex + 1]?.includes("Read tool failed to read")).toBe(true)
+      expect(text[readIndex + 2]).toBe("after-file")
+      expect(text.filter((value) => value === "after-file")).toHaveLength(1)
 
       yield* sessions.remove(session.id)
     }),

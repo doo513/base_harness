@@ -47,18 +47,20 @@ export function verifierConfig(llmUrl: string, skills?: string) {
         models: {
           "test-model": {
             ...config.provider.test.models["test-model"],
+            reasoning: true,
             variants: {
-              low: {},
-              high: {},
+              low: { reasoningEffort: "low" },
+              high: { reasoningEffort: "high" },
             },
           },
           "second-model": {
             ...config.provider.test.models["test-model"],
             id: "second-model",
             name: "Second Test Model",
+            reasoning: true,
             variants: {
-              medium: {},
-              max: {},
+              medium: { reasoningEffort: "medium" },
+              max: { reasoningEffort: "max" },
             },
           },
         },

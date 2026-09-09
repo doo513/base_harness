@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-09",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "fullHost": {
+    "sessionId": 25108,
+    "status": "completed_with_failure",
+    "exitCode": 1,
+    "passed": 3275,
+    "skipped": 60,
+    "todo": 1,
+    "failed": 1,
+    "reportedTests": 3337,
+    "files": 253,
+    "snapshots": 45,
+    "assertions": 8858,
+    "durationSeconds": 1933.48,
+    "failureOperation": "initialize",
+    "childPid": 15352,
+    "deadlineMs": 15000,
+    "diagnosticElapsedMs": 15053,
+    "cliModulesReadyMs": 907,
+    "runtimeImportStartMs": 1134,
+    "runtimeImportReadyObserved": false
+  },
+  "isolatedProbe": {
+    "initialized": true,
+    "modelCalls": 0,
+    "childStopped": true,
+    "cliModulesReadyMs": 749,
+    "runtimeImportStartMs": 990,
+    "runtimeModulesReadyMs": 5367,
+    "runtimeLayerReadyMs": 5369,
+    "runtimeManagedReadyMs": 5370,
+    "runtimeImportReadyMs": 5370,
+    "controlledBenchmark": false
+  },
+  "postMarkerChecks": {
+    "typecheckExitCode": 0,
+    "passed": 23,
+    "failed": 0,
+    "assertions": 154,
+    "files": 5,
+    "durationSeconds": 104.99
+  },
+  "timeoutIncreased": false,
+  "fullInitializationFailureResolved": false,
+  "nativeWindowsSymlinkValidated": false,
+  "gitOperationsPerformed": false,
+  "netMonitorTouched": false
+}

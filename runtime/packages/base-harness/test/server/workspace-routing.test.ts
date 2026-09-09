@@ -51,6 +51,19 @@ describe("getWorkspaceRouteSessionID", () => {
     expect(getWorkspaceRouteSessionID(url)).toBeNull()
   })
 
+  for (const pathname of [
+    "/session/harness/plan/plan_123",
+    "/session/harness/plan/ses_abc123",
+    "/session/catalog/models",
+    "/session/status/extra",
+    "/session/not-a-session/message",
+    "/experimental/session/not-a-session/background",
+  ]) {
+    test("does not infer a session from a non-session route: " + pathname, () => {
+      expect(getWorkspaceRouteSessionID(new URL("http://localhost" + pathname))).toBeNull()
+    })
+  }
+
   test("returns null for non-session paths", () => {
     const url = new URL("http://localhost/config")
     expect(getWorkspaceRouteSessionID(url)).toBeNull()

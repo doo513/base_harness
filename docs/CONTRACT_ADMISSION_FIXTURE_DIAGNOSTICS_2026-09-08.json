@@ -1,0 +1,53 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Contract adapter, actual Kernel admission policy, deterministic runtime acceptance stub; not live verifier acceptance.",
+  "tests": {
+    "passed": 14,
+    "failed": 0,
+    "assertions": 72,
+    "files": 3,
+    "durationSeconds": 6.78
+  },
+  "hostTypecheck": {
+    "exitCode": 0,
+    "errors": []
+  },
+  "gatePassed": true,
+  "log": ".tools/validation/contract-admission-enum-1788851685046.log",
+  "sessionId": 79452,
+  "previousAttempt": {
+    "tests": {
+      "passed": 14,
+      "failed": 0,
+      "assertions": 72,
+      "files": 3,
+      "durationSeconds": 5.54
+    },
+    "hostTypecheck": {
+      "exitCode": 2,
+      "errors": [
+        {
+          "path": "runtime/packages/base-harness/test/tool/harness-contract.test.ts",
+          "line": 85,
+          "code": "TS2345",
+          "actual": "write",
+          "required": "mutate"
+        },
+        {
+          "path": "runtime/packages/base-harness/test/tool/harness-contract.test.ts",
+          "line": 100,
+          "code": "TS2345",
+          "actual": "write",
+          "required": "mutate"
+        }
+      ]
+    },
+    "log": ".tools/validation/contract-admission-fixture-1788851530099.log",
+    "sessionId": 53626,
+    "gatePassed": false
+  },
+  "correction": "Changed two trusted hostOperation arguments from write to mutate. Actual tool IDs, Kernel policy, and production enum were unchanged.",
+  "fullHostSuitePass": false
+}

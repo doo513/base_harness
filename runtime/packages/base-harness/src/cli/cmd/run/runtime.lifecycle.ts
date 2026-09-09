@@ -20,6 +20,7 @@ import { resolveInteractiveStdin } from "./runtime.stdin"
 import { entrySplash, exitSplash, splashMeta } from "./splash"
 import { resolveRunTheme } from "./theme"
 import type {
+  ExecutionPickerSelection,
   FooterApi,
   PermissionReply,
   QuestionReject,
@@ -72,6 +73,7 @@ export type LifecycleInput = {
   onCycleVariant?: () => CycleResult | void
   onModelSelect?: (model: NonNullable<RunInput["model"]>) => CycleResult | void | Promise<CycleResult | void>
   onVariantSelect?: (variant: string | undefined) => CycleResult | void | Promise<CycleResult | void>
+  onExecutionSelect?: (selection: ExecutionPickerSelection) => void | Promise<void>
   onInterrupt?: () => void
   onBackground?: () => void
   onSubagentSelect?: (sessionID: string | undefined) => void
@@ -252,6 +254,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       onCycleVariant: input.onCycleVariant,
       onModelSelect: input.onModelSelect,
       onVariantSelect: input.onVariantSelect,
+      onExecutionSelect: input.onExecutionSelect,
       onInterrupt: input.onInterrupt,
       onBackground: input.onBackground,
       onEditorOpen: async ({ value }) => {

@@ -71,7 +71,12 @@ const layer = Layer.effect(
         } catch (err) {}
       }
 
-      const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>
+      // A missing store is normal before the first login. Avoid constructing a
+      // read failure on this hot path; still tolerate removal between probe and read.
+      const data = (yield* fsys.existsSafe(file).pipe(
+        Effect.flatMap((exists) => exists ? fsys.readJson(file) : Effect.succeed({})),
+        Effect.orElseSucceed(() => ({})),
+      )) as Record<string, unknown>
       const result = Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
       for (const [providerID, info] of Object.entries(result)) register(providerID, info)
       return result

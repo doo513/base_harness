@@ -1,0 +1,224 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "terminal": true,
+  "exitCode": 1,
+  "passed": 3278,
+  "skipped": 60,
+  "todo": 1,
+  "failed": 1,
+  "additionalErrors": 0,
+  "tests": 3340,
+  "files": 253,
+  "snapshots": 45,
+  "assertions": 8867,
+  "durationSeconds": 6077.29,
+  "acpFailure": {
+    "pid": 20584,
+    "elapsedMs": 15046,
+    "exitCode": null,
+    "stdoutLines": 0,
+    "startup": [
+      {
+        "stage": "cli.modules_ready",
+        "processUptimeMs": 858
+      },
+      {
+        "stage": "cli.parse_start",
+        "processUptimeMs": 869
+      },
+      {
+        "stage": "cli.options_ready",
+        "processUptimeMs": 1096
+      },
+      {
+        "stage": "cli.input_wait",
+        "processUptimeMs": 1121
+      },
+      {
+        "stage": "cli.input_ready",
+        "processUptimeMs": 1129
+      },
+      {
+        "stage": "runtime.import_start",
+        "processUptimeMs": 1130
+      }
+    ],
+    "resources": {
+      "atSpawn": {
+        "parentRssBytes": 1259827200,
+        "parentHeapUsedBytes": 831799141,
+        "systemFreeBytes": 1540816896,
+        "systemTotalBytes": 16440479744
+      },
+      "atObservation": {
+        "parentRssBytes": 1259941888,
+        "parentHeapUsedBytes": 834704226,
+        "systemFreeBytes": 1017307136,
+        "systemTotalBytes": 16440479744
+      }
+    }
+  },
+  "initialGap": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "firstRunnerProcessUptimeMs": 4268747,
+    "execReportedWallSeconds": 4268.1603632,
+    "functionsReportedWallSeconds": 6157.2,
+    "causeEstablished": false
+  },
+  "shellPhases": [
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "server_config_start",
+      "elapsedMs": 0
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "server_config_ready",
+      "elapsedMs": 3
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "session_services_ready",
+      "elapsedMs": 3
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "session_created",
+      "elapsedMs": 7
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "llm_fixture_queued",
+      "elapsedMs": 7
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "shell_forked",
+      "elapsedMs": 7
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "busy_observed",
+      "elapsedMs": 46
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "loop_forked",
+      "elapsedMs": 47
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "no_early_model_call",
+      "elapsedMs": 100
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "shell_completed",
+      "elapsedMs": 2065
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "loop_completed",
+      "elapsedMs": 6544
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "stage": "completed",
+      "elapsedMs": 6545
+    }
+  ],
+  "postFullProbe": [
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "initialized": true,
+      "modelCalls": 0,
+      "resources": {
+        "atSpawn": {
+          "parentRssBytes": 55529472,
+          "parentHeapUsedBytes": 587319,
+          "systemFreeBytes": 1384136704,
+          "systemTotalBytes": 16440479744
+        },
+        "atObservation": {
+          "parentRssBytes": 62021632,
+          "parentHeapUsedBytes": 6603075,
+          "systemFreeBytes": 775217152,
+          "systemTotalBytes": 16440479744
+        }
+      }
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "startup": [
+        {
+          "stage": "cli.modules_ready",
+          "processUptimeMs": 474
+        },
+        {
+          "stage": "cli.input_ready",
+          "processUptimeMs": 627
+        },
+        {
+          "stage": "runtime.import_start",
+          "processUptimeMs": 627
+        },
+        {
+          "stage": "runtime.modules_ready",
+          "processUptimeMs": 3686
+        },
+        {
+          "stage": "runtime.layer_ready",
+          "processUptimeMs": 3689
+        },
+        {
+          "stage": "runtime.managed_ready",
+          "processUptimeMs": 3690
+        },
+        {
+          "stage": "runtime.import_ready",
+          "processUptimeMs": 3690
+        },
+        {
+          "stage": "runtime.services_start",
+          "processUptimeMs": 3690
+        }
+      ],
+      "childStopped": true
+    }
+  ],
+  "memoryPressureSoleCauseEstablished": false,
+  "overallDurationSuitableForBenchmark": false,
+  "nextInvestigation": "Compare exact ACP test launch/transport observation after accumulated test execution; do not assume free-memory threshold causality."
+}

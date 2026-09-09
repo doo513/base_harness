@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Core test scratch-state isolation",
+  "targeted": {
+    "passed": 23,
+    "failed": 0,
+    "assertions": 82,
+    "files": 3,
+    "seconds": 22.72,
+    "typecheckExitCode": 0,
+    "log": ".tools/validation/core-test-state-isolation-1788847580766.log"
+  },
+  "productionChanged": false,
+  "hostSuite": {
+    "sessionId": 89513,
+    "log": ".tools/validation/host-suite-expanded-1788847294624.log",
+    "status": "running_at_last_observation",
+    "bailAfterFailures": 20,
+    "observedFailureLines": [
+      "(fail) plugin.codex > filters unsupported modes and uses Codex context limits for OAuth GPT models [580.38ms]",
+      "(fail) plugin.install.concurrent > preserves updates when existing config uses .json [2763.19ms]",
+      "(fail) plugin.snowflake-cortex > loader injects bearer header and preserves custom headers [2.12ms]",
+      "(fail) plugin.xai > loader > replaces the dummy bearer, sets User-Agent, and preserves caller headers [27.07ms]",
+      "(fail) plugin.xai > loader > does not mutate caller headers and supports HeadersInit shapes [28.22ms]",
+      "(fail) plugin.xai > device code flow > requestDeviceCode posts form body, validates fields, and surfaces endpoint errors [33.39ms]",
+      "(fail) Project.fromDirectory with worktrees > worktree should share project ID with main repo [2900.30ms]",
+      "(fail) Project.fromDirectory with bare repos > worktree from bare repo should cache in bare repo, not parent [1614.68ms]",
+      "(fail) Project.fromDirectory with bare repos > different bare repos under same parent should not share project ID [3259.35ms]",
+      "(fail) Project.fromDirectory with bare repos > bare repo without .git suffix is still detected via core.bare [1663.41ms]"
+    ],
+    "completeFailureInventory": false,
+    "fullPassProven": false
+  },
+  "residualRisks": [
+    "Full Core suite was not rerun after this preload change.",
+    "Global.tmp retains its existing OS temp location; this is not an OS sandbox.",
+    "Windows EBUSY cleanup retains scratch state with an explicit warning.",
+    "Prior user-configuration exposure remains unresolved."
+  ]
+}

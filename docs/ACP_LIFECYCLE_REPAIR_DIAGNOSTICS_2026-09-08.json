@@ -1,0 +1,31 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "runtime": "Bun 1.3.14",
+  "baseline": { "passed": 2, "failed": 2 },
+  "sameCasesAfterRepair": {
+    "passed": 3,
+    "failed": 1,
+    "assertions": 15,
+    "seconds": 26.50,
+    "watchdogTimedOut": false
+  },
+  "acpLifecycleAndConfigRegression": {
+    "passed": 10,
+    "failed": 0,
+    "assertions": 67,
+    "seconds": 69.50,
+    "watchdogTimedOut": false
+  },
+  "hostTypecheckExitCode": 0,
+  "eofAssertionLimitSeconds": 5,
+  "unresolved": [
+    "Embedded prompt-content request returns RPC -32603, service=session",
+    "Full Host regression has not been rerun after this repair",
+    "Independent real-user stability is unverified"
+  ],
+  "paidProviderCalls": false,
+  "repositoryGitOperations": false,
+  "netMonitorTouched": false
+}

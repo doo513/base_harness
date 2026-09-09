@@ -1,13 +1,7 @@
-# Upstream notice
+# Architectural references
 
-The initial execution-core snapshot in this directory was derived from
-OpenCode v1.18.23, Copyright Anomaly, released under the MIT License.
+Base Harness Runtime is an independent implementation.
 
-Source snapshot: https://github.com/anomalyco/opencode/tree/v1.18.23
+The central tool registry, toolset grouping, provider registry and agent-loop separation were informed by the public architecture of Nous Research Hermes Agent, licensed MIT. No Hermes source file or executable is included in this runtime.
 
-base-harness is an independent fork. It does not invoke an OpenCode or
-Gajae-Code executable, does not automatically update from upstream, and does
-not provide an upstream compatibility layer. Gajae-Code influenced only the
-architectural decision to keep the TUI and agent loop separated.
-
-The upstream MIT license is preserved in runtime/LICENSE.
+The previous OpenCode-derived runtime snapshot was removed during the Runtime V3 refoundation. OpenCode is not linked, embedded or invoked by this product.

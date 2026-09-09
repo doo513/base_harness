@@ -8,26 +8,34 @@ import { Flag } from "@base-harness/core/flag/flag"
 import { Global } from "@base-harness/core/global"
 import { ModelsDev } from "@base-harness/core/models-dev"
 import { it } from "./lib/effect"
-import { readFile, rm, writeFile, utimes, mkdir } from "fs/promises"
+import { readFile, rm, writeFile, utimes, mkdir, mkdtemp } from "fs/promises"
+import os from "node:os"
+import bundledModels from "../src/models-catalog.json" with { type: "json" }
 import path from "path"
 
-// test/preload.ts pins BASE_HARNESS_MODELS_PATH to a fixture so other tests can
-// resolve providers without network. These tests need to drive the on-disk
-// cache themselves and silence the eager refresh fork. Save/restore around
-// the suite — never leak the mutation to subsequent test files in the same
-// bun process.
+// Default operation uses the bundled local catalog. Remote-cache tests opt in
+// explicitly and use only the injected HTTP client and a disposable cache.
 const ORIGINAL_MODELS_PATH = Flag.BASE_HARNESS_MODELS_PATH
+const ORIGINAL_MODELS_URL = Flag.BASE_HARNESS_MODELS_URL
 const ORIGINAL_DISABLE_FETCH = Flag.BASE_HARNESS_DISABLE_MODELS_FETCH
-beforeAll(() => {
+const ORIGINAL_CACHE_PATH = Global.Path.cache
+let cacheDirectory: string | undefined
+let cacheFile: string
+beforeAll(async () => {
+  cacheDirectory = await mkdtemp(path.join(os.tmpdir(), "base-harness-models-test-"))
+  cacheFile = path.join(cacheDirectory, "models.json")
+  Global.Path.cache = cacheDirectory
   Flag.BASE_HARNESS_MODELS_PATH = undefined
+  Flag.BASE_HARNESS_MODELS_URL = "https://models.dev"
   Flag.BASE_HARNESS_DISABLE_MODELS_FETCH = true
 })
-afterAll(() => {
+afterAll(async () => {
   Flag.BASE_HARNESS_MODELS_PATH = ORIGINAL_MODELS_PATH
+  Flag.BASE_HARNESS_MODELS_URL = ORIGINAL_MODELS_URL
   Flag.BASE_HARNESS_DISABLE_MODELS_FETCH = ORIGINAL_DISABLE_FETCH
+  Global.Path.cache = ORIGINAL_CACHE_PATH
+  if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true })
 })
-
-const cacheFile = path.join(Global.Path.cache, "models.json")
 
 const fixture: Record<string, ModelsDev.Provider> = {
   acme: {
@@ -116,10 +124,6 @@ beforeEach(async () => {
   await rm(cacheFile, { force: true })
 })
 
-afterAll(async () => {
-  await rm(cacheFile, { force: true })
-})
-
 const initialState: MockState = {
   body: JSON.stringify(fixture),
   status: 200,
@@ -127,6 +131,30 @@ const initialState: MockState = {
 }
 
 describe("ModelsDev Service", () => {
+  it.live("default catalog stays local and does not refresh a remote cache without opt-in", () =>
+    Effect.gen(function* () {
+      yield* writeCache(fixture)
+      const state = yield* Ref.make(initialState)
+      const result = yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const previous = Flag.BASE_HARNESS_MODELS_URL
+          Flag.BASE_HARNESS_MODELS_URL = undefined
+          return previous
+        }),
+        () => provided(state, Effect.gen(function* () {
+          const service = yield* ModelsDev.Service
+          const catalog = yield* service.get()
+          yield* service.refresh(true)
+          return catalog
+        })),
+        (previous) => Effect.sync(() => { Flag.BASE_HARNESS_MODELS_URL = previous }),
+      )
+      expect(Object.is(result, bundledModels)).toBe(true)
+      expect((yield* Ref.get(state)).calls).toEqual([])
+      expect(yield* Effect.promise(() => readFile(cacheFile, "utf8"))).toBe(JSON.stringify(fixture))
+    }),
+  )
+
   it.live("get() returns providers from disk when cache file exists", () =>
     Effect.gen(function* () {
       yield* writeCache(fixture)
@@ -141,7 +169,7 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("get() returns empty catalog when disk empty, fetch disabled, and no bundled snapshot is injected", () =>
+  it.live("get() returns an empty catalog for an explicitly configured URL with no cache and fetching disabled", () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(initialState)
       const result = yield* provided(

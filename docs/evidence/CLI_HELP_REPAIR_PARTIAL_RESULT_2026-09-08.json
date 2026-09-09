@@ -1,0 +1,158 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "tests": {
+    "pass": 16,
+    "fail": 0,
+    "assertions": 38
+  },
+  "hostTypecheck": {
+    "exitCode": 2,
+    "remainingDiagnostics": 4,
+    "code": "TS2322",
+    "location": "runtime/packages/base-harness/src/index.ts:32-35",
+    "reason": "AnyCommand intersection requires handler argument compatibility that concrete command modules do not satisfy"
+  },
+  "actualCLI": {
+    "diagnosticOnly": true,
+    "cases": [
+      {
+        "args": [
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 7081.1729,
+        "stdoutBytes": 0,
+        "stderrBytes": 4161,
+        "hasCommandListing": true,
+        "hasMini": true,
+        "hasVariant": false,
+        "hasPassword": false,
+        "startsWithBrand": false,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "-h"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4571.1919,
+        "stdoutBytes": 0,
+        "stderrBytes": 4161,
+        "hasCommandListing": true,
+        "hasMini": true,
+        "hasVariant": false,
+        "hasPassword": false,
+        "startsWithBrand": false,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "--help=true"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4543.1500000000015,
+        "stdoutBytes": 3823,
+        "stderrBytes": 0,
+        "hasCommandListing": true,
+        "hasMini": true,
+        "hasVariant": false,
+        "hasPassword": false,
+        "startsWithBrand": false,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "run",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4623.1072,
+        "stdoutBytes": 0,
+        "stderrBytes": 3640,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": true,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "execute",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4596.6888,
+        "stdoutBytes": 0,
+        "stderrBytes": 3659,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": true,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "attach",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4430.9088999999985,
+        "stdoutBytes": 0,
+        "stderrBytes": 1692,
+        "hasCommandListing": false,
+        "hasMini": true,
+        "hasVariant": false,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": false
+      },
+      {
+        "args": [
+          "--mini",
+          "--replay"
+        ],
+        "exitCode": 1,
+        "timedOut": false,
+        "durationMs": 4550.478499999997,
+        "stdoutBytes": 0,
+        "stderrBytes": 77,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": false,
+        "hasPassword": false,
+        "startsWithBrand": false,
+        "unexpectedError": false,
+        "builderMismatch": false,
+        "expectedReplayRejection": true
+      }
+    ],
+    "inferenceRequests": 0
+  },
+  "helpChecksPassed": true,
+  "handlerDelegationPassed": true,
+  "complete": false,
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

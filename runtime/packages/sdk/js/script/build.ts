@@ -6,6 +6,7 @@ process.chdir(dir)
 
 import { $ } from "bun"
 import path from "path"
+import { promises as fs } from "node:fs"
 
 import { createClient } from "@hey-api/openapi-ts"
 
@@ -114,6 +115,8 @@ await Bun.write(sseTypesPath, sseTypesPatched)
 
 await $`bun prettier --write src/gen`
 await $`bun prettier --write src/v2`
-await $`rm -rf dist`
+const dist = path.resolve(dir, "dist")
+if (path.dirname(dist) !== path.resolve(dir)) throw new Error("SDK output path escaped the package")
+await fs.rm(dist, { recursive: true, force: true })
 await $`bun tsc`
-await $`rm openapi.json`
+await fs.rm(path.join(dir, "openapi.json"), { force: true })

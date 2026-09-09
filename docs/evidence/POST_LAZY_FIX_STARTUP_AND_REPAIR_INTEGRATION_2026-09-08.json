@@ -1,0 +1,133 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Post-fix bounded Host startup and deterministic local worker repair integration",
+  "sourceChangesThisTurn": false,
+  "supervisorExitCode": 0,
+  "startup": [
+    {
+      "mode": "default",
+      "healthy": true,
+      "healthStartupMs": 14950.0801,
+      "cliImportMs": 5641,
+      "runtimeImportMs": 5449,
+      "serverImportMs": 1998,
+      "inferenceRequests": 0,
+      "intentionallyStopped": true,
+      "recordedExitCode": null
+    },
+    {
+      "mode": "pure",
+      "healthy": true,
+      "healthStartupMs": 8165.677999999998,
+      "cliImportMs": 4866,
+      "runtimeImportMs": 656,
+      "serverImportMs": 728,
+      "inferenceRequests": 0,
+      "intentionallyStopped": true,
+      "recordedExitCode": null
+    }
+  ],
+  "repair": {
+    "success": true,
+    "runId": "run-da0be9cd-e3db-4ff9-bb9e-dc5630066b51",
+    "sessionId": "ses_f8112761effeDQFAJQaNk33cYT",
+    "checks": [
+      {
+        "route": "/provider",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "route": "/config/providers",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "scope": "worker_catalog",
+        "workUnits": 2,
+        "forbiddenToolsAdvertised": false,
+        "structuredEditorsAvailable": true
+      },
+      {
+        "scope": "ready_family_consistency",
+        "selectedFamiliesActive": true,
+        "historicalDisputePreserved": true,
+        "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-R7d5CO\\state\\base-harness\\runs\\9af6d8489ec8b416-39a0bada\\artifacts\\b1\\b15c48f6e7e628824cef9467e7c70b17c88cbae2aa0b38bdc96dd378e47f4595.json"
+      },
+      {
+        "scope": "worker_local_repair",
+        "workUnitId": "unit-0",
+        "scopeId": "ses_f811229e9ffeD6CUTbdorpDcxX",
+        "repairCount": 1,
+        "sameSessionWriteCount": 2,
+        "unaffectedWorkerWriteCount": 1,
+        "baseWorkspaceAbsentBeforeRepair": true,
+        "model": "fixture-reasoner",
+        "exactEffort": "high",
+        "replanned": false
+      },
+      {
+        "scope": "private_runtime",
+        "authenticated": true,
+        "exactEffort": "high",
+        "fileMatches": true,
+        "retainedFilesMatch": true,
+        "currentRootReady": true
+      }
+    ],
+    "timings": {
+      "/global/health": 373.01900000000023,
+      "healthStartupMs": 8827.496700000002,
+      "/provider": 10545.298700000001,
+      "/config/providers": 18.3778999999995,
+      "/session": 34.88260000000082,
+      "clientMs": 34104.8171,
+      "/session/ses_f8112761effeDQFAJQaNk33cYT/harness": 20.8891999999978,
+      "/session/ses_f811229e9ffeD6CUTbdorpDcxX/message": 9.764200000005076
+    },
+    "clientExitCode": 0,
+    "hostExitCode": 143,
+    "hostTerminationIntentional": true,
+    "requests": 14,
+    "requestsAreLocalFixture": true,
+    "phase": "ready",
+    "outcome": "ready",
+    "activeCount": 0,
+    "queuedCount": 0
+  },
+  "observations": {
+    "terminalPlanningState": "executing",
+    "rootRepairCount": 0,
+    "metricsRepairs": 0,
+    "workerRepairCounts": [
+      {
+        "workUnitId": "unit-0",
+        "repairCount": 1
+      },
+      {
+        "workUnitId": "unit-1",
+        "repairCount": 0
+      }
+    ],
+    "interpretation": "Planning display remains executing while root phase is ready. Repair counters may be root-only; aggregation semantics need inspection before classifying as a bug."
+  },
+  "limitations": [
+    "One startup pair does not establish speedup or reliability",
+    "Earlier intermittent startup timeouts remain unresolved",
+    "No real OAuth/provider account exercised",
+    "No native TUI interaction in this turn",
+    "Previously pending Python freshness and TUI expectation failures remain unresolved"
+  ],
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

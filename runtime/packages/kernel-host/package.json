@@ -1,0 +1,21 @@
+{
+  "name": "@base-harness/kernel-host",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test"
+  },
+  "dependencies": {
+    "@base-harness/kernel": "workspace:*",
+    "@base-harness/workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

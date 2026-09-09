@@ -1,12 +1,22 @@
-import type { TuiCommand, TuiPlugin } from "@base-harness/plugin/tui"
+import type { TuiCommand, TuiPlugin, TuiThemeCurrent } from "@base-harness/plugin/tui"
+import { ANTIGRAVITY_ADAPTER_ID, ANTIGRAVITY_REASONING_OPTION } from "@base-harness/core/antigravity-protocol"
 import type { BuiltinTuiPlugin } from "./builtins"
-import { createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js"
+import { createHarnessStatusBinding, harnessRootSession } from "../harness/session-status"
+import type { ScrollBoxRenderable } from "@opentui/core"
+import { useTerminalDimensions } from "@opentui/solid"
+import { useBindings } from "../keymap"
+import { harnessPanelLayout, harnessPlanningCue } from "../harness/panel-presentation"
+import { HarnessPanelFrame } from "../harness/panel-frame"
+import { unwrapHarnessResponse } from "../harness/control-response"
 import {
   pendingHarnessSelection,
   queueHarnessControl,
   subscribePendingHarnessControls,
   type HarnessControl,
 } from "../harness/pending-control"
+import { discoverAntigravityCli } from "../harness/antigravity-cli"
+import { harnessDisplayPhase, harnessLifecycleLabel } from "../harness/status-presentation"
 
 type WorkerStatus = {
   workUnitId: string
@@ -20,6 +30,30 @@ type WorkerStatus = {
 type HarnessStatus = {
   sessionID: string
   runId: string
+  history?: {
+    runId: string
+    recordedAt: string
+    recordedPhase: string
+    phase: string
+    readOnly: true
+    revalidated: false
+    goal: string
+    goalTruncated: boolean
+    workers: WorkerStatus[]
+    evidenceCount: number
+    candidateCount: number
+    evidenceRefs: string[]
+    candidateRefs: string[]
+    referencesTruncated: boolean
+    repairCount: number
+    assuranceLevel?: "fast" | "adaptive" | "strict"
+  }
+  execution?: {
+    adapterID: string
+    modelID?: string
+    options?: Record<string, string>
+    capabilityRevision?: string
+  }
   goal: string
   phase: string
   workers: WorkerStatus[]
@@ -44,10 +78,12 @@ type HarnessStatus = {
   domain?: "develop" | "general"
   skills?: Array<"hackathon">
   planningPreference?: "auto" | "plan_once"
+  planOnly?: boolean
   planningState?: string
   planningDecision?: "direct" | "planned"
   activePlanId?: string
   activePlanRevision?: number
+  planRecovery?: { code: string; action: "planning.discard"; planId: string; revision: number }
   goalContract?: {
     revision: number
     hash?: string
@@ -151,37 +187,95 @@ const clip = (value: string, length = 72) =>
 
 function VerificationPanel(props: {
   status: HarnessStatus
+  background: TuiThemeCurrent["backgroundPanel"]
   overlay?: boolean
   view?: "summary" | "goal" | "evidence"
 }) {
   const expandedGoal = () => props.view === "goal"
   const expandedEvidence = () => props.view === "evidence"
-  return (
-    <box
-      flexDirection="column"
-      border={props.overlay}
-      borderStyle="rounded"
-      borderColor={outcomeColor(props.status)}
-      paddingLeft={1}
-      paddingRight={1}
-      paddingTop={props.overlay ? 1 : 0}
-      paddingBottom={props.overlay ? 1 : 0}
-      width={props.overlay ? Math.min(process.stdout.columns ?? 80, 64) : undefined}
-    >
-      <text fg={outcomeColor(props.status)}>
-        <b>VERIFIED STATE</b> {props.status.phase.toUpperCase()}
-        {props.status.phase === "ready"
-          ? ` (${props.status.assuranceLevel ?? props.status.effectiveProfile ?? "adaptive"})`
-          : ""}
-      </text>
+  const dimensions = useTerminalDimensions()
+  const layout = () => harnessPanelLayout(dimensions().width, dimensions().height)
+  let scroll: ScrollBoxRenderable | undefined
+  const scrollPage = (direction: -1 | 1) => {
+    if (!scroll) return false
+    scroll.scrollBy(direction * Math.max(1, layout().bodyHeight - 1))
+    return true
+  }
+  useBindings(() => ({
+    enabled: () => Boolean(props.overlay),
+    bindings: [
+      { key: "pageup", desc: "Scroll harness details up", cmd: () => scrollPage(-1) },
+      { key: "pagedown", desc: "Scroll harness details down", cmd: () => scrollPage(1) },
+    ],
+  }))
+  createEffect(() => {
+    props.view
+    props.status.runId
+    untrack(() => { if (scroll) scroll.scrollBy(-scroll.scrollTop) })
+  })
+  const title = () => {
+    const phase = harnessDisplayPhase(props.status)
+    if (phase.startsWith("history_")) {
+      const value = "HISTORY " + props.status.history!.phase.toUpperCase()
+      return props.overlay ? clip(value, layout().contentWidth) : value
+    }
+    const assurance = phase === "ready"
+      ? " (" + (props.status.assuranceLevel ?? props.status.effectiveProfile ?? "adaptive") + ")"
+      : ""
+    const value = (layout().contentWidth >= 36 ? "VERIFIED STATE " : "") + phase.toUpperCase() + assurance
+    return props.overlay ? clip(value, layout().contentWidth) : value
+  }
+  const body = () => (
+    <box flexDirection="column" flexShrink={0}>
+      <Show when={props.status.history}>
+        {(history) => (
+          <box flexDirection="column">
+            <text fg="#e6b566">Past run only. Not reverified against the current workspace.</text>
+            <text fg="#a8b3c7">Current domain {props.status.domain ?? "develop"}{props.status.skills?.includes("hackathon") ? " + hackathon" : ""}</text>
+            <text fg="#a8b3c7">{harnessLifecycleLabel(props.status)}</text>
+            <text fg="#778399">{history().runId} / {history().recordedAt}</text>
+            <text fg="#a8b3c7">Previous goal</text>
+            <text>{history().goal}</text>
+            <Show when={history().goalTruncated}><text fg="#778399">Goal summary truncated.</text></Show>
+            <Show when={history().recordedPhase !== history().phase}>
+              <text fg="#e6b566">Last recorded phase: {history().recordedPhase}. Execution was not resumed.</text>
+            </Show>
+            <text fg="#a8b3c7">Past workers {history().workers.length} / Evidence {history().evidenceCount} / Candidates {history().candidateCount} / Repairs {history().repairCount}</text>
+            <Show when={history().assuranceLevel}><text fg="#778399">Past assurance: {history().assuranceLevel}</text></Show>
+            <For each={history().workers}>
+              {(worker) => <text fg="#778399">- {worker.workUnitId} [{worker.state}] {clip(worker.title, 44)}</text>}
+            </For>
+            <Show when={expandedEvidence()}>
+              <For each={history().evidenceRefs}>{(reference) => <text fg="#778399">Past evidence: {clip(reference)}</text>}</For>
+              <For each={history().candidateRefs}>{(reference) => <text fg="#778399">Past candidate: {clip(reference)}</text>}</For>
+              <Show when={history().referencesTruncated}><text fg="#778399">Reference list truncated.</text></Show>
+            </Show>
+          </box>
+        )}
+      </Show>
+      <Show when={!props.status.history}>
+      <Show when={harnessPlanningCue(props.status, false)}>
+        {(cue) => <text fg="#e6b566">{cue().message}</text>}
+      </Show>
       <text fg="#a8b3c7">Goal</text>
       <text>{props.status.goal || "Waiting for the Host Coordinator"}</text>
       <text fg="#a8b3c7">
         Domain {props.status.domain ?? "develop"}
         {props.status.skills?.includes("hackathon") ? " + hackathon" : ""}
       </text>
+      <Show when={props.status.execution}>
+        {(execution) => (
+          <text fg="#a8b3c7">
+            Execution {execution().adapterID}
+            {execution().modelID ? ` / ${execution().modelID}` : " / provider default"}
+            {execution().options?.[ANTIGRAVITY_REASONING_OPTION]
+              ? ` / ${execution().options?.[ANTIGRAVITY_REASONING_OPTION]}`
+              : ""}
+          </text>
+        )}
+      </Show>
       <text fg="#a8b3c7">
-        Planning {props.status.planningState ?? "idle"}
+{harnessLifecycleLabel(props.status)}
         {props.status.activePlanId
           ? " / " + props.status.activePlanId + "@" + String(props.status.activePlanRevision)
           : ""}
@@ -264,10 +358,20 @@ function VerificationPanel(props: {
       <Show when={props.status.isolation}>
         {(isolation) => <text fg="#778399">Isolation {isolation().backend} / {isolation().containment} / {isolation().network} / {isolation().state}</text>}
       </Show>
-      <Show when={props.overlay}>
-        <text fg="#778399">Run /harness again to close</text>
       </Show>
     </box>
+  )
+  return (
+    <HarnessPanelFrame
+      overlay={props.overlay}
+      layout={layout()}
+      title={title()}
+      tone={outcomeColor(props.status)}
+      background={props.background}
+      onScrollBox={(value) => { scroll = value }}
+    >
+      {body()}
+    </HarnessPanelFrame>
   )
 }
 
@@ -279,28 +383,23 @@ type SessionHarnessClient = {
 }
 
 const tui: TuiPlugin = async (api) => {
-  let automaticVerification = true
   const [status, setStatus] = createSignal(initialStatus(2))
   const [overlay, setOverlay] = createSignal(false)
   const [overlayView, setOverlayView] = createSignal<"summary" | "goal" | "evidence">("summary")
   const [pendingSelection, setPendingSelection] = createSignal(pendingHarnessSelection())
-  let activeRootScopeId = ""
-  let fetchedRootScopeId = ""
 
   void api.client.config
     .get()
     .then((response) => {
       const config = record(response.data)
-      const verification = record(config.verification)
-      automaticVerification = verification.trigger !== "manual"
-      const repairs = verification.maxSameFailureRepairs
+      const verification = record(config?.verification)
+      const repairs = verification?.maxSameFailureRepairs
       if (typeof repairs === "number" && Number.isInteger(repairs) && repairs >= 0) {
         setStatus((current) => ({ ...current, maxSameFailureRepairs: repairs }))
       }
     })
     .catch(() => {})
 
-  const automatic = () => automaticVerification
   let verificationPending = false
   const stopPendingSubscription = subscribePendingHarnessControls(() => {
     const next = pendingHarnessSelection()
@@ -317,36 +416,40 @@ const tui: TuiPlugin = async (api) => {
   onCleanup(stopPendingSubscription)
 
   const client = api.client.session as unknown as SessionHarnessClient
-  const unwrap = (value: unknown): HarnessStatus => {
-    const outer = record(value)
-    if (outer?.error) throw new Error(text(record(outer.error)?.message) ?? "Harness API request failed")
-    return (outer?.data ?? value) as HarnessStatus
+  const unwrap = (value: unknown): HarnessStatus => unwrapHarnessResponse<HarnessStatus>(value)
+  const rootScopeId = () => {
+    const route = api.route.current
+    if (route.name !== "session") return ""
+    return harnessRootSession(text(record(route.params)?.sessionID), (id) => api.state.session.get(id)) ?? ""
   }
-  const selectRootScope = (sessionId: string) => {
-    let root = sessionId
-    let current = api.state.session.get(root)
-    while (current?.parentID) {
-      root = current.parentID
-      current = api.state.session.get(root)
-    }
-    activeRootScopeId = root
+  const binding = createHarnessStatusBinding<HarnessStatus>({
+    fetch: async (target) => unwrap(await client.harness(target)),
+    publish: (next) => { setStatus(next) },
+    reset: () => {
+      const selection = pendingHarnessSelection()
+      setStatus((current) => ({
+        ...initialStatus(current.maxSameFailureRepairs),
+        domain: selection.domain,
+        skills: selection.hackathon ? ["hackathon"] : [],
+        planningPreference: selection.planOnce ? "plan_once" : "auto",
+      }))
+    },
+  })
+  onCleanup(() => binding.dispose())
+  const currentTarget = () => {
+    const sessionID = rootScopeId()
+    binding.select(sessionID ? { sessionID, directory: api.state.path.directory } : undefined)
+    return binding.current()
   }
-  const rootScopeId = () => activeRootScopeId || status().sessionID
-  const refresh = async () => {
-    if (!rootScopeId()) return
-    const next = unwrap(
-      await client.harness({
-        sessionID: rootScopeId(),
-        directory: api.state.path.directory,
-      }),
-    )
-    setStatus(next)
-    return next
+  const refresh = () => {
+    currentTarget()
+    return binding.refresh()
   }
   const notify = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info") =>
     api.ui.toast({ title, message, variant })
   const verify = async (reason: "automatic" | "manual") => {
-    if (!rootScopeId() || verificationPending) return
+    const target = currentTarget()
+    if (!target || verificationPending) return
     if (
       status().planningState === "plan_ready" ||
       status().planningState === "awaiting_input" ||
@@ -362,12 +465,11 @@ const tui: TuiPlugin = async (api) => {
     try {
       const next = unwrap(
         await client.harnessVerify({
-          sessionID: rootScopeId(),
-          directory: api.state.path.directory,
+          ...target,
           reason,
         }),
       )
-      setStatus(next)
+      if (!binding.accept(next, target)) return
       if (next.outcome === "ready") {
         notify(
           `Ready (${next.assuranceLevel ?? next.effectiveProfile ?? "adaptive"})`,
@@ -387,7 +489,8 @@ const tui: TuiPlugin = async (api) => {
   }
 
   const control = async (body: HarnessControl) => {
-    if (!rootScopeId()) {
+    const target = currentTarget()
+    if (!target) {
       if (body.type === "planning.execute") {
         notify("No reviewed plan", "Create a session and build a plan before execution.", "warning")
         return
@@ -397,21 +500,81 @@ const tui: TuiPlugin = async (api) => {
       return
     }
     try {
-      setStatus(
-        unwrap(
-          await client.harnessControl({
-            sessionID: rootScopeId(),
-            directory: api.state.path.directory,
-            body,
-          }),
-        ),
-      )
+      const next = unwrap(await client.harnessControl({ ...target, body }))
+      if (binding.accept(next, target) && body.type === "planning.plan_once") {
+        notify("Plan-only enabled", "The next request will stop at a reviewed plan. Use /execute to run it.", "success")
+      }
     } catch (error) {
       notify("Kernel control rejected", error instanceof Error ? error.message : String(error), "error")
     }
   }
 
-  const harnessCommands: TuiCommand[] = [
+  const selectAntigravity = async () => {
+    let capabilities: Awaited<ReturnType<typeof discoverAntigravityCli>>
+    try {
+      capabilities = await discoverAntigravityCli({
+        client: api.client,
+        sessionID: rootScopeId() || undefined,
+        directory: api.state.path.directory,
+      })
+    } catch (error) {
+      notify("Antigravity unavailable", error instanceof Error ? error.message : String(error), "error")
+      return
+    }
+
+    const DialogSelect = api.ui.DialogSelect as any
+    const selectEffort = (modelID?: string) => {
+      api.ui.dialog.replace(() => (
+        <DialogSelect
+          title="Antigravity reasoning effort"
+          options={[
+            { title: "Provider default", value: "" },
+            ...capabilities.reasoningEfforts.map((value) => ({ title: value, value })),
+          ]}
+          onSelect={(option: { value: string }) => {
+            api.ui.dialog.clear()
+            void control({
+              type: "execution.select",
+              selection: {
+                adapterID: ANTIGRAVITY_ADAPTER_ID,
+                modelID,
+                options: option.value ? { [ANTIGRAVITY_REASONING_OPTION]: option.value } : undefined,
+                capabilityRevision: capabilities.revision,
+              },
+            })
+          }}
+        />
+      ))
+    }
+
+    api.ui.dialog.replace(() => (
+      <DialogSelect
+        title="Antigravity execution"
+        options={[
+          { title: "Provider default model", value: "" },
+          ...capabilities.models.map((value) => ({ title: value, value })),
+        ]}
+        onSelect={(option: { value: string }) => selectEffort(option.value || undefined)}
+      />
+    ))
+  }
+
+  const refreshWithNotice = () => refresh().catch((error) => {
+    notify("Coordinator unavailable", error instanceof Error ? error.message : String(error), "error")
+  })
+  createEffect(() => {
+    const sessionID = rootScopeId()
+    const directory = api.state.path.directory
+    untrack(() => {
+      if (binding.select(sessionID ? { sessionID, directory } : undefined)) void refreshWithNotice()
+    })
+  })
+
+  type HarnessCommand = TuiCommand & {
+    argument?: string
+    onArguments?: (values: readonly string[]) => void | Promise<void>
+  }
+  const harnessCommands: HarnessCommand[] = [
     {
       value: "harness.domain.develop",
       title: "Develop domain",
@@ -445,6 +608,22 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => void control({ type: "skill.set", skill: "hackathon", enabled: false }),
     },
     {
+      value: "harness.execution.antigravity",
+      title: "Antigravity execution",
+      description: "Select an official agy model and reasoning effort",
+      slash: { name: "antigravity" },
+      category: "Harness",
+      onSelect: () => void selectAntigravity(),
+    },
+    {
+      value: "harness.execution.antigravity.off",
+      title: "Disable Antigravity execution",
+      description: "Return implementation workers to the selected native provider",
+      slash: { name: "antigravity off" },
+      category: "Harness",
+      onSelect: () => void control({ type: "execution.select" }),
+    },
+    {
       value: "harness.plan.once",
       title: "Plan next request",
       description: "Build and review one plan without executing it",
@@ -465,7 +644,9 @@ const tui: TuiPlugin = async (api) => {
       title: "Execute active plan",
       description: "Execute the reviewed plan revision",
       slash: { name: "execute" },
+      argument: "planId",
       category: "Harness",
+      onArguments: ([planId]) => void control({ type: "planning.execute", planId }),
       onSelect: () => void control({ type: "planning.execute" }),
     },
     {
@@ -477,7 +658,7 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => {
         setOverlayView("summary")
         setOverlay((value) => !value)
-        void refresh()
+        void refreshWithNotice()
       },
     },
     {
@@ -489,7 +670,7 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => {
         setOverlayView("goal")
         setOverlay(true)
-        void refresh()
+        void refreshWithNotice()
       },
     },
     {
@@ -509,7 +690,7 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => {
         setOverlayView("evidence")
         setOverlay(true)
-        void refresh()
+        void refreshWithNotice()
       },
     },
   ]
@@ -523,7 +704,17 @@ const tui: TuiPlugin = async (api) => {
       namespace: "palette",
       slashName: command.slash?.name,
       slashAliases: command.slash?.aliases,
-      run() {
+      slashArgument: command.argument,
+      run(context) {
+        if (command.onArguments) {
+          const raw = record(context.payload)?.arguments
+          const args = Array.isArray(raw) ? raw : []
+          if ((raw !== undefined && !Array.isArray(raw)) || args.length > 1 || args.some((value) => typeof value !== "string")) {
+            notify("Invalid control command", "Use /execute [planId].", "error")
+            return
+          }
+          return command.onArguments(args)
+        }
         return command.onSelect?.(api.ui.dialog)
       },
     })),
@@ -532,29 +723,26 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 50,
     slots: {
-      sidebar_content: (_context, props) => {
-        selectRootScope(props.session_id)
-        if (fetchedRootScopeId !== rootScopeId()) {
-          fetchedRootScopeId = rootScopeId()
-          void refresh()
-        }
-        return <VerificationPanel status={status()} view="summary" />
-      },
+      sidebar_content: () => <VerificationPanel status={status()} background={api.theme.current.backgroundPanel} view="summary" />,
       app_bottom: () => (
         <box paddingLeft={1} paddingRight={1}>
           <text fg="#7aa2c8">
             HARNESS {status().domain ?? pendingSelection().domain}
             {(status().skills?.includes("hackathon") ?? pendingSelection().hackathon) ? " + hackathon" : ""}
-            {pendingSelection().planOnce ? " / next: plan-only" : ""}
+            {(status().execution ?? pendingSelection().execution)?.adapterID
+              ? ` / ${(status().execution ?? pendingSelection().execution)?.adapterID}`
+              : ""}
+            {harnessPlanningCue(status(), pendingSelection().planOnce)
+              ? ` / ${harnessPlanningCue(status(), pendingSelection().planOnce)!.label}` : ""}
             {pendingSelection().count > 0 ? ` / ${String(pendingSelection().count)} staged` : ""}
-            {status().phase !== "inactive" ? ` / ${status().phase}` : ""}
+            {harnessDisplayPhase(status()) !== "inactive" ? ` / ${harnessDisplayPhase(status())}` : ""}
           </text>
         </box>
       ),
       app: () => (
         <Show when={overlay()}>
-          <box position="absolute" top={2} right={2} zIndex={100}>
-            <VerificationPanel status={status()} overlay view={overlayView()} />
+          <box position="absolute" top={1} right={2} zIndex={100}>
+            <VerificationPanel status={status()} background={api.theme.current.backgroundPanel} overlay view={overlayView()} />
           </box>
         </Show>
       ),
@@ -567,21 +755,16 @@ const tui: TuiPlugin = async (api) => {
   events.on("harness.status", (event) => {
     const properties = record(event.properties)
     const next = record(properties?.status) as unknown as HarnessStatus | undefined
-    if (!next || (rootScopeId() && next.sessionID !== rootScopeId())) return
-    setStatus(next)
+    if (!next || !rootScopeId() || next.sessionID !== rootScopeId()) return
+    binding.accept(next, currentTarget())
   })
   events.on("session.status", (event) => {
     const properties = record(event.properties)
     const eventSessionId = text(properties?.sessionID)
     const state = record(properties?.status)
     if (!eventSessionId) return
-    selectRootScope(eventSessionId)
-    if (eventSessionId === rootScopeId() && state?.type === "idle" && automatic()) {
-      void (async () => {
-        const next = await refresh()
-        if (next?.planningState === "plan_ready" || next?.planningState === "awaiting_input") return
-        await verify("automatic")
-      })()
+    if (eventSessionId === rootScopeId() && state?.type === "idle") {
+      void refresh().catch(() => undefined)
     }
   })
 }

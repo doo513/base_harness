@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { cmd } from "./cmd"
@@ -42,8 +43,7 @@ function pagerCmd(): string[] {
 }
 
 export const SessionCommand = cmd({
-  command: "session",
-  describe: "manage sessions",
+  ...EntryCommand.session,
   builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
   async handler() {},
 })

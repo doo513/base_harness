@@ -25,6 +25,10 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@base-harness/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import {
+  assertExecutePlanOptions, headlessControls, harnessEventStatus,
+  harnessExitCode, harnessSettled, unwrapHarnessStatus,
+} from "./run/harness-output"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -123,9 +127,14 @@ async function toolError(part: ToolPart) {
   }
 }
 
-export const RunCommand = effectCmd({
-  command: "run [message..]",
-  describe: "run base-harness with a message",
+import { EntryCommand } from "../entry-command-metadata"
+
+export const RunCommand = createRunCommand(false)
+export const ExecuteCommand = createRunCommand(true)
+
+function createRunCommand(standalone: boolean) {
+  return effectCmd({
+  ...(standalone ? EntryCommand.execute : EntryCommand.run),
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,
@@ -134,6 +143,7 @@ export const RunCommand = effectCmd({
   directory: (args) => (args.dir && !args.attach ? path.resolve(process.cwd(), args.dir) : process.cwd()),
   builder: (yargs: Argv) =>
     yargs
+      .positional("planId", { type: "string", describe: "reviewed plan ID" })
       .positional("message", {
         describe: "message to send",
         type: "string",
@@ -174,8 +184,7 @@ export const RunCommand = effectCmd({
       .option("domain", {
         type: "string",
         choices: ["develop", "general"] as const,
-        default: "develop" as const,
-        describe: "kernel domain",
+        describe: "kernel domain (uses the Host setting unless specified)",
       })
       .option("hackathon", {
         type: "boolean",
@@ -289,8 +298,10 @@ export const RunCommand = effectCmd({
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
+      if (args.planId) args["execute-plan"] = args.planId
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
+      assertExecutePlanOptions({ ...args, executePlan: args["execute-plan"], message: rawMessage })
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -474,6 +485,15 @@ export const RunCommand = effectCmd({
       }
 
       async function session(sdk: OpencodeClient): Promise<SessionInfo | undefined> {
+        if (args["execute-plan"] && !args.session && !args.continue) {
+          const resolved = await sdk.session.harnessPlan({ planID: args["execute-plan"] })
+          if (resolved.error || !resolved.data) throw new Error("Host could not resolve the reviewed plan", { cause: resolved.error })
+          const selected = await sdk.session.get({
+            sessionID: resolved.data.sessionID, directory: resolved.data.workspace,
+          })
+          if (selected.error || !selected.data) throw new Error("Reviewed plan session is unavailable", { cause: selected.error })
+          return { id: selected.data.id, title: selected.data.title, directory: resolved.data.workspace }
+        }
         if (args.session) {
           const current = await sdk.session
             .get({
@@ -694,6 +714,7 @@ export const RunCommand = effectCmd({
           process.exit(1)
         }
         const sessionID = sess.id
+        let planOnly = args.plan === true
 
         function emit(type: string, data: Record<string, unknown>) {
           if (args.format === "json") {
@@ -723,6 +744,12 @@ export const RunCommand = effectCmd({
           let error: string | undefined
 
           for await (const event of events.stream) {
+            const status = harnessEventStatus(event, sessionID)
+            if (status) {
+              emit("harness_status", { status })
+              if (harnessSettled(status, planOnly)) break
+              continue
+            }
             if (event.type === "session.created" && event.properties.info.parentID) {
               if (sessions.has(event.properties.info.parentID)) {
                 sessions.add(event.properties.info.id)
@@ -849,118 +876,91 @@ export const RunCommand = effectCmd({
           }
           return error
         }
-        const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
+        const cwd = args["execute-plan"] && !args.dir
+          ? sess.directory ?? directory ?? root
+          : args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
-        type KernelControl =
-          | { type: "domain.set"; domain: "develop" | "general" }
-          | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
-          | { type: "planning.plan_once" }
-          | { type: "planning.execute"; planId?: string }
         const kernelClient = client.session as unknown as {
-          harnessControl(input: { sessionID: string; directory?: string; body: KernelControl }): Promise<unknown>
+          harnessControl(input: {
+            sessionID: string; directory?: string; body: import("./run/harness-output").HeadlessControl
+          }): Promise<unknown>
           harness(input: { sessionID: string; directory?: string }): Promise<unknown>
+          harnessVerify(input: { sessionID: string; directory?: string; reason: "completion" }): Promise<unknown>
         }
+        const control = async (body: import("./run/harness-output").HeadlessControl) =>
+          unwrapHarnessStatus(await kernelClient.harnessControl({ sessionID, directory: cwd, body }))
 
-        // Validate agent if specified
+        // Resume the Host's selection unless the user explicitly changes it.
         const agent = await pickAgent(client)
+        for (const body of headlessControls({
+          domain: args.domain, hackathon: args.hackathon, plan: args.plan,
+          executePlan: args["execute-plan"],
+        })) {
+          await control(body)
+        }
 
-        await kernelClient.harnessControl({
-          sessionID,
-          directory: cwd,
-          body: { type: "domain.set", domain: args.domain },
-        })
-        if (args.hackathon) {
-          await kernelClient.harnessControl({
-            sessionID,
-            directory: cwd,
-            body: { type: "skill.set", skill: "hackathon", enabled: true },
-          })
-        }
-        if (args.plan) {
-          await kernelClient.harnessControl({
-            sessionID,
-            directory: cwd,
-            body: { type: "planning.plan_once" },
-          })
-        }
+        const initialStatus = unwrapHarnessStatus(await kernelClient.harness({ sessionID, directory: cwd }))
+        planOnly = !args["execute-plan"] && (planOnly || initialStatus.planOnly === true)
 
         await share(client, sessionID)
 
         if (!interactive) {
-          let verificationFinalized = false
-          const events = await client.event.subscribe()
-          const completed = loop(client, events).catch((e) => {
-            console.error(e)
+          const streamAbort = new AbortController()
+          const events = await client.event.subscribe({ directory: cwd }, { signal: streamAbort.signal })
+          const completed = loop(client, events).catch((error) => {
+            if (streamAbort.signal.aborted) return
+            emit("error", { error: { code: "EVENT_STREAM_ERROR", message: formatRunError(error) } })
+            console.error(formatRunError(error))
             process.exitCode = 1
           })
           async function finish() {
             const error = await completed
             if (error) process.exitCode = 1
-            if (verificationFinalized) return
-            verificationFinalized = true
-            if (args.plan) {
-              const response = await kernelClient.harness({ sessionID, directory: cwd })
-              const outer = response as { data?: Record<string, unknown> }
-              const planStatus = (outer.data ?? response) as Record<string, unknown>
-              if (planStatus.planningState !== "plan_ready") {
-                console.error("base-harness plan did not reach plan_ready")
+            const status = unwrapHarnessStatus(planOnly
+              ? await kernelClient.harness({ sessionID, directory: cwd })
+              : await kernelClient.harnessVerify({ sessionID, directory: cwd, reason: "completion" }))
+            if (harnessExitCode(status, planOnly) !== 0) {
+              emit("harness_result", { status })
+              console.error("base-harness did not reach " + (planOnly ? "plan_ready" : "Ready")
+                + ": " + String(status.failureKind ?? status.phase))
+              process.exitCode = 1
+              return
+            }
+            if (planOnly) {
+              if (!emit("plan_ready", {
+                planId: status.activePlanId, revision: status.activePlanRevision, status,
+              })) {
+                console.log("Plan ready: " + String(status.activePlanId) + "@" + String(status.activePlanRevision))
+              }
+              return
+            }
+            if (!emit("harness_result", { status })) {
+              console.log("Ready (" + String(status.assuranceLevel ?? status.effectiveProfile ?? "unknown") + ")")
+            }
+          }
+
+          try {
+            if (args["execute-plan"]) {
+              await control({ type: "planning.execute", planId: args["execute-plan"] })
+              await finish()
+              return
+            }
+            if (args.command) {
+              const result = await client.session.command({
+                sessionID, agent, model: args.model, command: args.command,
+                arguments: message, variant: args.variant,
+              })
+              if (result.error) {
+                if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
                 process.exitCode = 1
                 return
               }
-              console.log(
-                "Plan ready: " +
-                  String(planStatus.activePlanId) +
-                  "@" +
-                  String(planStatus.activePlanRevision),
-              )
+              await finish()
               return
             }
-            try {
-              const sessionClient = client.session as unknown as {
-                harnessVerify(input: {
-                  sessionID: string
-                  directory?: string
-                  reason: "completion"
-                }): Promise<{ data?: Record<string, unknown>; error?: unknown } | Record<string, unknown>>
-              }
-              const response = await sessionClient.harnessVerify({ sessionID, directory: cwd, reason: "completion" })
-              const verificationResult = ("data" in response && response.data ? response.data : response) as Record<string, unknown>
-              if (verificationResult.outcome !== "ready") {
-                const criterion = String(verificationResult.failedCriterion ?? "independent verification")
-                const failure = String(verificationResult.failureKind ?? "verification_failed")
-                console.error("base-harness did not issue Ready: " + failure + " (" + criterion + ")")
-                process.exitCode = 1
-              }
-            } catch (verificationError) {
-              console.error(
-                verificationError instanceof Error
-                  ? verificationError.message
-                  : String(verificationError),
-              )
-              process.exitCode = 1
-            } finally {
-              // The Host owns the verifier lifecycle for local and attach runs.
-            }
-          }
-
-          if (args["execute-plan"]) {
-            await kernelClient.harnessControl({
-              sessionID,
-              directory: cwd,
-              body: { type: "planning.execute", planId: args["execute-plan"] },
-            })
-            await finish()
-            return
-          }
-
-          if (args.command) {
-            const result = await client.session.command({
-              sessionID,
-              agent,
-              model: args.model,
-              command: args.command,
-              arguments: message,
-              variant: args.variant,
+            const result = await client.session.prompt({
+              sessionID, agent, model: pick(args.model), variant: args.variant,
+              parts: [...files, { type: "text", text: message }],
             })
             if (result.error) {
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
@@ -968,23 +968,17 @@ export const RunCommand = effectCmd({
               return
             }
             await finish()
-            return
-          }
-
-          const model = pick(args.model)
-          const result = await client.session.prompt({
-            sessionID,
-            agent,
-            model,
-            variant: args.variant,
-            parts: [...files, { type: "text", text: message }],
-          })
-          if (result.error) {
-            if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+          } catch (error) {
+            const message = formatRunError(error)
+            emit("error", { error: { code: "HARNESS_REQUEST_FAILED", message } })
+            console.error(message)
             process.exitCode = 1
-            return
+          } finally {
+            // Release the client subscription on success, rejection and transport failure.
+            // Cancelling this reader must not cancel a run owned by an attached Host.
+            streamAbort.abort()
+            await completed
           }
-          await finish()
           return
         }
 
@@ -1072,7 +1066,8 @@ export const RunCommand = effectCmd({
       await execute(sdk)
     })
   }),
-})
+  })
+}
 
 type MiniCommandInput = {
   directory?: string
@@ -1096,6 +1091,7 @@ export async function runMini(input: MiniCommandInput) {
     $0: "base-harness",
     _: ["mini"],
     message: input.prompt ? [input.prompt] : [],
+    planId: undefined,
     command: undefined,
     continue: input.continue,
     session: input.session,
@@ -1103,7 +1099,7 @@ export async function runMini(input: MiniCommandInput) {
     share: undefined,
     model: input.model,
     agent: input.agent,
-    domain: "develop",
+    domain: undefined,
     hackathon: false,
     plan: false,
     "execute-plan": undefined,

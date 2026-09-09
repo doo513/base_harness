@@ -51,13 +51,15 @@ import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "../../context/args"
-import { BASE_HARNESS_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
+import { BASE_HARNESS_BASE_MODE, useBindings, useCommandShortcut, useCommandSlashes, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
 import { flushPendingHarnessControls } from "../../harness/pending-control"
+import { resolveLocalSlash } from "../../prompt/local-slash"
+import { harnessActorLabel } from "../../harness/identity-presentation"
 
 registerOpencodeSpinner()
 
@@ -165,6 +167,7 @@ export function Prompt(props: PromptProps) {
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
+  const localSlashes = useCommandSlashes()
   const domainShortcut = useCommandShortcut("agent.list")
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
@@ -959,6 +962,19 @@ export function Prompt(props: PromptProps) {
     if (workspace.creating() || move.creating()) return false
     if (auto()?.visible) return false
     if (!store.prompt.input) return false
+    const localCommand = store.mode === "normal" ? resolveLocalSlash(store.prompt.input, localSlashes()) : undefined
+    if (localCommand?.kind === "invalid") {
+      toast.show({ title: "Invalid control command", message: "Use " + localCommand.usage, variant: "error" })
+      return false
+    }
+    if (localCommand?.kind === "command") {
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      localCommand.command.onSelect(localCommand.arguments)
+      return true
+    }
     const agent = local.agent.current()
     if (!agent) return false
     const trimmed = store.prompt.input.trim()
@@ -1464,7 +1480,7 @@ export function Prompt(props: PromptProps) {
                   {(agent) => (
                     <>
                       <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+{store.mode === "shell" ? "Shell" : harnessActorLabel(agent().name)}
                       </text>
                       <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
                         <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>

@@ -1,0 +1,248 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Explicit task metadata fixture with automatic exploration disabled and early error-state detection.",
+  "result": {
+    "sessionId": 27441,
+    "processId": 25964,
+    "exitCode": 1,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 12.43,
+    "watchdogSeconds": 60,
+    "watchdogTriggered": false,
+    "stopped": true,
+    "failedTest": "running task tool preserves metadata after tool-call transition",
+    "passedTest": "loop sets status to busy then idle",
+    "stdout": ".tools/validation/task-metadata-explicit-1788859258583.stdout.log",
+    "stderr": ".tools/validation/task-metadata-explicit-1788859258583.stderr.log"
+  },
+  "hostTypecheck": {
+    "sessionId": 67179,
+    "exitCode": 0
+  },
+  "resolved": true,
+  "hypothesis": {
+    "confirmed": "SessionProcessor.updateToolCall returns undefined when readToolCall has no registry entry; no early update buffer is visible in the inspected code. The tool-call transition preserves metadata only if a running part already exists.",
+    "unconfirmed": "Whether the failing integration case reaches metadata before registry creation, uses mismatched call IDs, or lacks an observed build assistant/task part is not yet established.",
+    "next": "Capture actual tool-call IDs, part status/metadata presence, and assistant roles at timeout before changing the event pipeline. Use the saved processor contexts and phase42 SessionTools source with the later pre-contract selector patch; do not reread already inspected files.",
+    "manualExplorationHypothesis": "Explicit manual exploration did not resolve the failure."
+  },
+  "observationFollowUp": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "sessionId": 16983,
+    "processId": 18472,
+    "exitCode": 1,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 15.94,
+    "watchdogTriggered": false,
+    "stopped": true,
+    "hostTypecheckExitCode": 0,
+    "stdout": ".tools/validation/task-metadata-observation-1788859650652.stdout.log",
+    "stderr": ".tools/validation/task-metadata-observation-1788859650652.stderr.log",
+    "observation": {
+      "modelCalls": 2,
+      "messages": [
+        {
+          "role": "user",
+          "agent": "build",
+          "messageID": "msg_0805838a1001kcNz2ev5qEvmN5",
+          "parts": [
+            {
+              "type": "text"
+            },
+            {
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "agent": "build",
+          "messageID": "msg_080583d3e001XBKctNByBKjMCP",
+          "parts": [
+            {
+              "type": "step-start"
+            },
+            {
+              "type": "tool",
+              "tool": "task",
+              "callID": "call_1",
+              "status": "error",
+              "hasMetadata": false,
+              "hasChildSession": false
+            },
+            {
+              "type": "step-finish"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "agent": "build",
+          "messageID": "msg_0805841bb001WIzv0DF7Z5Kqi2",
+          "parts": [
+            {
+              "type": "step-start"
+            }
+          ]
+        }
+      ],
+      "failure": "poll_failed"
+    },
+    "nextFix": {
+      "file": "runtime/packages/base-harness/src/tool/registry.ts",
+      "sourceCache": "phase42:new:runtime/packages/base-harness/src/tool/registry.ts",
+      "anchor": "assertHarnessContractSubmitted(context.sessionID, tool.id)",
+      "requiredChange": "Extract a string subagent_type only for tool.id === task from structured args, then pass it as the fourth argument to assertHarnessContractSubmitted(context.sessionID, tool.id, undefined, subagentType). Preserve Orchestration.assertToolAllowed and TaskTool's own role checks.",
+      "testCache": "task-observation:after",
+      "diagnosticBug": "The current test finds the last build assistant before finding its task. A later empty assistant hides the prior errored task; inspect the latest task-bearing build assistant instead. Keep bounded metadata observations.",
+      "allSessionsTerminal": true,
+      "phaseUsed": true,
+      "avoid": "Do not add a speculative metadata queue: observation showed a task error before child metadata, and a second argument-dropping admission guard has now been located."
+    }
+  },
+  "registryFollowUp": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "applied": true,
+    "resolved": false,
+    "sessionId": 37818,
+    "processId": 15392,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 11.77,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "exitCode": 1,
+    "contractGate": {
+      "sessionId": 53689,
+      "passed": 8,
+      "failed": 0,
+      "assertions": 52,
+      "durationSeconds": 1.221,
+      "exitCode": 0,
+      "hostTypecheckExitCode": 0
+    },
+    "stdout": ".tools/validation/registry-task-admission-1788859934717.stdout.log",
+    "stderr": ".tools/validation/registry-task-admission-1788859934717.stderr.log",
+    "remaining": "Diagnostic catch wrapper hides the actual task error; preserve a bounded redacted reason before further execution changes."
+  },
+  "reasonFollowUp": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "sessionId": 2863,
+    "processId": 33744,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 12.29,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "exitCode": 1,
+    "hostTypecheck": {
+      "sessionId": 1317,
+      "exitCode": 0
+    },
+    "reason": "Task failed before running metadata: Exploration is allowed exactly once before planning",
+    "guard": "root.phase !== exploration",
+    "source": "runtime/packages/workspace/src/orchestration.ts:644",
+    "next": "Remove the diagnostic-only exploration=manual fixture override and test with the normal policy; preserve production guards.",
+    "stdout": ".tools/validation/task-error-reason-1788860346416.stdout.log",
+    "stderr": ".tools/validation/task-error-reason-1788860346416.stderr.log",
+    "resolved": false
+  },
+  "defaultPolicyFollowUp": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "sessionId": 82160,
+    "processId": 21288,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 12.9,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "exitCode": 1,
+    "hostTypecheck": {
+      "sessionId": 37424,
+      "exitCode": 0
+    },
+    "resolved": false,
+    "stdout": ".tools/validation/task-default-policy-1788860519558.stdout.log",
+    "stderr": ".tools/validation/task-default-policy-1788860519558.stderr.log",
+    "finding": "Coordinator forces manual initial exploration, creating Workspace direct phase; explicit explore has no pre-contract direct-to-exploration transition."
+  },
+  "explicitExplorationResolution": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "scope": "Explicit root exploration admission and Host prompt metadata integration",
+    "resolvedFixture": "running task tool preserves metadata after tool-call transition",
+    "workspace": {
+      "passed": 20,
+      "failed": 0,
+      "assertions": 154,
+      "files": 3,
+      "durationSeconds": 1.191,
+      "typecheckExitCode": 0
+    },
+    "hostPair": {
+      "sessionId": 23635,
+      "processId": 28692,
+      "passed": 2,
+      "failed": 0,
+      "filteredOut": 57,
+      "assertions": 5,
+      "durationSeconds": 13.08,
+      "exitCode": 0,
+      "stopped": true,
+      "watchdogTriggered": false,
+      "stdout": ".tools/validation/explicit-exploration-host-1788860824349.stdout.log",
+      "stderr": ".tools/validation/explicit-exploration-host-1788860824349.stderr.log"
+    },
+    "hostTypecheck": {
+      "sessionId": 7878,
+      "exitCode": 0
+    },
+    "hostRegression": {
+      "sessionId": 24787,
+      "processId": 3116,
+      "passed": 54,
+      "skipped": 14,
+      "failed": 0,
+      "assertions": 239,
+      "files": 3,
+      "durationSeconds": 89.46,
+      "exitCode": 0,
+      "stopped": true,
+      "watchdogTriggered": false,
+      "watchdogSeconds": 120,
+      "stdout": ".tools/validation/prompt-regression-after-exploration-1788860876280.stdout.log",
+      "stderr": ".tools/validation/prompt-regression-after-exploration-1788860876280.stderr.log"
+    },
+    "remainingKnownBaselineFailures": [
+      "(fail) session.compaction.process > stops quickly when aborted during retry backoff [3190.86ms]",
+      "(fail) symlink handling [3983.59ms]",
+      "(fail) nested symlinks [3224.17ms]",
+      "(fail) tool parameters > JSON Schema (wire shape) > task [1.34ms]",
+      "(fail) tool.read env file permissions > agent=plan > .env asks=true [374.54ms]"
+    ],
+    "fullCompletionProven": false
+  }
+}

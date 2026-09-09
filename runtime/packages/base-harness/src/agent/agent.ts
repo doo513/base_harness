@@ -116,6 +116,14 @@ const layer = Layer.effect(
           ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
         } satisfies Record<string, "allow" | "ask" | "deny">
 
+        // Read-only roles still require confirmation before reading secret files.
+        const readPermission = {
+          "*": "allow",
+          "*.env": "ask",
+          "*.env.*": "ask",
+          "*.env.example": "allow",
+        } satisfies Record<string, "allow" | "ask" | "deny">
+
         const defaults = Permission.fromConfig({
           "*": "allow",
           doom_loop: "ask",
@@ -126,13 +134,7 @@ const layer = Layer.effect(
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
-          // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
-          read: {
-            "*": "allow",
-            "*.env": "ask",
-            "*.env.*": "ask",
-            "*.env.example": "allow",
-          },
+          read: readPermission,
         })
 
         const user = Permission.fromConfig(cfg.permission ?? {})
@@ -175,7 +177,7 @@ const layer = Layer.effect(
                 grep: "allow",
                 glob: "allow",
                 list: "allow",
-                read: "allow",
+                read: readPermission,
                 external_directory: readonlyExternalDirectory,
               }),
               user,
@@ -193,7 +195,7 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 "*": "deny",
-                read: "allow",
+                read: readPermission,
                 glob: "allow",
                 grep: "allow",
                 list: "allow",

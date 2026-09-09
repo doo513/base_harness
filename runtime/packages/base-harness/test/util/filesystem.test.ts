@@ -3,6 +3,15 @@ import path from "path"
 import fs from "fs/promises"
 import { Filesystem } from "@/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
+import { probeSymlinkCapabilities, requireSymlinkCapabilities } from "../lib/symlink-capability"
+
+const symlinks = await probeSymlinkCapabilities()
+requireSymlinkCapabilities(symlinks, process.env.BASE_HARNESS_REQUIRE_SYMLINK_TESTS === "1")
+const fileSymlinkTest = symlinks.file.supported ? test : test.skip
+const directorySymlinkTest = symlinks.directory.supported ? test : test.skip
+if (!symlinks.file.supported || !symlinks.directory.supported) {
+  console.warn("filesystem: native symlink cases are unsupported, not validated", symlinks)
+}
 
 describe("filesystem", () => {
   describe("exists()", () => {
@@ -592,12 +601,13 @@ describe("filesystem", () => {
       expect(Filesystem.resolve(`/mnt/${drive}`)).toBe(Filesystem.resolve(`${drive.toUpperCase()}:/`))
     })
 
-    test("resolves symlinked directory to canonical path", async () => {
+    directorySymlinkTest("resolves symlinked directory to canonical path", async () => {
       await using tmp = await tmpdir()
       const target = path.join(tmp.path, "real")
       await fs.mkdir(target)
       const link = path.join(tmp.path, "link")
-      await fs.symlink(target, link)
+      await fs.symlink(target, link, "dir")
+      expect((await fs.lstat(link)).isSymbolicLink()).toBe(true)
       expect(Filesystem.resolve(link)).toBe(Filesystem.resolve(target))
     })
 
@@ -608,12 +618,14 @@ describe("filesystem", () => {
       expect(result).toBe(Filesystem.normalizePath(path.resolve(missing)))
     })
 
-    test("throws ELOOP on symlink cycle", async () => {
+    fileSymlinkTest("throws ELOOP on symlink cycle", async () => {
       await using tmp = await tmpdir()
       const a = path.join(tmp.path, "a")
       const b = path.join(tmp.path, "b")
-      await fs.symlink(b, a)
-      await fs.symlink(a, b)
+      await fs.symlink(b, a, "file")
+      await fs.symlink(a, b, "file")
+      expect((await fs.lstat(a)).isSymbolicLink()).toBe(true)
+      expect((await fs.lstat(b)).isSymbolicLink()).toBe(true)
       expect(() => Filesystem.resolve(a)).toThrow()
     })
 

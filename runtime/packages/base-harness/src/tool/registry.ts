@@ -87,6 +87,7 @@ export interface Interface {
     modelID: ModelV2.ID
     agent: Agent.Info
     permission?: PermissionV1.Ruleset
+    sessionID?: string
   }) => Effect.Effect<Tool.Def[]>
 }
 
@@ -296,23 +297,26 @@ const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const scopeSupportsPatch = !input.sessionID
+        || Orchestration.filterToolsForScope(input.sessionID, [{ id: ApplyPatchTool.id }]).length > 0
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
 
         const usePatch =
-          input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
+          scopeSupportsPatch && input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
         if (tool.id === ApplyPatchTool.id) return usePatch
         if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
 
         return true
       })
 
-      const codeModeDescription = filtered.some((tool) => tool.id === "execute")
+      const scoped = input.sessionID ? Orchestration.filterToolsForScope(input.sessionID, filtered) : filtered
+      const codeModeDescription = scoped.some((tool) => tool.id === "execute")
         ? yield* describeCodeMode(input)
         : undefined
-      const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
+      const visible = scoped.filter((tool) => tool.id !== "execute" || codeModeDescription)
 
       return yield* Effect.forEach(
         visible,
@@ -342,7 +346,11 @@ const layer = Layer.effect(
               args: Parameters<typeof tool.execute>[0],
               context: Parameters<typeof tool.execute>[1],
             ) => {
-              assertHarnessContractSubmitted(context.sessionID, tool.id)
+              const subagentType = tool.id === "task" && args !== null && typeof args === "object"
+                && "subagent_type" in args && typeof args.subagent_type === "string"
+                ? args.subagent_type
+                : undefined
+              assertHarnessContractSubmitted(context.sessionID, tool.id, undefined, subagentType)
               Orchestration.assertToolAllowed(context.sessionID, tool.id, args)
               return tool.execute(args, context)
             },

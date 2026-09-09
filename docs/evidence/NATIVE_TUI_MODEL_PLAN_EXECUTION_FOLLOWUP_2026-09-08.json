@@ -1,0 +1,787 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Native Windows PTY TUI attached to an actual Host, synthetic local model/MCP, and real Python verifier.",
+  "runtime": "Bun 1.3.14",
+  "desktopScreenshot": false,
+  "completeVisualCoverage": false,
+  "fixtureSuccess": true,
+  "fixtureExit": 0,
+  "tuiExit": 0,
+  "hosts": [
+    {
+      "pid": 4868,
+      "url": "http://127.0.0.1:60714",
+      "startupMs": 11157.9983,
+      "ready": true,
+      "exitCode": 143
+    },
+    {
+      "pid": 32828,
+      "url": "http://127.0.0.1:54818",
+      "startupMs": 6417.369700000003,
+      "ready": true,
+      "exitCode": 143
+    }
+  ],
+  "clients": [
+    {
+      "name": "plan",
+      "pid": 7264,
+      "exitCode": 0,
+      "timedOut": false,
+      "elapsedMs": 17491.814000000002
+    },
+    {
+      "name": "interrupted-revise",
+      "pid": 20916,
+      "exitCode": 143,
+      "timedOut": false,
+      "elapsedMs": 5568.879400000002
+    }
+  ],
+  "planOnceBeforePrompt": {
+    "stage": "plan_once_before_prompt",
+    "status": {
+      "sessionID": "ses_f80cc76ccffeqEJRLuGoNlq2Ip",
+      "workspace": "",
+      "runId": "",
+      "goal": "",
+      "phase": "inactive",
+      "workers": [],
+      "activeCount": 0,
+      "queuedCount": 0,
+      "verificationState": "inactive",
+      "missingEvidence": [],
+      "repairCount": 0,
+      "maxSameFailureRepairs": 2,
+      "evidenceCount": 0,
+      "candidateCount": 0,
+      "evidenceRefs": [],
+      "candidateRefs": [],
+      "readyEligible": false,
+      "metrics": {
+        "observedActions": 0,
+        "workers": 0,
+        "activeWorkers": 0,
+        "repairs": 0,
+        "evidence": 0,
+        "sandboxRuns": 0
+      },
+      "domain": "develop",
+      "skills": [
+        "hackathon"
+      ],
+      "planningPreference": "plan_once",
+      "planningState": "idle",
+      "planOnly": true,
+      "history": {
+        "runId": "run-ea18e637-a387-4bd0-8a7d-71bd55b70d2e",
+        "recordedAt": "2026-09-08T04:08:16.562Z",
+        "recordedPhase": "direct",
+        "phase": "interrupted",
+        "readOnly": true,
+        "revalidated": false,
+        "goal": "\"Use the local MCP echo tool to obtain fixture revised success, then create result-0.txt and result-1.txt, each containing exactly fixture revised success and a trailing newline, through independently verified WorkUnits.\n계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다.\"",
+        "goalTruncated": false,
+        "workers": [],
+        "evidenceCount": 0,
+        "candidateCount": 0,
+        "evidenceRefs": [],
+        "candidateRefs": [],
+        "referencesTruncated": false,
+        "repairCount": 0
+      }
+    },
+    "targets": [
+      false,
+      false
+    ]
+  },
+  "rejectedExecute": {
+    "stage": "after_rejected_execute",
+    "status": {
+      "sessionID": "ses_f80cc76ccffeqEJRLuGoNlq2Ip",
+      "workspace": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\workspace",
+      "runId": "run-3d13b2d4-ce48-4bad-862d-21c96c170417",
+      "goal": "Use the local MCP echo tool to obtain fixture revised success, then create result-0.txt and result-1.txt, each containing exactly fixture revised success and a trailing newline, through independently verified WorkUnits.\n계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다.",
+      "phase": "planning",
+      "workers": [],
+      "activeCount": 0,
+      "queuedCount": 0,
+      "verificationState": "open",
+      "contractStatus": "accepted",
+      "configuredProfile": "adaptive",
+      "effectiveProfile": "adaptive",
+      "assuranceLevel": "adaptive",
+      "missingEvidence": [],
+      "repairCount": 0,
+      "maxSameFailureRepairs": 2,
+      "evidenceCount": 0,
+      "candidateCount": 3,
+      "evidenceRefs": [],
+      "candidateRefs": [
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\fb3b2469a12a7482-49b8e10d\\artifacts\\d3\\d3a6f3d953eec0b169fb8abf262b72106f33dd96809bd44c4acb34618f0fb2fb.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\fb3b2469a12a7482-49b8e10d\\artifacts\\4a\\4ac9cd52772be5a70e63a331e1403426a7fb54d97682b0c0db95e9f2c105533d.json",
+        "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\fb3b2469a12a7482-49b8e10d\\artifacts\\53\\532491d4ae07a71a807ce10ed7909bba151c5f3d6771a9be55e29e4df1590017.json"
+      ],
+      "readyEligible": false,
+      "metrics": {
+        "observedActions": 3,
+        "workers": 0,
+        "activeWorkers": 0,
+        "repairs": 0,
+        "evidence": 0,
+        "sandboxRuns": 0
+      },
+      "domain": "develop",
+      "skills": [
+        "hackathon"
+      ],
+      "planningPreference": "auto",
+      "planningState": "plan_ready",
+      "planOnly": true,
+      "planningDecision": "planned",
+      "activePlanId": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+      "activePlanRevision": 1,
+      "goalContract": {
+        "revision": 1,
+        "hash": "8c529d3ceaa463a329ffdabdf28feb45869ec8b8281daeeef361d2c2c157665a",
+        "claims": [
+          {
+            "id": "claim-0",
+            "statement": "result-0.txt contains the requested content",
+            "required": true,
+            "criterionIds": [
+              "criterion-0"
+            ]
+          },
+          {
+            "id": "claim-1",
+            "statement": "result-1.txt contains the requested content",
+            "required": true,
+            "criterionIds": [
+              "criterion-1"
+            ]
+          }
+        ],
+        "criteria": [
+          {
+            "id": "criterion-0",
+            "statement": "result-0.txt has the exact requested content",
+            "required": true,
+            "risk": "low",
+            "claimIds": [
+              "claim-0"
+            ]
+          },
+          {
+            "id": "criterion-1",
+            "statement": "result-1.txt has the exact requested content",
+            "required": true,
+            "risk": "low",
+            "claimIds": [
+              "claim-1"
+            ]
+          }
+        ]
+      },
+      "plan": {
+        "id": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+        "revision": 1,
+        "assumptions": [],
+        "steps": [
+          {
+            "id": "unit-0",
+            "title": "Write result-0.txt",
+            "claimIds": [
+              "claim-0"
+            ],
+            "criterionIds": [
+              "criterion-0"
+            ],
+            "dependsOn": [],
+            "readSet": [
+              "result-0.txt"
+            ],
+            "writeSet": [
+              "result-0.txt"
+            ],
+            "priority": "demo_required"
+          },
+          {
+            "id": "unit-1",
+            "title": "Write result-1.txt",
+            "claimIds": [
+              "claim-1"
+            ],
+            "criterionIds": [
+              "criterion-1"
+            ],
+            "dependsOn": [],
+            "readSet": [
+              "result-1.txt"
+            ],
+            "writeSet": [
+              "result-1.txt"
+            ],
+            "priority": "required"
+          }
+        ]
+      },
+      "preflight": {
+        "version": 1,
+        "decision": "accept",
+        "reasons": [
+          "complex_contract"
+        ],
+        "affectedClaimIds": [],
+        "affectedCriterionIds": [],
+        "mutatingActionAllowed": true,
+        "candidateCount": 0,
+        "questionCount": 0,
+        "assumptionCount": 0,
+        "reviewerCallCount": 1,
+        "requiredDecisions": [],
+        "assumptions": []
+      },
+      "metaReview": {
+        "phase": "plan",
+        "outcome": "pass",
+        "issueCount": 0,
+        "blockingIssueCount": 0,
+        "issues": []
+      }
+    },
+    "targets": [
+      false,
+      false
+    ]
+  },
+  "observations": [
+    {
+      "at": 1788840618948,
+      "stage": "discard_observed",
+      "runId": "",
+      "planningState": "idle",
+      "activePlanId": null,
+      "readyEligible": false
+    },
+    {
+      "at": 1788840696584,
+      "stage": "new_plan_reviewed",
+      "runId": "run-3d13b2d4-ce48-4bad-862d-21c96c170417",
+      "planningState": "plan_ready",
+      "activePlanId": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+      "readyEligible": false
+    },
+    {
+      "at": 1788840806354,
+      "stage": "ready",
+      "runId": "run-29d2b59e-6cff-4494-b8c9-8584820aae80",
+      "planningState": "idle",
+      "activePlanId": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+      "readyEligible": true
+    }
+  ],
+  "finished": {
+    "sessionID": "ses_f80cc76ccffeqEJRLuGoNlq2Ip",
+    "workspace": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\workspace",
+    "runId": "run-29d2b59e-6cff-4494-b8c9-8584820aae80",
+    "goal": "Use the local MCP echo tool to obtain fixture revised success, then create result-0.txt and result-1.txt, each containing exactly fixture revised success and a trailing newline, through independently verified WorkUnits.\n계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다.",
+    "executionPlan": {
+      "planningRunId": "run-3d13b2d4-ce48-4bad-862d-21c96c170417",
+      "planId": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+      "planRevision": 1,
+      "goalContractHash": "8c529d3ceaa463a329ffdabdf28feb45869ec8b8281daeeef361d2c2c157665a"
+    },
+    "phase": "ready",
+    "workers": [
+      {
+        "workUnitId": "unit-0",
+        "title": "Write result-0.txt",
+        "state": "completed",
+        "repairCount": 0,
+        "scopeId": "ses_f80c79792ffezJ52AQZVJk0oum"
+      },
+      {
+        "workUnitId": "unit-1",
+        "title": "Write result-1.txt",
+        "state": "completed",
+        "repairCount": 0,
+        "scopeId": "ses_f80c7978bffeD16L7iU3oYLqys"
+      }
+    ],
+    "activeCount": 0,
+    "queuedCount": 0,
+    "outcome": "ready",
+    "verificationState": "ready",
+    "contractStatus": "accepted",
+    "configuredProfile": "adaptive",
+    "effectiveProfile": "adaptive",
+    "assuranceLevel": "adaptive",
+    "missingEvidence": [],
+    "repairCount": 0,
+    "maxSameFailureRepairs": 2,
+    "evidenceCount": 4,
+    "candidateCount": 7,
+    "evidenceRefs": [
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\46\\4670f6e0a0a79c9600fac3f628549d9f016623c3999c6686595a9ac5e18ac9cc.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\ef\\ef94ceeb86c117991a9aed0cd47697ffd48b2853f91776fb325560538f399159.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\be\\beae4cb6a9c42ff7a6cc2058dbb18405a88356ae64f55d4bf6ad3cfd2b58f1b3.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\af\\afb2b888cb2e7aca508466301ad95a150d8443c5b6fdb0cb7c627555119fee17.json"
+    ],
+    "candidateRefs": [
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\6d\\6db569420f8c4f1725c23fe2a0a0bbeaef6fe0f2b588bc2daec2241add90a95e.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\27\\277e956646b38e657383abc0fac6b9c1b27f108fb2728a850e01d401bc9f7f4d.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\9a\\9aad8e84544a779e71ffe3dc0f524fc22b028b0fa84a8be9d781c3fb01d0db0f.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\06\\0675eed410e14d9914fe3d4864010fe48175ecf3e6678d5c55435d6ed6c2534e.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\82\\823d3105cbb7b6b80c0d9ee7acb2ff460050c5e2d3c427f4980429ceec253b2a.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\64\\647f077289529b10ab2867e8e59d1dd6cafb40829ad727d57d6cf45e82c95b16.json",
+      "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\76\\7667f924145e2c4011f90af8286c2162604e71cc7ad96632cfb81af6ce675cd2.json"
+    ],
+    "readyEligible": true,
+    "metrics": {
+      "observedActions": 2,
+      "workers": 2,
+      "activeWorkers": 0,
+      "repairs": 0,
+      "evidence": 4,
+      "sandboxRuns": 0
+    },
+    "domain": "develop",
+    "skills": [
+      "hackathon"
+    ],
+    "planningPreference": "auto",
+    "planningState": "idle",
+    "planOnly": false,
+    "planningDecision": "planned",
+    "activePlanId": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+    "activePlanRevision": 1,
+    "goalContract": {
+      "revision": 1,
+      "hash": "8c529d3ceaa463a329ffdabdf28feb45869ec8b8281daeeef361d2c2c157665a",
+      "claims": [
+        {
+          "id": "claim-0",
+          "statement": "result-0.txt contains the requested content",
+          "required": true,
+          "criterionIds": [
+            "criterion-0"
+          ]
+        },
+        {
+          "id": "claim-1",
+          "statement": "result-1.txt contains the requested content",
+          "required": true,
+          "criterionIds": [
+            "criterion-1"
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "id": "criterion-0",
+          "statement": "result-0.txt has the exact requested content",
+          "required": true,
+          "risk": "low",
+          "claimIds": [
+            "claim-0"
+          ]
+        },
+        {
+          "id": "criterion-1",
+          "statement": "result-1.txt has the exact requested content",
+          "required": true,
+          "risk": "low",
+          "claimIds": [
+            "claim-1"
+          ]
+        }
+      ]
+    },
+    "plan": {
+      "id": "c84cb471-c34f-4db1-aa6f-8a0cf9793ed8",
+      "revision": 1,
+      "assumptions": [],
+      "steps": [
+        {
+          "id": "unit-0",
+          "title": "Write result-0.txt",
+          "claimIds": [
+            "claim-0"
+          ],
+          "criterionIds": [
+            "criterion-0"
+          ],
+          "dependsOn": [],
+          "readSet": [
+            "result-0.txt"
+          ],
+          "writeSet": [
+            "result-0.txt"
+          ],
+          "priority": "demo_required"
+        },
+        {
+          "id": "unit-1",
+          "title": "Write result-1.txt",
+          "claimIds": [
+            "claim-1"
+          ],
+          "criterionIds": [
+            "criterion-1"
+          ],
+          "dependsOn": [],
+          "readSet": [
+            "result-1.txt"
+          ],
+          "writeSet": [
+            "result-1.txt"
+          ],
+          "priority": "required"
+        }
+      ]
+    },
+    "preflight": {
+      "version": 1,
+      "decision": "accept",
+      "reasons": [
+        "complex_contract"
+      ],
+      "affectedClaimIds": [],
+      "affectedCriterionIds": [],
+      "mutatingActionAllowed": true,
+      "candidateCount": 0,
+      "questionCount": 0,
+      "assumptionCount": 0,
+      "reviewerCallCount": 1,
+      "requiredDecisions": [],
+      "assumptions": []
+    },
+    "metaReview": {
+      "phase": "plan",
+      "outcome": "pass",
+      "issueCount": 0,
+      "blockingIssueCount": 0,
+      "issues": []
+    }
+  },
+  "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-S9izor\\state\\base-harness\\runs\\51f416a4e1ca3687-72597ec8\\artifacts\\12\\1270a400b6324f7caf99584605f50e6a40b351be86681714b96976c4f58fb289.json",
+  "requestSelection": {
+    "afterDiscardCount": 11,
+    "models": [
+      "fixture-reasoner"
+    ],
+    "efforts": [
+      "max"
+    ],
+    "allAuthenticated": true,
+    "requests": [
+      {
+        "receivedAt": 1788840690659,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_contract",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840691131,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "max",
+        "reviewPhase": "goal_contract",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840693577,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "fixture_echo",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840694898,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_workgraph",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840695424,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "max",
+        "reviewPhase": "plan",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840697528,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840798860,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "write"
+        ],
+        "selected": "write",
+        "reasoningEffort": "max",
+        "workUnitId": "unit-0",
+        "rootIntegration": false,
+        "workerWriteAttempt": 1,
+        "injectedIncorrectContent": false
+      },
+      {
+        "receivedAt": 1788840799327,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "write"
+        ],
+        "selected": "write",
+        "reasoningEffort": "max",
+        "workUnitId": "unit-1",
+        "rootIntegration": false,
+        "workerWriteAttempt": 1,
+        "injectedIncorrectContent": false
+      },
+      {
+        "receivedAt": 1788840800648,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "write"
+        ],
+        "reasoningEffort": "max",
+        "workUnitId": "unit-1",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840801267,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "write"
+        ],
+        "reasoningEffort": "max",
+        "workUnitId": "unit-0",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788840804872,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "max",
+        "rootIntegration": true
+      }
+    ]
+  },
+  "timings": {
+    "coldPendingStatusMs": 123.58020000000397,
+    "emptyStatus": {
+      "count": 20,
+      "medianMs": 15.873650000001362,
+      "p95Ms": 29.17059999999765,
+      "minMs": 4.350699999995413,
+      "maxMs": 57.16609999999491
+    },
+    "pendingStatus": {
+      "count": 20,
+      "medianMs": 39.61410000000251,
+      "p95Ms": 53.23670000000129,
+      "minMs": 16.401700000002165,
+      "maxMs": 54.1140000000014
+    }
+  },
+  "cleanupFailures": [],
+  "selectedPtyFrames": {
+    "model-menu": {
+      "chunk_id": "67375f",
+      "wall_time_seconds": 1.0055468,
+      "session_id": 50878,
+      "original_token_count": 1053,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;255;255;255m\u001b[48;2;4;4;4m\u001b[H     \u001b[38;2;98;98;98mThe plan has been submitted to the Host. Follow its typed planning and     \u001b[38;2;255;255;255m     \u001b[38;2;98;98;98mverification status.                                                       \u001b[38;2;255;255;255m                                                                                     \u001b[38;2;38;64;101m▣  \u001b[38;2;98;98;98mBase Harness \u001b[38;2;53;53;53m· Fixture reasoner · 11.8s                                 \u001b[38;2;255;255;255m                                                                                  \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m                                                                           \u001b[K\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m  \u001b[38;2;98;98;98m\"Use \u001b[38;2;255;255;255m\u001b[48;2;20;20;20m                                                            \u001b[K\u001b[38;2;98;98;98m\u001b[48;2;8;8;8mhen     \u001b[38;2;255;255;255m\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m  \u001b[38;2;98;98;98mcreat\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m    \u001b[38;2;238;238;238m\u001b[1mSelect model\u001b[38;2;255;255;255m\u001b[22m                                     \u001b[K\u001b[38;2;128;128;128mesc    \u001b[38;2;98;98;98m\u001b[48;2;8;8;8mture    \u001b[38;2;255;255;255m\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m  \u001b[38;2;98;98;98mrevis\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m                                                            \u001b[K\u001b[38;2;98;98;98m\u001b[48;2;8;8;8mified   \u001b[38;2;255;255;255m\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m  \u001b[38;2;98;98;98mWorkU\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m    \u001b[38;2;128;128;128mSearch\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m\u001b[50C        \u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m       \u001b[48;2;20;20;20m\u001b[54X\u001b[48;2;8;8;8m\u001b[60C        \u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m       \u001b[38;2;157;124;216m\u001b[48;2;20;20;20m\u001b[1m\u001b[4CLocal fixture\u001b[38;2;255;255;255m\u001b[48;2;8;8;8m\u001b[22m\u001b[43C        \u001b[48;2;4;4;4m            \u001b[10X\u001b[48;2;20;20;20m \u001b[48;2;250;178;131m   \u001b[38;2;10;10;10m\u001b[1mFixture model\u001b[38;2;255;255;255m\u001b[22m                                          \u001b[K\u001b[48;2;20;20;20m \u001b[48;2;4;4;4m               \u001b[38;2;38;64;101m▣  \u001b[38;2;98;98;98mBa\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m    \u001b[38;2;238;238;238mFixture reasoner                                        \u001b[K\u001b[38;2;255;255;255m\u001b[48;2;4;4;4m                    \u001b[10X\u001b[48;2;20;20;20m                                                            \u001b[K\u001b[48;2;4;4;4m            \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;12;12;12m       \u001b[48;2;20;20;20m    \u001b[38;2;238;238;238mConnect provider \u001b[38;2;128;128;128mctrl+a  \u001b[38;2;238;238;238mFavorite \u001b[38;2;128;128;128mctrl+f                \u001b[K\u001b[38;2;255;255;255m\u001b[48;2;12;12;12m        \u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;12;12;12m       \u001b[48;2;20;20;20m                                                            \u001b[K\u001b[48;2;12;12;12m        \u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;12;12;12m                                                                           \u001b[K\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m┃\u001b[38;2;255;255;255m\u001b[48;2;12;12;12m  \u001b[38;2;38;64;101mBase Harness \u001b[38;2;53;53;53m· \u001b[38;2;98;98;98mFixture reasoner \u001b[38;2;53;53;53mLocal fixture · \u001b[38;2;101;69;27m\u001b[1mhigh\u001b[38;2;255;255;255m\u001b[22m                     \u001b[K\u001b[48;2;4;4;4m    \u001b[38;2;38;64;101m╹\u001b[38;2;12;12;12m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  \u001b[38;2;255;255;255m   \u001b[38;2;53;53;53mC:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host32 (0% \u001b[38;2;98;98;98mctrl+p        \u001b[38;2;255;255;255m   \u001b[38;2;53;53;53mS9izor\\workspace                                               commands      \u001b[38;2;255;255;255m                                                                                 \u001b[38;2;50;67;82mHARNESS develop + hackathon / /plan discard to recover / blocked               \u001b[24;96H\u001b[m\u001b[?2026h\u001b]12;#fab283\u0007\u001b[1 q\u001b[?2026l\u001b[10;15H\u001b[?25h"
+    },
+    "selected-reasoner": {
+      "chunk_id": "859332",
+      "wall_time_seconds": 1.0033796,
+      "session_id": 50878,
+      "original_token_count": 901,
+      "output": "\u001b[?2026h\u001b]12;#eeeeee\u0007\u001b[?2026l\u001b[?25l\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[H     \u001b[38;2;238;238;238mThe plan has been submitted to the Host. Follow its typed planning and     \u001b[38;2;255;255;255m     \u001b[38;2;238;238;238mverification status.                                                       \u001b[38;2;255;255;255m                                                                                     \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase Harness \u001b[38;2;128;128;128m· Fixture reasoner · 11.8s                                 \u001b[38;2;255;255;255m                                                                                  \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m                                                                           \u001b[K\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238m\"Use the local MCP echo tool to obtain fixture revised success, then     \u001b[38;2;255;255;255m\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238mcreate result-0.txt and result-1.txt, each containing exactly fixture    \u001b[38;2;255;255;255m\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238mrevised success and a trailing newline, through independently verified   \u001b[38;2;255;255;255m\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238mWorkUnits.     \u001b[38;2;255;255;255m\u001b[50C        \u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238m계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다.\"\u001b[38;2;255;255;255m\u001b[6C        \u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m       \u001b[4C\u001b[13X\u001b[56C        \u001b[48;2;10;10;10m                                                                                       \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase Harness \u001b[38;2;128;128;128m· Fixture reasoner                                         \u001b[38;2;255;255;255m                                                                                  \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m                                                                           \u001b[K\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m                                                                           \u001b[K\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m                                                                           \u001b[K\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m┃\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m  \u001b[38;2;92;156;245mBase Harness \u001b[38;2;128;128;128m· \u001b[38;2;238;238;238mFixture reasoner \u001b[38;2;128;128;128mLocal fixture · \u001b[38;2;245;167;66m\u001b[1mhigh\u001b[38;2;255;255;255m\u001b[22m                     \u001b[K\u001b[48;2;10;10;10m    \u001b[38;2;92;156;245m╹\u001b[38;2;30;30;30m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  \u001b[38;2;255;255;255m   \u001b[38;2;128;128;128mC:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host32 (0% \u001b[38;2;238;238;238mctrl+p        \u001b[38;2;255;255;255m   \u001b[38;2;128;128;128mS9izor\\workspace                                               commands      \u001b[38;2;255;255;255m                                                                                 \u001b[38;2;122;162;200mHARNESS develop + hackathon / /plan discard to recover / blocked               \u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "effort-change": {
+      "chunk_id": "229678",
+      "wall_time_seconds": 1.0125581,
+      "session_id": 50878,
+      "original_token_count": 138,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[3;19H\u001b[60X\u001b[38;2;238;238;238m\nss \u001b[38;2;128;128;128m· Fixture reasoner · 11.8s\u001b[31X\u001b[38;2;255;255;255m\u001b[5;19H\u001b[60X\u001b[48;2;20;20;20m\n \u001b[2C\u001b[52X\u001b[56C \u001b[38;2;238;238;238m\u001b[7;19Hl MCP echo\u001b[3Col to obtain fixture revised success, then \u001b[38;2;255;255;255m\u001b[3C \u001b[38;2;238;238;238m\u001b[8;19H-0.txt and result-1.txt, each containing exactly fixture \u001b[38;2;255;255;255m\u001b[2C \u001b[17;6H\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;245;167;66m\u001b[48;2;30;30;30m\u001b[1m\u001b[19;54Hmax\u001b[38;2;255;255;255m\u001b[22m \u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "plan-once": {
+      "chunk_id": "d57070",
+      "wall_time_seconds": 1.0054143,
+      "session_id": 50878,
+      "original_token_count": 309,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[10;3H┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238mWorkUnits.\u001b[63X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[11;3H┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m  \u001b[38;2;238;238;238m계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다.\"\u001b[14X\u001b[38;2;92;156;245m\u001b[48;2;10;10;10m\u001b[12;3H┃\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m\u001b[75X\u001b[48;2;10;10;10m\u001b[13;3H\u001b[76X\n   \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase Harness \u001b[38;2;128;128;128m· Fixture reasoner\u001b[39X\u001b[38;2;255;255;255m\u001b[15;3H\u001b[76X\u001b[48;2;30;30;30m\u001b[17;6H     \u001b[17;6H\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;127;216;143m\u001b[48;2;20;20;20m\u001b[3;19H┃                                                          ┃\u001b[4;19H┃  \u001b[38;2;238;238;238m\u001b[1mPlan-only enabled\u001b[38;2;255;255;255m\u001b[22m\u001b[39X\u001b[38;2;127;216;143m\u001b[39C┃\u001b[5;19H┃                                                          ┃\u001b[6;19H┃\u001b[38;2;238;238;238m\u001b[2CThe next request will stop at a reviewed plan. Use /\u001b[38;2;127;216;143m\u001b[4C┃\u001b[7;19H┃  \u001b[38;2;238;238;238mexecute\u001b[3C run it.\u001b[35X\u001b[38;2;127;216;143m\u001b[38C┃\u001b[8;19H┃\u001b[56X\u001b[58C┃\u001b[38;2;122;162;200m\u001b[48;2;10;10;10m\u001b[24;29H / next: plan-only / history_interrupted\u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "plan-overlay": {
+      "chunk_id": "9cdc45",
+      "wall_time_seconds": 1.0031251,
+      "session_id": 50878,
+      "original_token_count": 869,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[2;15H╭──────────────────────────────────────────────────────────────╮\u001b[3;15H│ VERIFIED STATE PLAN_READY                                    │\u001b[4;15H│ \u001b[38;2;230;181;102mPlan reviewed. Use /execute to start; no Ready has been    \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[5;15H│ \u001b[38;2;230;181;102missued.\u001b[52X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[52C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[6;15H│ \u001b[38;2;168;179;199mGoal\u001b[55X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[55C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[7;15H│ \u001b[38;2;255;255;255mUse the local MCP echo tool to obtain fixture revised      \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[8;15H│ \u001b[38;2;255;255;255msuccess, then create result-0.txt and result-1.txt, each   \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[9;15H│ \u001b[38;2;255;255;255mcontaining exactly fixture revised success and a trailing  \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[10;15H│ \u001b[38;2;255;255;255mnewline, through independently verified WorkUnits.\u001b[9X\u001b[48;2;37;37;39m\u001b[9C \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[11;15H│ \u001b[38;2;255;255;255m계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다. \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[12;15H│ \u001b[38;2;168;179;199mDomain develop + hackathon\u001b[33X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[33C \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[13;15H│ \u001b[38;2;168;179;199mPlanning plan_ready / c84cb471-c34f-4db1-aa6f-8a0cf9793ed8@\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[14;3H   \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase H\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m│\u001b[60X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[60C \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[15;3H\u001b[12X\u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[12C│ \u001b[38;2;168;179;199mPreflight accept / questions 0 / assumptions 0 / reviews 1 \u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[16;15H│ \u001b[38;2;168;179;199mWorkers 0 active / 0 queued / 0 total\u001b[22X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[22C \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[17;6H        \u001b[38;2;122;162;200m\u001b[48;2;20;20;20m\u001b[1C│ \u001b[38;2;168;179;199mGoalContract r1 / 2 claims / 2 criteria\u001b[20X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[20C \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[18;15H│ \u001b[38;2;255;255;255m* claim-0: result-0.txt contains the requested content     \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[19;15H│ \u001b[38;2;255;255;255m* claim-1: result-1.txt contains the requested content     \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[20;15H│ \u001b[38;2;168;179;199mPlan c84cb471-c34f-4db1-aa6f-8a0cf9793ed8@1 / 2 steps      \u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;122;162;200m│\u001b[21;15H│ \u001b[38;2;119;131;153mPgUp/PgDn scroll | /harness close\u001b[28X\u001b[38;2;122;162;200m\u001b[28C│\u001b[22;15H╰──────────────────────────────────────────────────────────────╯\u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "bad-execute-enter": {
+      "chunk_id": "365e7e",
+      "wall_time_seconds": 1.0040628,
+      "session_id": 50878,
+      "original_token_count": 196,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[17;6H\u001b[21X\u001b[?25h\u001b[m\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;224;108;117m\u001b[48;2;20;20;20m\u001b[3;19H┃                                                          ┃\u001b[4;19H┃  \u001b[38;2;238;238;238m\u001b[1mKernel control rejected\u001b[38;2;255;255;255m\u001b[22m\u001b[33X\u001b[38;2;224;108;117m\u001b[33C┃\u001b[5;19H┃                                                          ┃\u001b[6;19H┃  \u001b[38;2;238;238;238m[PLAN_ID_MISMATCH | HTTP 400] The requested plan ID     \u001b[38;2;224;108;117m┃\u001b[7;19H┃  \u001b[38;2;238;238;238mdoes not match the reviewed plan. Use /harness to       \u001b[38;2;224;108;117m┃\u001b[8;19H┃  \u001b[38;2;238;238;238minspect the active plan.\u001b[32X\u001b[38;2;224;108;117m\u001b[32C┃\u001b[9;19H┃                                                          ┃\u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "ready-harness-enter": {
+      "chunk_id": "ea9fcb",
+      "wall_time_seconds": 1.0008998,
+      "session_id": 50878,
+      "original_token_count": 906,
+      "output": "\u001b[?2026h\u001b[?2026l\u001b[?25l\u001b[38;2;120;192;145m\u001b[48;2;20;20;20m\u001b[2;15H╭──────────────────────────────────────────────────────────────╮\u001b[3;15H│ VERIFIED STATE READY (adaptive)                              │\u001b[4;15H│ \u001b[38;2;168;179;199mGoal\u001b[55X\u001b[38;2;154;158;163m\u001b[48;2;37;37;39m\u001b[55C█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[5;15H│ \u001b[38;2;255;255;255mUse the local MCP echo tool to obtain fixture revised      \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[6;15H│ \u001b[38;2;255;255;255msuccess, then create result-0.txt and result-1.txt, each   \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[7;15H│ \u001b[38;2;255;255;255mcontaining exactly fixture revised success and a trailing  \u001b[38;2;154;158;163m\u001b[48;2;37;37;39m█\u001b[38;2;255;255;255m\u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[8;15H│ \u001b[38;2;255;255;255mnewline, through independently verified WorkUnits.\u001b[9X\u001b[48;2;37;37;39m\u001b[9C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[9;15H│ \u001b[38;2;255;255;255m계획 수정 중단 후 안전한 폐기와 새 계획 실행을 확인합니다. \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[10;15H│ \u001b[38;2;168;179;199mDomain develop + hackathon\u001b[33X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[33C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[11;15H│ \u001b[38;2;168;179;199mPlanning idle / c84cb471-c34f-4db1-aa6f-8a0cf9793ed8@1     \u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[12;15H│ \u001b[38;2;168;179;199mPreflight accept / questions 0 / assumptions 0 / reviews 1 \u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[13;15H│ \u001b[38;2;168;179;199mWorkers 0 active / 0 queued / 2 total\u001b[22X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[22C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[14;3H   \u001b[38;2;92;156;245m▣  \u001b[38;2;238;238;238mBase H\u001b[38;2;120;192;145m\u001b[48;2;20;20;20m│ \u001b[38;2;119;131;153m- unit-0 [completed] r0 Write result-0.txt\u001b[17X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[17C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m\u001b[15;3H\u001b[12X\u001b[38;2;120;192;145m\u001b[48;2;20;20;20m\u001b[12C│ \u001b[38;2;119;131;153m- unit-1 [completed] r0 Write result-1.txt\u001b[17X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[17C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[16;15H│ \u001b[38;2;168;179;199mGoalContract r1 / 2 claims / 2 criteria\u001b[20X\u001b[38;2;255;255;255m\u001b[48;2;37;37;39m\u001b[20C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[38;2;255;255;255m\u001b[48;2;30;30;30m\u001b[17;6H        \u001b[38;2;120;192;145m\u001b[48;2;20;20;20m\u001b[1C│ \u001b[38;2;255;255;255m* claim-0: result-0.txt contains the requested content     \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[18;15H│ \u001b[38;2;255;255;255m* claim-1: result-1.txt contains the requested content     \u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[19;15H│ \u001b[38;2;168;179;199mPlan c84cb471-c34f-4db1-aa6f-8a0cf9793ed8@1 / 2 steps      \u001b[38;2;255;255;255m\u001b[48;2;37;37;39m \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[20;15H│ \u001b[38;2;255;255;255m- unit-0 [demo_required] Write result-0.txt\u001b[16X\u001b[48;2;37;37;39m\u001b[16C \u001b[48;2;20;20;20m \u001b[38;2;120;192;145m│\u001b[21;15H│ \u001b[38;2;119;131;153mPgUp/PgDn scroll | /harness close\u001b[28X\u001b[38;2;120;192;145m\u001b[28C│\u001b[22;15H╰──────────────────────────────────────────────────────────────╯\u001b[17;6H\u001b[?25h\u001b[m"
+    },
+    "exit-first": {
+      "chunk_id": "8b0dc9",
+      "wall_time_seconds": 0.1783762,
+      "exit_code": 0,
+      "original_token_count": 191,
+      "output": "\u001b]0;\u0007\u001b]22;\u0007\u001b[>4;0m\u001b[?2004l\u001b[?1049l\u001b[?2031l\u001b]0;\u0007\u001b[0 q\u001b[?25l\u001b[H\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[H\u001b[?25h\u001b[?25l\u001b[42X\r\n  \u001b[90m╔╗ ╔═╗╔═╗╔═    \u001b[m╦ ╦╔═╗╦═╗╔╗╔╔═╗╔═╗╔═╗\r\n  \u001b[90m╠╩╗╠═╣╚═╗╠═    \u001b[m╠═╣╠═╣╠╦╝║║║║╣ ╚═╗╚═╗\r\n  \u001b[90m╚═╝╩ ╩╚═╝╚═    \u001b[m╩ ╩╩ ╩╩╚═╝╚╝╚═╝╚═╝╚═╝\u001b[6;1H  \u001b[90mSession   \u001b[m\u001b[1mFixture task\u001b[22m\r\n  \u001b[90mContinue  \u001b[m\u001b[1mbase-harness -s ses_f80cc76ccffeqEJRLuGoNlq2Ip\u001b[9;1H\u001b[?25h\u001b[22m\u001b]0;C:\\Users\\doo33\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe\u0007"
+    }
+  },
+  "knownUnresolvedTypeError": {
+    "file": "runtime/packages/base-harness/test/auth/store-loading.test.ts",
+    "line": 16,
+    "code": "TS2352",
+    "cause": "Partial filesystem mock directly asserted to FSUtil.Interface; required members are absent.",
+    "requiresUserDecision": true
+  },
+  "overallPromotionReady": false,
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

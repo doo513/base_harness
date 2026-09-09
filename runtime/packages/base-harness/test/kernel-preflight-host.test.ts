@@ -40,7 +40,7 @@ function harness() {
     openRun: async () => ({ runId: "run-1", configuredProfile: "adaptive" }),
     proposeContract: async (_sessionID: string, proposal: unknown) => {
       proposed.push(proposal)
-      return { runId: "run-1", configuredProfile: "adaptive" }
+      return { runId: "run-1", configuredProfile: "adaptive", contractStatus: "accepted" }
     },
     acceptWorkGraph: async () => ({}),
     status: () => ({ runId: "run-1", configuredProfile: "adaptive" }),

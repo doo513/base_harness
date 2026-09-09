@@ -1,132 +1,81 @@
-# Base Harness V2
+# Base Harness
 
-Base Harness V2 uses a TypeScript execution host and an independent, fail-closed Python verifier. Models may plan and act, but only Core V2 may promote Evidence or Ready.
+An independent verification-first harness, using its own Kernel and Coordinator
+with a bundled, source-derived execution Host and TUI.
 
-## Product boundary
-
-| Component | Responsibility |
-| --- | --- |
-| TypeScript host | TUI, sessions, model gateway, local LLM, MCP, plugins, tools, subagents |
-| LLM Actor | Plans, tool requests, GoalContract proposals, evidence candidates |
-| Python Core V2 | Claim validation, evidence acceptance, repair/block decisions, final Ready |
-
-The Python V1 runtime, Python TUI/CLI, and `harness.toml` are not part of V2.
-
-## Commands
+## Architecture
 
 ```text
-base-harness [workspace]       Start the full TUI host
-base-harness run <prompt>      Run a headless task
-base-harness models            List models
-base-harness providers         Manage provider credentials
-base-harness mcp               Manage MCP connections
+TUI / headless CLI
+    -> Host API
+    -> KernelHost: domain, contract preflight, planning, questions
+    -> Coordinator: runs, scopes, workers, repair, completion
+    -> execution adapters: model gateway, files, shell, MCP
+    -> Candidate / Overlay
+    -> independent Python verifier (wire protocol v4)
+    -> verified commit / scoped repair / root Ready
 ```
 
-`base-harness-verifier` is an internal sidecar. Users start `base-harness`.
+The Host owns authentication, provider invocation, tool execution and verification.
+The TUI requests actions and renders the same Host status as headless execution.
+A model response, plan review or successful tool exit is not itself Ready.
+Claim-specific predicates are retained when proposals reach the verifier.
 
-## Runtime flow
+The former minimal `runtime/src` experiment is archived under
+`runtime/experiments/minimal-v3`. It is not an alternate product runtime.
 
-```text
-User
-  -> TypeScript TUI or headless host
-  -> GoalContract gate
-  -> model, MCP, plugin, tool, and subagent execution
-  -> protocol V2 candidate observations
-  -> independent Python verifier
-  -> ready | repair | blocked | failure
-```
+## Source execution
 
-Protocol envelopes use `{version, id, runId, scopeId, type, payload}` with `version: 2`. Malformed NDJSON, version mismatch, verifier termination, and verifier inconsistency are fail-closed.
+Use Bun **1.3.14** and Python **3.11 or newer**. Do not use a virtual environment
+whose base Python interpreter has been removed.
 
-## Development setup
-
-Requirements are Bun `1.3.14`, Python `3.11+`, and Git.
+Install the verifier into a dedicated environment from the repository root:
 
 ```powershell
-git clone https://github.com/doo513/base_harness.git
-cd base_harness
-git checkout develop
-python -m pip install -e .
+py -3.12 -m venv .tools/verifier
+.tools/verifier/Scripts/python.exe -m pip install -e .
 cd runtime
-bun install --frozen-lockfile
-bun run dev -- ..
+bun install
+bun run dev
 ```
 
-Release ZIPs bundle both executables, so users do not need Bun, Python, OpenCode, or Gajae-Code on `PATH`.
+The launcher automatically uses `.tools/bun-1.3.14/bun.exe` and
+`.tools/verifier/Scripts/python.exe` when present. On Linux it uses their
+`bun` and `bin/python` equivalents. `BASE_HARNESS_PYTHON` may explicitly
+select another valid verifier interpreter.
 
-## Configuration
-
-V2 reads only `base-harness.jsonc`.
-
-| Scope | Path |
-| --- | --- |
-| Project | `<workspace>/base-harness.jsonc` |
-| Windows user | `%APPDATA%\base-harness\base-harness.jsonc` |
-| Linux user | `$XDG_CONFIG_HOME/base-harness/base-harness.jsonc` or `~/.config/base-harness/base-harness.jsonc` |
-
-There is no `harness.toml` fallback or automatic migration. Start from [`base-harness.example.jsonc`](base-harness.example.jsonc).
-
-```jsonc
-{
-  "$schema": "https://base-harness.local/config.json",
-  "model": "openai/your-model",
-  "verification": {
-    "mode": "adaptive",
-    "auto": true,
-    "maxSameFailureRepairs": 2
-  },
-  "provider": {
-    "openai": {
-      "options": { "apiKey": "{env:OPENAI_API_KEY}" }
-    }
-  },
-  "mcp": {}
-}
-```
-
-| Verification setting | Implemented behavior |
-| --- | --- |
-| `mode: "adaptive"` | Verify after a tool-producing root session becomes idle |
-| `mode: "manual"` | Disable idle verification and use `/verify` |
-| `auto` | Enable or disable adaptive idle verification |
-| `maxSameFailureRepairs` | Limit repair attempts for one failure fingerprint |
-
-Unsupported verification settings are rejected by the schema rather than silently ignored.
-
-## TUI controls
-
-```text
-/goal       Show the root GoalContract
-/verify     Request independent verification
-/evidence   Show evidence and candidate counts
-/harness    Toggle the verification panel or overlay
-```
-
-Wide terminals use the sidebar panel and narrow terminals use the overlay. Subagents have separate scopes; only the root GoalContract can receive final Ready.
-
-## Storage
-
-| Data | Windows | Linux |
-| --- | --- | --- |
-| Runtime state and verifier artifacts | `%LOCALAPPDATA%\base-harness` | `$XDG_STATE_HOME/base-harness` or `~/.local/state/base-harness` |
-| User configuration | `%APPDATA%\base-harness` | `$XDG_CONFIG_HOME/base-harness` or `~/.config/base-harness` |
-
-Credentials remain in the TypeScript host. The verifier receives redacted metadata, artifact paths, and hashes.
-
-## Build and release
+Headless execution uses the same Host:
 
 ```powershell
-cd runtime
-bun run build:release windows-x64
-cd ..
-python runtime/script/package-release.py --target windows-x64 --repo .
+bun run dev -- run "Describe the requested task here"
+bun run dev -- --help
 ```
 
-Use `linux-x64` and `python3` for Linux.
+Use `base-harness.jsonc` for Host configuration. The repository example contains
+verification, orchestration and domain defaults but no credentials or assumed
+model IDs. The retired experiment's plural `providers` configuration is not
+the Host's configuration format.
 
-## Current documentation
+## Interaction and authority
 
-- [Verification V2 implementation and meta audit](docs/verification-v2/IMPLEMENTATION_AND_META_AUDIT.md)
-- [V2-only migration](docs/verification-v2/V2_ONLY_MIGRATION.md)
+- Model selection, authentication and MCP management use the bundled TUI and Host.
+- Domain controls include `/develop`, `/general` and `/hackathon`.
+- `/plan` prepares one plan-only request; execution requires `/execute`.
+- `/goal`, `/verify`, `/evidence` and `/harness` expose Host-owned state.
+- Provider reasoning options belong to the selected provider/model capability;
+  the Kernel must not guess effort names.
+- Worker changes stay in Overlay until the verifier attests the same candidate
+  ID, revision and patch hash, and all base hashes still match.
+- A verifier, protocol or isolation failure must not produce Ready.
 
-Historical audit, track, and evidence files are provenance only and do not define the current runtime.
+## Provenance and current validation
+
+Execution and TUI code retain their source provenance and license notices.
+Hermes is an architectural reference, not a bundled dependency or a claimed
+source transplant. OpenCode and Gajae-Code executables are not required to run
+the bundled Host. Optional external execution adapters still require their own
+installed programs when explicitly selected.
+
+Restoration is in progress. Source presence is not proof of working OAuth,
+live provider access, MCP connectivity or Windows/Linux sandbox containment.
+See `docs/RUNTIME_HOST_RESTORATION_2026-09-05.md` for changes and remaining gates.

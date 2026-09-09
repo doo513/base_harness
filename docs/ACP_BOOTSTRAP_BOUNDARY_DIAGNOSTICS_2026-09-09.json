@@ -1,0 +1,147 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "typecheckExitCode": 0,
+  "tests": {
+    "pass": 8,
+    "fail": 0,
+    "assertions": 22,
+    "seconds": 1.129
+  },
+  "probeExitCode": 0,
+  "records": [
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "initialized": true,
+      "modelCalls": 0,
+      "resources": {
+        "atSpawn": {
+          "parentRssBytes": 104038400,
+          "parentHeapUsedBytes": 10122629,
+          "systemFreeBytes": 5790302208,
+          "systemTotalBytes": 16440479744
+        },
+        "atObservation": {
+          "parentRssBytes": 103161856,
+          "parentHeapUsedBytes": 16629072,
+          "systemFreeBytes": 5272674304,
+          "systemTotalBytes": 16440479744
+        }
+      }
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "startup": [
+        {
+          "stage": "cli.modules_ready",
+          "processUptimeMs": 446
+        },
+        {
+          "stage": "cli.input_ready",
+          "processUptimeMs": 587
+        },
+        {
+          "stage": "acp.config_import_start",
+          "processUptimeMs": 588
+        },
+        {
+          "stage": "acp.config_import_ready",
+          "processUptimeMs": 1387
+        },
+        {
+          "stage": "acp.runtime_imports_start",
+          "processUptimeMs": 1387
+        },
+        {
+          "stage": "acp.runtime_imports_ready",
+          "processUptimeMs": 1393
+        },
+        {
+          "stage": "acp.services_start",
+          "processUptimeMs": 1393
+        },
+        {
+          "stage": "acp.services_ready",
+          "processUptimeMs": 1505
+        },
+        {
+          "stage": "acp.server_import_start",
+          "processUptimeMs": 1505
+        },
+        {
+          "stage": "acp.server_import_ready",
+          "processUptimeMs": 3701
+        },
+        {
+          "stage": "acp.agent_import_start",
+          "processUptimeMs": 3701
+        },
+        {
+          "stage": "acp.agent_import_ready",
+          "processUptimeMs": 3753
+        },
+        {
+          "stage": "acp.config_read_start",
+          "processUptimeMs": 3753
+        },
+        {
+          "stage": "acp.config_read_ready",
+          "processUptimeMs": 3766
+        },
+        {
+          "stage": "acp.listen_start",
+          "processUptimeMs": 3767
+        },
+        {
+          "stage": "acp.listen_ready",
+          "processUptimeMs": 4300
+        },
+        {
+          "stage": "acp.connection_ready",
+          "processUptimeMs": 4307
+        }
+      ],
+      "childStopped": true
+    }
+  ],
+  "observedSpans": {
+    "configImportMs": 799,
+    "runtimeImportsMs": 6,
+    "commandServicesMs": 112,
+    "serverImportMs": 2196,
+    "agentImportMs": 52,
+    "configReadMs": 13,
+    "listenMs": 533
+  },
+  "fullSuiteTimeoutResolved": false,
+  "log": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\acp-bootstrap-stages-1788917199008.log",
+  "followups": [
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "kind": "session_workload_before_acp",
+      "command": "$env:BASE_HARNESS_TRACE_TEST_PHASES='1'; $env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_REQUIRE_SYMLINK_TESTS='0'; $env:BASE_HARNESS_PYTHON='C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\verifier\\Scripts\\python.exe'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 30000 --only-failures test/session test/cli/acp/config-options.test.ts 2>&1 | Tee-Object -FilePath 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\session-before-acp-1788917316169.log'; exit $LASTEXITCODE",
+      "log": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\session-before-acp-1788917316169.log",
+      "exitCode": 0,
+      "tests": {
+        "pass": 404,
+        "skip": 20,
+        "todo": 1,
+        "fail": 0,
+        "assertions": 1125,
+        "total": 425,
+        "files": 19,
+        "seconds": 218.13
+      },
+      "acpTimeoutReproduced": false,
+      "interpretation": "This selected session workload did not reproduce the full-suite ACP timeout; full-suite failure remains unresolved.",
+      "sourceChanged": false
+    }
+  ]
+}

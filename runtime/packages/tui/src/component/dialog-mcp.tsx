@@ -1,3 +1,4 @@
+import { useToast } from "../ui/toast"
 import { createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
@@ -19,6 +20,7 @@ function Status(props: { enabled: boolean; loading: boolean }) {
 }
 
 export function DialogMcp() {
+  const toast = useToast()
   const local = useLocal()
   const sync = useSync()
   const sdk = useSDK()
@@ -60,10 +62,13 @@ export function DialogMcp() {
           if (status.data) {
             sync.set("mcp", status.data)
           } else {
-            console.error("Failed to refresh MCP status: no data returned")
+            throw new Error("The Host did not return an MCP status")
           }
         } catch (error) {
-          console.error("Failed to toggle MCP:", error)
+          toast.show({
+            variant: "error",
+            message: error instanceof Error ? error.message : "The Host could not update the MCP connection",
+          })
         } finally {
           setLoading(null)
         }

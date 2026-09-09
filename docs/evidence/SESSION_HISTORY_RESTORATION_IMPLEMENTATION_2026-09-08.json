@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "diagnostic-report-v1",
+  "diagnosticOnly": true,
+  "authority": "Not Harness Evidence, Ready, or independent user validation",
+  "date": "2026-09-08",
+  "repo": "C:\\Users\\doo33\\Downloads\\base_harness",
+  "goalTurnClassification": "progress",
+  "filesChanged": [
+    "runtime/packages/kernel-host/src/session-state-store.ts",
+    "runtime/packages/kernel-host/src/index.ts",
+    "runtime/packages/coordinator/src/index.ts",
+    "runtime/packages/base-harness/src/harness/coordinator-service.ts",
+    "runtime/packages/base-harness/src/server/routes/instance/httpapi/handlers/session.ts",
+    "runtime/packages/base-harness/src/server/routes/instance/httpapi/handlers/session-errors.ts",
+    "runtime/packages/tui/src/feature-plugins/verification.tsx",
+    "runtime/packages/tui/src/harness/status-presentation.ts",
+    "runtime/packages/kernel-host/test/session-history.test.ts",
+    "runtime/packages/coordinator/test/status-checkpoint.test.ts",
+    "runtime/packages/tui/test/harness-history-presentation.test.ts"
+  ],
+  "gates": {
+    "pass": 81,
+    "fail": 0,
+    "scope": "Six selected test files; not the full suite",
+    "typechecks": [
+      "kernel-host",
+      "coordinator",
+      "host",
+      "tui"
+    ],
+    "exitCode": 0,
+    "output": "GATE_START kernel-host history and recovery tests\r\nbun test v1.3.14 (0d9b296a)\r\n\r\ntest\\session-history.test.ts:\r\n(pass) domain, skill and plan-once controls survive a cold Host without opening any run [104.14ms]\r\n(pass) cold history is read-only, never current authority: ready [60.95ms]\r\n(pass) cold history is read-only, never current authority: blocked [59.38ms]\r\n(pass) cold history is read-only, never current authority: failure [54.05ms]\r\n(pass) cold history is read-only, never current authority: interrupted [52.39ms]\r\n(pass) cold history is read-only, never current authority: worker_running [46.73ms]\r\n(pass) cold history is read-only, never current authority: direct [48.54ms]\r\n(pass) a new request keeps the saved domain but starts a new run, without old history authority [50.01ms]\r\n(pass) signed identity cannot be loaded into another workspace [40.82ms]\r\n(pass) tampering cannot promote selection or saved history [39.85ms]\r\n(pass) missing signing key does not become an empty/default session [47.89ms]\r\n(pass) Host state cannot be stored inside an actor workspace [4.74ms]\r\n(pass) redaction affects persisted history but cannot silently alter a selection [43.21ms]\r\n(pass) failed atomic replacement keeps the previous signed selection [39.01ms]\r\n(pass) concurrent controls serialize instead of losing a previously selected skill [54.44ms]\r\n\r\ntest\\restoration-gates.test.ts:\r\n(pass) accepted atomic contract reaches direct execution without a WorkGraph [2.87ms]\r\n(pass) rejected contract never opens direct execution or mutation [0.52ms]\r\n(pass) plan-only accepted contract cannot reach direct execution [0.65ms]\r\n(pass) missing interpretation is not silently treated as no uncertainty [0.58ms]\r\n(pass) an accepted contract cannot authorize a terminal run: {\"phase\":\"blocked\"} [0.83ms]\r\n(pass) an accepted contract cannot authorize a terminal run: {\"phase\":\"interrupted\"} [0.37ms]\r\n(pass) an accepted contract cannot authorize a terminal run: {\"phase\":\"failure\"} [0.22ms]\r\n(pass) an accepted contract cannot authorize a terminal run: {\"outcome\":\"failure\"} [0.17ms]\r\n\r\ntest\\reviewed-plan-recovery.test.ts:\r\n(pass) a fresh Host restores a reviewed plan without reviving execution or rerunning reviews [99.50ms]\r\n(pass) opaque context, provider options and credentials never enter the saved recipe [50.43ms]\r\n(pass) a changed basis or a different workspace cannot open an execution run [78.14ms]\r\n(pass) tampering with the canonical plan is not accepted as a reviewed revision [78.48ms]\r\n(pass) a replacement recipe cannot forge review provenance by keeping its old signature [84.13ms]\r\n(pass) only one process may consume a plan revision, and interruption cannot silently replay it [92.87ms]\r\n(pass) discarded plans and plans invalidated by a domain change stay unavailable after restart [127.03ms]\r\n(pass) a persistence redactor cannot silently change the reviewed contract [52.13ms]\r\n(pass) readStatus hydrates a cold pending plan without starting or publishing execution [71.63ms]\r\n(pass) an absent plan pointer is read-only and does not create a store [76.46ms]\r\n(pass) cold status rejects another workspace without starting a run [66.65ms]\r\n(pass) missing or corrupt referenced recipes cannot silently become ordinary direct work [128.20ms]\r\n(pass) executed and discarded plans are not displayed as pending after restart [150.45ms]\r\n(pass) pending revision status is read-only and requires explicit discard before another request [143.38ms]\r\n(pass) an ordinary atomic revision stays plan-only before the WorkGraph even without plan_once [135.33ms]\r\n(pass) cold domain controls invalidate the persisted plan rather than ignoring it [86.01ms]\r\n(pass) a discarded revision cannot be published later by its previous owner [141.34ms]\r\n(pass) publication and discard have exactly one durable winner [101.70ms]\r\n(pass) a signed publication recovers even when the latest-head cache was not updated [139.68ms]\r\n(pass) a cold pending preview refreshes to the published revision without executing it [121.68ms]\r\n(pass) legacy interrupted revision markers can be discarded but not resumed as execution [115.78ms]\r\n(pass) revision ownership and signed resolution integrity are both required [121.79ms]\r\n(pass) discarding a live reviewed plan closes its run and the next plan has fresh identity [109.14ms]\r\n(pass) a Windows head-cache rename retry preserves bytes until the signed revision is published [114.55ms]\r\n(pass) a permanently locked head cache remains intact and the signed revision remains recoverable [143.10ms]\r\n(pass) a failed canonical write cannot publish or execute an incomplete revision [154.75ms]\r\n(pass) an invalidated snapshot writer cannot be treated as a published plan [99.90ms]\r\n\r\n 50 pass\r\n 0 fail\r\n 280 expect() calls\r\nRan 50 tests across 3 files. [3.82s]\r\nGATE_END kernel-host history and recovery tests exit=0\r\nGATE_START coordinator checkpoint tests\r\nbun test v1.3.14 (0d9b296a)\r\n\r\ntest\\status-checkpoint.test.ts:\r\n(pass) initial status is not published before the durable Host checkpoint settles [31.93ms]\r\n(pass) checkpoint failure is latched as a Host failure, not a repairable implementation result [23.00ms]\r\n(pass) synthetic Ready publication waits for checkpoint and cannot escape a failed sink [32.82ms]\r\n\r\n 3 pass\r\n 0 fail\r\n 14 expect() calls\r\nRan 3 tests across 1 file. [198.00ms]\r\nGATE_END coordinator checkpoint tests exit=0\r\nGATE_START TUI history and lifecycle tests\r\nbun test v1.3.14 (0d9b296a)\r\n\r\ntest\\harness-history-presentation.test.ts:\r\n(pass) past ready is visibly historical and never current Ready [0.22ms]\r\n(pass) past blocked is visibly historical and never current Ready [0.02ms]\r\n(pass) past failure is visibly historical and never current Ready\r\n(pass) past interrupted is visibly historical and never current Ready\r\n(pass) past plan_ready is visibly historical and never current Ready\r\n(pass) active planning and current terminal failures take precedence over stale presentation metadata [0.06ms]\r\n\r\ntest\\harness-status-presentation.test.ts:\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: contract_building [0.08ms]\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: contract_preflight\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: contract_reviewing\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: awaiting_input\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: planning_decision\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: plan_building\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: plan_reviewing\r\n(pass) the footer exposes Kernel state instead of a stale direct phase: plan_ready\r\n(pass) reviewed plans cannot be presented as verified completion [0.05ms]\r\n(pass) execution uses the Coordinator phase: worker_running [0.03ms]\r\n(pass) execution uses the Coordinator phase: integration\r\n(pass) execution uses the Coordinator phase: root_verifying\r\n(pass) execution uses the Coordinator phase: ready\r\n(pass) terminal failures remain visible even with unfinished Kernel planning state [0.14ms]\r\n(pass) plan execution details follow the Host phase: worker_running [0.14ms]\r\n(pass) plan execution details follow the Host phase: integration [0.03ms]\r\n(pass) plan execution details follow the Host phase: root_verifying\r\n(pass) plan execution details follow the Host phase: ready\r\n(pass) plan execution details follow the Host phase: blocked\r\n(pass) plan execution details follow the Host phase: interrupted [0.03ms]\r\n(pass) plan execution details follow the Host phase: failure [0.02ms]\r\n(pass) lifecycle labels never turn a reviewed plan into execution or Ready [0.10ms]\r\n\r\n 28 pass\r\n 0 fail\r\n 52 expect() calls\r\nRan 28 tests across 2 files. [1152.00ms]\r\nGATE_END TUI history and lifecycle tests exit=0\r\nGATE_START kernel-host typecheck\r\n$ tsc --noEmit\r\nGATE_END kernel-host typecheck exit=0\r\nGATE_START coordinator typecheck\r\n$ tsc --noEmit\r\nGATE_END coordinator typecheck exit=0\r\nGATE_START host typecheck\r\n$ tsgo --noEmit\r\nGATE_END host typecheck exit=0\r\nGATE_START TUI typecheck\r\n$ tsgo --noEmit\r\nGATE_END TUI typecheck exit=0\r\n",
+    "log": ".tools/validation/restoration-phase40-session-history-gates.log"
+  },
+  "attemptedFullHostFixture": {
+    "success": false,
+    "exitCode": 1,
+    "result": {
+      "diagnosticOnly": true,
+      "success": false,
+      "scope": "Windows Host/headless HTTP with deterministic local provider and real Python verifier; not user-model reliability",
+      "scratch": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-E64Fvj",
+      "workspace": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-E64Fvj\\workspace",
+      "state": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-E64Fvj\\state",
+      "hosts": [
+        {
+          "pid": 31372,
+          "url": "http://127.0.0.1:61719",
+          "startedAt": 1788827404599,
+          "exitCode": 143
+        }
+      ],
+      "clients": [],
+      "observations": [],
+      "modelRequests": [],
+      "failure": "Error: Host startup deadline\n    at startHost (file:///C:/Users/doo33/Downloads/base_harness/%5Beval%5D:33:17)\n    at unknown\n    at processTicksAndRejections (native:7:39)"
+    },
+    "interpretation": "Stopped at readiness before planning or execution. Not evidence of a completed end-to-end restoration run.",
+    "readinessRequestTimeoutMs": 2000,
+    "resultPath": ".tools/validation/restoration-phase40-host-history.result.json"
+  },
+  "separateHostProbe": {
+    "health": [
+      {
+        "route": "/global/health",
+        "status": 200,
+        "milliseconds": 507,
+        "healthy": true
+      },
+      {
+        "route": "/provider",
+        "status": 200,
+        "milliseconds": 7480,
+        "fixtureCredentialFieldPresent": true
+      }
+    ],
+    "before": {
+      "sessionID": "ses_f81901ce3ffegFSTTSRirfJYu2",
+      "view": {
+        "sessionID": "ses_f81901ce3ffegFSTTSRirfJYu2",
+        "workspace": "",
+        "runId": "",
+        "goal": "",
+        "phase": "inactive",
+        "workers": [],
+        "activeCount": 0,
+        "queuedCount": 0,
+        "verificationState": "inactive",
+        "missingEvidence": [],
+        "repairCount": 0,
+        "maxSameFailureRepairs": 2,
+        "evidenceCount": 0,
+        "candidateCount": 0,
+        "evidenceRefs": [],
+        "candidateRefs": [],
+        "readyEligible": false,
+        "metrics": {
+          "observedActions": 0,
+          "workers": 0,
+          "activeWorkers": 0,
+          "repairs": 0,
+          "evidence": 0,
+          "sandboxRuns": 0
+        },
+        "domain": "develop",
+        "skills": [
+          "hackathon"
+        ],
+        "planningPreference": "plan_once",
+        "planningState": "idle",
+        "planOnly": true
+      }
+    },
+    "after": {
+      "sessionID": "ses_f81901ce3ffegFSTTSRirfJYu2",
+      "workspace": "",
+      "runId": "",
+      "goal": "",
+      "phase": "inactive",
+      "workers": [],
+      "activeCount": 0,
+      "queuedCount": 0,
+      "verificationState": "inactive",
+      "missingEvidence": [],
+      "repairCount": 0,
+      "maxSameFailureRepairs": 2,
+      "evidenceCount": 0,
+      "candidateCount": 0,
+      "evidenceRefs": [],
+      "candidateRefs": [],
+      "readyEligible": false,
+      "metrics": {
+        "observedActions": 0,
+        "workers": 0,
+        "activeWorkers": 0,
+        "repairs": 0,
+        "evidence": 0,
+        "sandboxRuns": 0
+      },
+      "domain": "develop",
+      "skills": [
+        "hackathon"
+      ],
+      "planningPreference": "plan_once",
+      "planningState": "idle",
+      "planOnly": true
+    },
+    "exitCode": 0,
+    "checks": {
+      "domainAndSkillPreserved": true,
+      "planOncePreserved": true,
+      "activeRunAbsent": true,
+      "readyNotIssued": true
+    },
+    "shutdown": {
+      "first": {
+        "chunk_id": "cdb1a8",
+        "wall_time_seconds": 0.092859,
+        "exit_code": 1,
+        "original_token_count": 0,
+        "output": ""
+      },
+      "second": {
+        "chunk_id": "772632",
+        "wall_time_seconds": 0.0771192,
+        "exit_code": 1,
+        "original_token_count": 0,
+        "output": ""
+      },
+      "note": "Both owned terminal handles ended after intentional Ctrl+C; this is not a graceful shutdown or descendant-process isolation proof."
+    }
+  },
+  "residualRisks": [
+    "Real completed-run history restoration and the new native TUI history panel were not end-to-end validated in this phase.",
+    "The failed diagnostic used a 2s provider-readiness timeout; a separate fresh Host returned its first provider response in about 7.5s. The first failure does not prove the executable cannot start.",
+    "GET /provider included an explicitly fake fixture API credential in options. Real credential handling and authenticated/remote exposure require a separate audit.",
+    "The prior Build-tools versus Build-Tools test expectation defect remains unchanged and was not included in this selected test run.",
+    "Legacy unsigned coordinator snapshots lack the new metadata and are not upgraded into trusted session history.",
+    "Per-session serialization is in-process; independent concurrent Hosts and adversarial same-user filesystem access are not solved by HMAC.",
+    "No paid/OAuth provider, long-running user workload, Linux/WSL sandbox, packaging, or complete regression proof was obtained."
+  ],
+  "git": {
+    "commit": false,
+    "push": false,
+    "netMonitorTouched": false
+  }
+}

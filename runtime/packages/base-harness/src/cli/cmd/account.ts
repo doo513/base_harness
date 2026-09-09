@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { cmd } from "./cmd"
 import { Duration, Effect, Match, Option } from "effect"
 import { UI } from "../ui"
@@ -235,8 +236,7 @@ export const OpenCommand = effectCmd({
 })
 
 export const ConsoleCommand = cmd({
-  command: "console",
-  describe: false,
+  ...EntryCommand.console,
   builder: (yargs) =>
     yargs
       .command({

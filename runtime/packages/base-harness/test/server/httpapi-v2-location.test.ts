@@ -105,6 +105,22 @@ describe("v2 location HttpApi", () => {
     }
   })
 
+  test("decodes the Base Harness directory header", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const response = await request("/api/command", encodeURIComponent(tmp.path))
+    expect(response.status).toBe(200)
+    expect((await response.json()).location.directory).toBe(tmp.path)
+  })
+
+  test("explicit location query takes precedence over the directory header", async () => {
+    await using selected = await tmpdir({ git: true })
+    await using hinted = await tmpdir({ git: true })
+    const query = new URLSearchParams({ "location[directory]": selected.path })
+    const response = await request("/api/command?" + query, hinted.path)
+    expect(response.status).toBe(200)
+    expect((await response.json()).location.directory).toBe(selected.path)
+  })
+
   test("streams native EventV2 payloads across locations", async () => {
     await using subscriber = await tmpdir({ git: true })
     await using publisher = await tmpdir({ git: true })

@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Any, TextIO
 
-from .verification_v2 import PROTOCOL_VERSION, ProtocolError, VerificationEngine
+from .verification_v2 import PROTOCOL_VERSION, ProtocolError, ProtocolVersionError, VerificationEngine
 
 
 VerifiedSidecar = VerificationEngine
@@ -45,7 +45,7 @@ def serve(
         except ProtocolError as error:
             failure_kind = (
                 "harness_protocol_version_mismatch"
-                if "version mismatch" in str(error)
+                if isinstance(error, ProtocolVersionError)
                 else "harness_protocol_error"
             )
             response = _response(

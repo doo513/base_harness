@@ -1,0 +1,24 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Repair the introduced Auth read-fixture TypeScript interface error without changing production code or assertions",
+  "files": [
+    "runtime/packages/base-harness/test/auth/store-loading.test.ts"
+  ],
+  "tests": {
+    "passed": 16,
+    "failed": 0,
+    "assertions": 59,
+    "files": 3,
+    "timeoutMs": 10000,
+    "exitCode": 0
+  },
+  "hostTypecheck": 0,
+  "supervisorExit": 0,
+  "productionCodeChanged": false,
+  "assertionsWeakened": false,
+  "gitTouched": false,
+  "netMonitorTouched": false,
+  "overallProductCompletion": false
+}

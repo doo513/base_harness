@@ -1,0 +1,57 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Explicit root exploration admission and Host prompt metadata integration",
+  "resolvedFixture": "running task tool preserves metadata after tool-call transition",
+  "workspace": {
+    "passed": 20,
+    "failed": 0,
+    "assertions": 154,
+    "files": 3,
+    "durationSeconds": 1.191,
+    "typecheckExitCode": 0
+  },
+  "hostPair": {
+    "sessionId": 23635,
+    "processId": 28692,
+    "passed": 2,
+    "failed": 0,
+    "filteredOut": 57,
+    "assertions": 5,
+    "durationSeconds": 13.08,
+    "exitCode": 0,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "stdout": ".tools/validation/explicit-exploration-host-1788860824349.stdout.log",
+    "stderr": ".tools/validation/explicit-exploration-host-1788860824349.stderr.log"
+  },
+  "hostTypecheck": {
+    "sessionId": 7878,
+    "exitCode": 0
+  },
+  "hostRegression": {
+    "sessionId": 24787,
+    "processId": 3116,
+    "passed": 54,
+    "skipped": 14,
+    "failed": 0,
+    "assertions": 239,
+    "files": 3,
+    "durationSeconds": 89.46,
+    "exitCode": 0,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "watchdogSeconds": 120,
+    "stdout": ".tools/validation/prompt-regression-after-exploration-1788860876280.stdout.log",
+    "stderr": ".tools/validation/prompt-regression-after-exploration-1788860876280.stderr.log"
+  },
+  "remainingKnownBaselineFailures": [
+    "(fail) session.compaction.process > stops quickly when aborted during retry backoff [3190.86ms]",
+    "(fail) symlink handling [3983.59ms]",
+    "(fail) nested symlinks [3224.17ms]",
+    "(fail) tool parameters > JSON Schema (wire shape) > task [1.34ms]",
+    "(fail) tool.read env file permissions > agent=plan > .env asks=true [374.54ms]"
+  ],
+  "fullCompletionProven": false
+}

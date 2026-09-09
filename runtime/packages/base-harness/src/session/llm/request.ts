@@ -14,6 +14,21 @@ import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import { InvalidRequestReason, LLMError } from "@base-harness/llm"
+import {
+  assertReasoningOptions,
+  selectReasoningVariant,
+  withoutInferredReasoning,
+} from "@/provider/reasoning-capabilities"
+
+const invalidReasoning = (error: unknown) => new LLMError({
+  module: "ModelGateway",
+  method: "prepare",
+  reason: new InvalidRequestReason({
+    parameter: "reasoning_effort",
+    message: error instanceof Error ? error.message : "Invalid native reasoning selection",
+  }),
+})
 
 const USER_AGENT = `base-harness/${InstallationVersion}`
 
@@ -58,6 +73,11 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
   mergeDeep(target, source ?? {}) as Record<string, any>
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
+  const selectedReasoningEffort = yield* Effect.try({
+    try: () => selectReasoningVariant(input.model, input.small ? undefined : input.user.model.variant),
+    catch: invalidReasoning,
+  })
+  const variant = selectedReasoningEffort ? input.model.variants?.[selectedReasoningEffort] : undefined
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
   const system = [
     [
@@ -81,15 +101,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system.push(header, rest.join("\n"))
   }
 
-  const requestedReasoningEffort = !input.small ? input.user.model.variant : undefined
-  const reasoningEfforts = input.model.capabilities.reasoningEfforts
-  const selectedReasoningEffort =
-    requestedReasoningEffort &&
-    reasoningEfforts?.supported.includes(requestedReasoningEffort) &&
-    input.model.variants?.[requestedReasoningEffort]
-      ? requestedReasoningEffort
-      : undefined
-  const variant = selectedReasoningEffort ? input.model.variants?.[selectedReasoningEffort] : undefined
   const base = input.small
     ? ProviderTransform.smallOptions(input.model)
     : ProviderTransform.options({
@@ -97,7 +108,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         sessionID: input.sessionID,
         providerOptions: input.provider.options,
       })
-  const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
+  const options = mergeOptions(mergeOptions(mergeOptions(withoutInferredReasoning(base), input.model.options), input.agent.options), variant)
   if (
     input.model.api.npm === "@ai-sdk/azure" &&
     (input.provider.options.useCompletionUrls || input.model.options.useCompletionUrls || options.useCompletionUrls)
@@ -139,6 +150,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       options,
     },
   )
+
+  yield* Effect.try({
+    try: () => assertReasoningOptions(input.model, params.options, selectedReasoningEffort),
+    catch: invalidReasoning,
+  })
 
   const { headers } = yield* input.plugin.trigger(
     "chat.headers",

@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { intro, log, outro, spinner } from "@clack/prompts"
 import { Effect } from "effect"
 
@@ -176,9 +177,8 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
 }
 
 export const PluginCommand = effectCmd({
-  command: "plugin <module>",
-  aliases: ["plug"],
-  describe: "install plugin and update config",
+  ...EntryCommand.plugin,
+
   builder: (yargs) =>
     yargs
       .positional("module", {
@@ -204,16 +204,13 @@ export const PluginCommand = effectCmd({
       process.exitCode = 1
       return
     }
-
     UI.empty()
     intro(`Install plugin ${mod}`)
-
     const run = createPlugTask({
       mod,
       global: Boolean(args.global),
       force: Boolean(args.force),
     })
-
     const ctx = yield* InstanceRef
     if (!ctx) return
     const ok = yield* Effect.promise(() =>
@@ -223,7 +220,6 @@ export const PluginCommand = effectCmd({
         directory: ctx.directory,
       }),
     )
-
     outro("Done")
     if (!ok) process.exitCode = 1
   }),

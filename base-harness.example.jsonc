@@ -1,15 +1,17 @@
 {
-  "$schema": "https://base-harness.local/config.json",
-  "model": "openai/your-model",
+  "$schema": "./runtime/base-harness.schema.json",
+  "kernel": {
+    "defaultDomain": "develop"
+  },
   "verification": {
-    "mode": "adaptive",
-    "auto": true,
+    "profile": "adaptive",
+    "trigger": "auto",
     "maxSameFailureRepairs": 2
   },
-  "provider": {
-    "openai": {
-      "options": { "apiKey": "{env:OPENAI_API_KEY}" }
-    }
+  "orchestration": {
+    "mode": "adaptive",
+    "exploration": "adaptive",
+    "maxParallelWorkUnits": 2
   },
   "mcp": {}
 }

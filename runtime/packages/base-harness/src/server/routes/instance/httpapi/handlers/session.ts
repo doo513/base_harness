@@ -39,7 +39,8 @@ import {
   UpdatePayload,
 } from "../groups/session"
 import { Coordinator } from "../../../../../harness/coordinator-service"
-import { PermissionNotFoundError } from "../errors"
+import { AntigravityCli } from "../../../../../harness/execution/antigravity-cli"
+import { InvalidRequestError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -237,11 +238,20 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const harnessResponse = (value: unknown): unknown => JSON.parse(JSON.stringify(value))
+
+    const harnessPlan = Effect.fn("SessionHttpApi.harnessPlan")(function* (ctx: { params: { planID: string } }) {
+      const plan = yield* Effect.promise(() => Coordinator.resolvePlan(ctx.params.planID))
+      yield* requireSession(SessionID.make(plan.sessionID))
+      return plan
+    })
+
     const harness = Effect.fn("SessionHttpApi.harness")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return Coordinator.status(ctx.params.sessionID)
+      const instance = yield* InstanceState.context
+      return harnessResponse(yield* Effect.promise(() => Coordinator.readStatus(ctx.params.sessionID, instance.directory)))
     })
 
     const harnessVerify = Effect.fn("SessionHttpApi.harnessVerify")(function* (ctx: {
@@ -249,23 +259,46 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof HarnessVerifyPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* Effect.promise(() => Coordinator.verifyRoot(ctx.params.sessionID, ctx.payload.reason ?? "manual"))
+      return harnessResponse(
+        yield* Effect.promise(() => Coordinator.verifyRoot(ctx.params.sessionID, ctx.payload.reason ?? "manual")),
+      )
     })
 
     const harnessCancel = Effect.fn("SessionHttpApi.harnessCancel")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* Effect.promise(() => Coordinator.cancel(ctx.params.sessionID))
+      return harnessResponse(yield* Effect.promise(() => Coordinator.cancel(ctx.params.sessionID)))
     })
 
-    const harnessControl = Effect.fn("SessionHttpApi.harnessControl")(function* (ctx: {
+    const harnessControlAction = Effect.fn("SessionHttpApi.harnessControl")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof HarnessControlPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* Effect.promise(() => Coordinator.control(ctx.params.sessionID, ctx.payload))
+      const control = ctx.payload
+      if (control.type === "execution.discover") {
+        if (control.adapterID !== AntigravityCli.id) throw new Error("EXECUTION_ADAPTER_UNAVAILABLE")
+        return harnessResponse(yield* Effect.promise(() => AntigravityCli.capabilities()))
+      }
+      if (control.type === "planning.execute") {
+        // A reviewed plan may arrive before the planning stream has finished; never overlap both runs.
+        yield* runState.assertNotBusy(ctx.params.sessionID).pipe(
+          Effect.mapError(() => new InvalidRequestError({
+            kind: "RUN_ACTIVE",
+            message: "A run is active. Wait for it to finish or cancel it before changing execution.",
+          })),
+        )
+        return harnessResponse(yield* SessionPrompt.executeReviewedPlan({
+          sessionID: ctx.params.sessionID, planId: control.planId,
+        }))
+      }
+      const instance = yield* InstanceState.context
+      return harnessResponse(yield* Effect.promise(() => Coordinator.control(ctx.params.sessionID, control, undefined, instance.directory)))
     })
+
+    const harnessControl = (ctx: Parameters<typeof harnessControlAction>[0]) =>
+      SessionError.mapHarnessControlFailure(harnessControlAction(ctx))
 
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
       params: { sessionID: SessionID }
@@ -457,6 +490,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("harnessPlan", harnessPlan)
       .handle("harness", harness)
       .handle("harnessVerify", harnessVerify)
       .handle("harnessCancel", harnessCancel)

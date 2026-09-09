@@ -239,6 +239,23 @@ describe("tool parameters", () => {
       const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general" })
       expect(parsed.subagent_type).toBe("general")
     })
+    test("accepts a structured WorkUnit binding", () => {
+      const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general", work_unit_id: "unit-1" })
+      expect(parsed.work_unit_id).toBe("unit-1")
+    })
+    test("accepts structured exploration presets and numeric budgets", () => {
+      for (const thoroughness of ["quick", "standard", "deep"] as const) {
+        const exploration = { thoroughness, maxToolCalls: 2, maxFiles: 3 }
+        const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "explore", exploration })
+        expect(parsed.exploration).toEqual(exploration)
+      }
+    })
+    test("rejects unstructured or invalid exploration options", () => {
+      const base = { description: "d", prompt: "p", subagent_type: "explore" }
+      for (const exploration of ["deep", {}, { thoroughness: "medium" }, { thoroughness: "quick", maxFiles: "3" }]) {
+        expect(accepts(Task, { ...base, exploration })).toBe(false)
+      }
+    })
     test("accepts optional background flag", () => {
       const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general", background: true })
       expect(parsed.background).toBe(true)

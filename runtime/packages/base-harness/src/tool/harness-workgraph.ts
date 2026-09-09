@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { Coordinator, type WorkGraph } from "../harness/coordinator-service"
 import { Question } from "../question"
+import { captureExecutionContext } from "../harness/execution-context"
 
 const StringList = Schema.mutable(Schema.Array(Schema.String))
 const WorkUnit = Schema.Struct({
@@ -46,8 +47,9 @@ export const HarnessWorkGraphTool = Tool.define(
           })),
           integrationPaths: [...params.integrationPaths],
         }
+          const executionContext = yield* captureExecutionContext(ctx.sessionID, ctx)
           const status: any = yield* Effect.promise(() =>
-            Coordinator.acceptWorkGraph(ctx.sessionID, graph, ctx),
+            Coordinator.acceptWorkGraph(ctx.sessionID, graph, executionContext),
           )
           const blocking = Array.isArray(status.metaReview?.issues)
             ? status.metaReview.issues.filter(

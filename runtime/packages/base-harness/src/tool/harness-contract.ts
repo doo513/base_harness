@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { registerHarnessContractProposal } from "./harness-contract-state"
 import { Question } from "../question"
+import { captureExecutionContext } from "../harness/execution-context"
 
 const StringList = Schema.mutable(Schema.Array(Schema.String))
 
@@ -94,8 +95,9 @@ export const HarnessContractTool = Tool.define<typeof Parameters, Metadata, Ques
       parameters: Parameters,
       execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
+          const executionContext = yield* captureExecutionContext(ctx.sessionID, ctx)
           const status = yield* Effect.promise(() =>
-            registerHarnessContractProposal(ctx.sessionID, params, ctx),
+            registerHarnessContractProposal(ctx.sessionID, params, executionContext),
           )
           const preflightBlocking = Array.isArray(status.preflight?.requiredDecisions)
             ? status.preflight.requiredDecisions

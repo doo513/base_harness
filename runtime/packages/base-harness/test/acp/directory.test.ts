@@ -15,7 +15,12 @@ const command = (name: string): Command.Info => ({
   hints: [],
 })
 
-const model = (providerID: ProviderV2.ID, id: string, variants?: Directory.ModelVariants): Provider.Model => ({
+const model = (
+  providerID: ProviderV2.ID,
+  id: string,
+  variants?: Directory.ModelVariants,
+  supported?: readonly string[],
+): Provider.Model => ({
   id: ModelV2.ID.make(id),
   providerID,
   api: {
@@ -28,6 +33,7 @@ const model = (providerID: ProviderV2.ID, id: string, variants?: Directory.Model
   capabilities: {
     temperature: true,
     reasoning: Boolean(variants),
+    ...(supported ? { reasoningEfforts: { default: "provider_default" as const, supported: [...supported] } } : {}),
     attachment: false,
     toolcall: true,
     input: { text: true, audio: false, image: false, video: false, pdf: false },
@@ -64,7 +70,7 @@ const snapshot = (directory: string) => {
         [modelID]: model(providerID, modelID, {
           low: { reasoningEffort: "low" },
           high: { reasoningEffort: "high" },
-        }),
+        }, ["low", "high"]),
         [ModelV2.ID.make(`plain-${directory}`)]: model(providerID, `plain-${directory}`),
       },
     },
@@ -153,6 +159,19 @@ describe("ACP directory snapshot", () => {
       })
       expect(directory.variants(alpha, { ...model, modelID: ModelV2.ID.make("missing") })).toBeUndefined()
     }).pipe(Effect.provide(fakeLayer([]))),
+  )
+
+  it.effect("variant labels without capability metadata are not effort options", () =>
+    Effect.sync(() => {
+      const alpha = snapshot("alpha")
+      const selected = alpha.defaultModel!
+      const current = alpha.providers[selected.providerID]!.models[selected.modelID]!
+      delete current.capabilities.reasoningEfforts
+      const unreported = Directory.build({
+        ...alpha, modes: alpha.availableModes, commands: alpha.availableCommands,
+      })
+      expect(Directory.variants(unreported, selected)).toEqual({})
+    }),
   )
 
   it.effect("commands and modes are included", () =>

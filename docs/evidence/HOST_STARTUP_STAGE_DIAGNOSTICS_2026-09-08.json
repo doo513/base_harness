@@ -1,0 +1,378 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "promotionReady": false,
+  "earlierStartupTimeoutsResolved": false,
+  "gates": {
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "assertions": 10,
+    "hostTypecheck": 0,
+    "comparison": 0,
+    "combined": 0,
+    "fullSuiteRun": false
+  },
+  "timingBreakdown": [
+    {
+      "mode": "default",
+      "healthMs": 10150.3372,
+      "firstTraceUptimeMs": 1260,
+      "cliModuleImportMs": 6212,
+      "runtimeImportMs": 928,
+      "runtimeServicesMs": 429,
+      "serverModuleMs": 763,
+      "listenMs": 400
+    },
+    {
+      "mode": "pure",
+      "healthMs": 8380.380099999998,
+      "firstTraceUptimeMs": 992,
+      "cliModuleImportMs": 4959,
+      "runtimeImportMs": 697,
+      "runtimeServicesMs": 406,
+      "serverModuleMs": 728,
+      "listenMs": 458
+    }
+  ],
+  "startupComparison": {
+    "diagnosticOnly": true,
+    "independentEvaluation": false,
+    "scope": "Two sequential fresh local Host startup observations, not a causal plugin comparison or reliability benchmark",
+    "success": true,
+    "cases": [
+      {
+        "mode": "default",
+        "healthy": true,
+        "durationMs": 10150.3372,
+        "attempts": 47,
+        "pid": 25444,
+        "exitCode": null,
+        "intentionallyStopped": true,
+        "inferenceRequests": 0,
+        "startupEvents": [
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.start",
+            "sequence": 1,
+            "elapsedMs": 0,
+            "processUptimeMs": 1260,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.workspace_ready",
+            "sequence": 2,
+            "elapsedMs": 1,
+            "processUptimeMs": 1261,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.import_start",
+            "sequence": 3,
+            "elapsedMs": 1,
+            "processUptimeMs": 1261,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.modules_ready",
+            "sequence": 4,
+            "elapsedMs": 6213,
+            "processUptimeMs": 7473,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.parse_start",
+            "sequence": 5,
+            "elapsedMs": 6229,
+            "processUptimeMs": 7489,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.options_ready",
+            "sequence": 6,
+            "elapsedMs": 6242,
+            "processUptimeMs": 7502,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.import_start",
+            "sequence": 7,
+            "elapsedMs": 6262,
+            "processUptimeMs": 7522,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.import_ready",
+            "sequence": 8,
+            "elapsedMs": 7190,
+            "processUptimeMs": 8450,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.services_start",
+            "sequence": 9,
+            "elapsedMs": 7190,
+            "processUptimeMs": 8450,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.handler_start",
+            "sequence": 10,
+            "elapsedMs": 7619,
+            "processUptimeMs": 8879,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.module_ready",
+            "sequence": 11,
+            "elapsedMs": 8382,
+            "processUptimeMs": 9643,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.options_ready",
+            "sequence": 12,
+            "elapsedMs": 8425,
+            "processUptimeMs": 9685,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.listen_start",
+            "sequence": 13,
+            "elapsedMs": 8425,
+            "processUptimeMs": 9685,
+            "pid": 25444,
+            "pureRequested": false
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.listen_ready",
+            "sequence": 14,
+            "elapsedMs": 8825,
+            "processUptimeMs": 10085,
+            "pid": 25444,
+            "pureRequested": false
+          }
+        ],
+        "lastObservedStage": "host.listen_ready",
+        "stdoutBytes": 127,
+        "stderrBytes": 2494,
+        "outputTruncated": false
+      },
+      {
+        "mode": "pure",
+        "healthy": true,
+        "durationMs": 8380.380099999998,
+        "attempts": 39,
+        "pid": 22836,
+        "exitCode": null,
+        "intentionallyStopped": true,
+        "inferenceRequests": 0,
+        "startupEvents": [
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.start",
+            "sequence": 1,
+            "elapsedMs": 0,
+            "processUptimeMs": 992,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.workspace_ready",
+            "sequence": 2,
+            "elapsedMs": 1,
+            "processUptimeMs": 993,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "launcher.import_start",
+            "sequence": 3,
+            "elapsedMs": 1,
+            "processUptimeMs": 993,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.modules_ready",
+            "sequence": 4,
+            "elapsedMs": 4960,
+            "processUptimeMs": 5952,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.parse_start",
+            "sequence": 5,
+            "elapsedMs": 4975,
+            "processUptimeMs": 5967,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "cli.options_ready",
+            "sequence": 6,
+            "elapsedMs": 4987,
+            "processUptimeMs": 5979,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.import_start",
+            "sequence": 7,
+            "elapsedMs": 5006,
+            "processUptimeMs": 5998,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.import_ready",
+            "sequence": 8,
+            "elapsedMs": 5703,
+            "processUptimeMs": 6695,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "runtime.services_start",
+            "sequence": 9,
+            "elapsedMs": 5703,
+            "processUptimeMs": 6695,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.handler_start",
+            "sequence": 10,
+            "elapsedMs": 6109,
+            "processUptimeMs": 7101,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.module_ready",
+            "sequence": 11,
+            "elapsedMs": 6837,
+            "processUptimeMs": 7830,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.options_ready",
+            "sequence": 12,
+            "elapsedMs": 6876,
+            "processUptimeMs": 7869,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.listen_start",
+            "sequence": 13,
+            "elapsedMs": 6876,
+            "processUptimeMs": 7869,
+            "pid": 22836,
+            "pureRequested": true
+          },
+          {
+            "version": 1,
+            "type": "harness.startup",
+            "stage": "host.listen_ready",
+            "sequence": 14,
+            "elapsedMs": 7334,
+            "processUptimeMs": 8326,
+            "pid": 22836,
+            "pureRequested": true
+          }
+        ],
+        "lastObservedStage": "host.listen_ready",
+        "stdoutBytes": 127,
+        "stderrBytes": 2476,
+        "outputTruncated": false
+      }
+    ]
+  },
+  "traceContract": {
+    "optIn": "BASE_HARNESS_TRACE_STARTUP=1",
+    "maxEventsPerProcess": 32,
+    "rawStreamsPersisted": false,
+    "captureLimitBytesPerStream": 65536,
+    "authority": "diagnostic_only"
+  },
+  "pendingFreshnessTestFix": {
+    "path": "tests/test_verified_sidecar.py",
+    "test": "test_disputed_history_cannot_supply_missing_independence",
+    "line": 907,
+    "cause": "The execution verifier fixture omits freshnessSeconds, so existing policy correctly excludes it from historical reuse before the disputed-case assertion is reached.",
+    "proposedFix": "Set a positive freshness_seconds in this test's verifier fixture and rerun it.",
+    "authorization": "asked_user_pending",
+    "productionBugProven": false
+  },
+  "gitUsed": false,
+  "netMonitorTouched": false
+}

@@ -20,6 +20,11 @@ import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
 import { Coordinator, Orchestration } from "../harness/coordinator-service"
+import { MetaReviewDispatchRegistry } from "../harness/meta-review-dispatch"
+import { executionBridge } from "../harness/execution-context"
+import { runUntilCancelled } from "../harness/execution-lifetime"
+import { requireExecutionModel } from "../harness/model-selection"
+import { AntigravityCli, type ExecutionSelection } from "../harness/execution/antigravity-cli"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@base-harness/core/database/database"
@@ -109,11 +114,20 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const metaReviews = new MetaReviewDispatchRegistry<Tool.Context>()
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      const metaReview = metaReviews.get(ctx)
+      if (params.subagent_type === "meta-review" && (
+        !metaReview || metaReview.sessionID !== ctx.sessionID
+        || metaReview.runId !== Coordinator.status(ctx.sessionID).runId
+        || params.background === true || params.task_id || params.work_unit_id
+      )) {
+        return yield* Effect.fail(new Error("META_REVIEW_DISPATCH_DENIED: only the Kernel may start a fresh review"))
+      }
       Coordinator.assertToolAllowed(ctx.sessionID, "task", params.subagent_type)
       const cfg = yield* config.get()
       if (
@@ -243,6 +257,9 @@ export const TaskTool = Tool.define(
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }
+      const execution =
+        (Coordinator.status(ctx.sessionID) as { execution?: ExecutionSelection }).execution ??
+        AntigravityCli.selectionFromEnvironment()
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -262,6 +279,31 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTaskCore = Effect.fn("TaskTool.runTask")(function* () {
+        if (params.work_unit_id && execution) {
+          if (execution.adapterID !== AntigravityCli.id) {
+            return yield* Effect.fail(new Error(`Unknown managed execution adapter: ${execution.adapterID}`))
+          }
+          const workspace = Coordinator.status(ctx.sessionID).workspace
+          if (!workspace) return yield* Effect.fail(new Error("COORDINATOR_WORKSPACE_REQUIRED"))
+          const result = yield* Effect.tryPromise({
+            try: () =>
+              AntigravityCli.execute({
+                sessionID: nextSession.id,
+                workspace: workspace,
+                prompt: taskPrompt,
+                modelID: execution.modelID,
+                options: execution.options,
+                capabilityRevision: execution.capabilityRevision,
+                signal: ctx.abort,
+                routeWrite: async (relativePath) => {
+                  const route = await Orchestration.resolveWrite(nextSession.id, workspace, relativePath)
+                  return { physicalPath: route.physicalPath }
+                },
+              }),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          })
+          return result.output
+        }
         const parts = yield* ops.resolvePromptParts(taskPrompt)
         const result = yield* ops.prompt({
           messageID: MessageID.ascending(),
@@ -275,6 +317,14 @@ export const TaskTool = Tool.define(
           parts,
         })
         if (result.info.role === "assistant" && result.info.error) {
+          const error = result.info.error
+          if (metaReview) {
+            yield* Effect.promise(() => Coordinator.reportMetaReviewFailure(ctx.sessionID, error, metaReview.phase, "model"))
+          } else {
+            yield* Effect.promise(() => Coordinator.observe({
+              type: "session.error", data: { sessionID: nextSession.id, error },
+            }))
+          }
           const message =
             "message" in result.info.error.data && typeof result.info.error.data.message === "string"
               ? result.info.error.data.message
@@ -283,6 +333,14 @@ export const TaskTool = Tool.define(
         }
         const failed = result.parts.findLast((item) => item.type === "tool" && item.state.status === "error")
         if (failed?.type === "tool" && failed.state.status === "error") {
+          const failureError = failed.state.error
+          if (metaReview) {
+            yield* Effect.promise(() => Coordinator.reportMetaReviewFailure(ctx.sessionID, failureError, metaReview.phase, "tool"))
+          } else {
+            yield* Effect.promise(() => Coordinator.observe({
+              type: "message.part.updated", data: { part: failed },
+            }))
+          }
           return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${failed.state.error}`))
         }
         return result.parts.findLast((item) => item.type === "text")?.text ?? ""
@@ -401,6 +459,7 @@ export const TaskTool = Tool.define(
       return yield* Effect.acquireUseRelease(
         Effect.sync(() => {
           ctx.abort.addEventListener("abort", onAbort)
+          if (ctx.abort.aborted) onAbort()
         }),
         () =>
           Effect.gen(function* () {
@@ -431,9 +490,12 @@ export const TaskTool = Tool.define(
       )
     })
 
-    const coordinatorBridge = yield* EffectBridge.make()
-    Coordinator.registerMetaReviewer((request) => {
-      const source = request.context as Tool.Context
+    Coordinator.registerMetaReviewer(async (request) => {
+      const source = request.context as Tool.Context | undefined
+      if (!source || source.sessionID !== request.sessionID || !source.extra?.promptOps) {
+        return Promise.reject(new Error("META_REVIEW_CONTEXT_UNAVAILABLE"))
+      }
+      const coordinatorBridge = executionBridge(source, request.sessionID, Coordinator.status(request.sessionID).workspace)
       const reviewerContext: Tool.Context = {
         ...source,
         extra: {
@@ -472,8 +534,8 @@ export const TaskTool = Tool.define(
           noEvidenceOrReadyAuthority: true,
         },
       })
-      return coordinatorBridge
-        .promise(
+      return metaReviews.run(reviewerContext, request, () =>
+        coordinatorBridge.promise(
           run(
             {
               description: "Meta review: " + request.phase,
@@ -483,24 +545,34 @@ export const TaskTool = Tool.define(
             },
             reviewerContext,
           ),
-        )
-        .then((result) => result.output)
+        ).then((result) => result.output),
+      )
     })
-    Coordinator.registerWorkerExecutor((request) => {
+    Coordinator.registerWorkerExecutor(async (request) => {
       const source = request.context as Tool.Context
+      const coordinatorBridge = executionBridge(source, request.rootSessionID, Coordinator.status(request.rootSessionID).workspace)
+      if (source.sessionID !== request.rootSessionID || !source.extra?.promptOps) {
+        throw new Error("WORKER_EXECUTION_CONTEXT_UNAVAILABLE")
+      }
+      request.signal.throwIfAborted()
+      const ops = source.extra.promptOps as TaskPromptOps
+      let childSessionID: SessionID | undefined
       const coordinatorContext: Tool.Context = {
         ...source,
+        abort: request.signal,
         extra: {
           ...source.extra,
           bypassAgentCheck: true,
           coordinatorDispatch: true,
         },
-        metadata: () => Effect.void,
+        metadata: ({ metadata }) => Effect.sync(() => {
+          if (typeof metadata?.sessionId === "string") childSessionID = SessionID.make(metadata.sessionId)
+        }),
         ask: () => Effect.void,
       }
       return coordinatorBridge
         .promise(
-          run(
+          runUntilCancelled(run(
             {
               description: request.unit.title,
               prompt: request.repairPrompt ?? request.unit.instructions,
@@ -510,35 +582,41 @@ export const TaskTool = Tool.define(
               background: false,
             },
             coordinatorContext,
-          ),
+          ).pipe(Effect.onInterrupt(() => childSessionID ? ops.cancel(childSessionID) : Effect.void)), request.signal),
         )
         .then((result) => ({
           sessionID: String(result.metadata.sessionId),
           output: result.output,
         }))
     })
-    Coordinator.registerIntegrationExecutor((request) => {
+    Coordinator.registerIntegrationExecutor(async (request) => {
       const source = request.context as Tool.Context & {
         promptOps?: TaskPromptOps
         model?: SessionPrompt.PromptInput["model"]
         variant?: string
       }
+      const coordinatorBridge = executionBridge(source, request.rootSessionID, Coordinator.status(request.rootSessionID).workspace)
       const ops = source.promptOps ?? (source.extra?.promptOps as TaskPromptOps | undefined)
-      const model = source.model ?? (source.extra?.model as SessionPrompt.PromptInput["model"])
+      const model = requireExecutionModel(source.model ?? source.extra?.modelSelection)
       const variant = source.variant ?? (source.extra?.variant as string | undefined)
       if (!ops) return Promise.reject(new Error("Root integration requires promptOps in the WorkGraph context"))
-      if (!model) return Promise.reject(new Error("Root integration requires the inherited model in its context"))
+      request.signal.throwIfAborted()
       return coordinatorBridge
         .promise(
-          Effect.gen(function* () {
-            const integrationPrompt = request.repairPrompt ?? [
-              "All Coordinator WorkUnits were independently verified and committed.",
-              "Perform root integration only. Do not recreate the WorkGraph or rerun completed workers.",
-              `Integration-owned paths: ${request.integrationPaths.join(", ") || "none"}`,
-              `Integration requests: ${request.integrationRequests.join("; ") || "none"}`,
-              "Resolve shared exports/configuration, run the required build or tests, and finish the root task.",
-            ].join("\n")
-            const parts = yield* ops.resolvePromptParts(integrationPrompt)
+          runUntilCancelled(Effect.gen(function* () {
+            const integrationPrompt = JSON.stringify({
+              protocol: "base-harness-root-integration-v1",
+              phase: request.repairPrompt ? "repair" : "integration",
+              integrationPaths: request.integrationPaths,
+              integrationRequests: request.integrationRequests,
+              instructions: request.repairPrompt ?? [
+                "All Coordinator WorkUnits were independently verified and committed.",
+                "Perform root integration only. Do not recreate the WorkGraph or rerun completed workers.",
+                "Resolve shared exports/configuration, run the required build or tests, and finish the root task.",
+              ].join("\n"),
+            })
+            // Internal Host context is not a new user request or an implicit file reference.
+            const parts = [{ type: "text" as const, text: integrationPrompt, synthetic: true }]
             const result = yield* ops.prompt({
               messageID: MessageID.ascending(),
               sessionID: request.rootSessionID as SessionID,
@@ -548,13 +626,20 @@ export const TaskTool = Tool.define(
               parts,
             })
             if (result.info.role === "assistant" && result.info.error) {
+              const error = result.info.error
+              yield* Effect.promise(() => Coordinator.observe({
+                type: "session.error", data: { sessionID: request.rootSessionID, error },
+              }))
               return yield* Effect.fail(new Error("Root integration model response failed"))
             }
             const failed = result.parts.findLast((item) => item.type === "tool" && item.state.status === "error")
             if (failed?.type === "tool" && failed.state.status === "error") {
+              yield* Effect.promise(() => Coordinator.observe({
+                type: "message.part.updated", data: { part: failed },
+              }))
               return yield* Effect.fail(new Error(`Root integration tool failed: ${failed.state.error}`))
             }
-          }),
+          }).pipe(Effect.onInterrupt(() => ops.cancel(request.rootSessionID as SessionID))), request.signal),
         )
         .then(() => undefined)
     })

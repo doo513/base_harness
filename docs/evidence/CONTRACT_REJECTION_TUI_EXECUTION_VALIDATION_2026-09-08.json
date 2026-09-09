@@ -1,0 +1,670 @@
+{
+  "schemaVersion": "diagnostic-validation-v1",
+  "trust": "diagnostic_only",
+  "phase": 35,
+  "date": "2026-09-08",
+  "scope": "Contract-rejection regression and Windows source TUI plan recovery/execution",
+  "productionChanges": [
+    "runtime/packages/kernel-host/src/index.ts",
+    "runtime/packages/kernel-host/test/restoration-gates.test.ts"
+  ],
+  "gates": {
+    "kernelHost": {
+      "passed": 58,
+      "failed": 1,
+      "typecheckExitCode": 0,
+      "remainingFailure": "EPERM in ReviewedPlanStore.atomic during an ordinary atomic plan revision"
+    },
+    "host": {
+      "passed": 6,
+      "failed": 1,
+      "typecheckExitCode": 0,
+      "remainingFailure": "beforeEach/afterEach timeout; six test bodies passed; preload registers afterAll teardown"
+    },
+    "correctedRegression": "Rejected contracts retain their status instead of throwing PLAN_RUN_BLOCKED",
+    "additionalTerminalCases": [
+      "blocked",
+      "interrupted",
+      "failure",
+      "outcome=failure"
+    ],
+    "allPromotionGatesPassed": false
+  },
+  "originalFixture": {
+    "exitCode": 1,
+    "secondaryFailure": "Object.assign(hosts.at(-1), { exitCode }) with no registered Host",
+    "primaryStartupFailure": "Not recovered; masked by cleanup"
+  },
+  "startupProbe": {
+    "ready": true,
+    "elapsedMs": 13459.8804,
+    "resultPath": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\restoration-phase35-host-startup-probe.json"
+  },
+  "followup": {
+    "success": true,
+    "fixtureExitCode": 0,
+    "tuiExitCode": 0,
+    "sourceRuntime": "Bun 1.3.14 / Windows native PTY",
+    "externalPaidModelsUsed": false,
+    "realPythonVerifier": true,
+    "desktopScreenshot": false,
+    "sessionID": "ses_f8346dc05ffedHmuVUyUOjWU5R",
+    "oldPlanId": "ccb6571b-d535-4a54-94e7-0b0b548b74a3",
+    "reviewedPlanId": "b8bc500d-792f-4d48-aeac-618ff66f5ac9",
+    "planningRunId": "run-9319cb02-108f-4a11-8d8e-84663889b88d",
+    "executionRunId": "run-ef5fd2d4-5f93-47e0-8ed9-65c860d6bd51",
+    "domain": "develop",
+    "skills": [
+      "hackathon"
+    ],
+    "workerStates": [
+      {
+        "workUnitId": "unit-0",
+        "title": "Write result-0.txt",
+        "state": "completed",
+        "repairCount": 0,
+        "scopeId": "ses_f8343076cffeZZYtLBfunGizMf"
+      },
+      {
+        "workUnitId": "unit-1",
+        "title": "Write result-1.txt",
+        "state": "completed",
+        "repairCount": 0,
+        "scopeId": "ses_f83430765ffeXIs0WGl2cAsg75"
+      }
+    ],
+    "repairCount": 0,
+    "outcome": "ready",
+    "assuranceLevel": "adaptive",
+    "evidenceCount": 4,
+    "planOnlyBeforePrompt": {
+      "stage": "plan_once_before_prompt",
+      "status": {
+        "sessionID": "ses_f8346dc05ffedHmuVUyUOjWU5R",
+        "workspace": "",
+        "runId": "",
+        "goal": "",
+        "phase": "inactive",
+        "workers": [],
+        "activeCount": 0,
+        "queuedCount": 0,
+        "verificationState": "inactive",
+        "missingEvidence": [],
+        "repairCount": 0,
+        "maxSameFailureRepairs": 2,
+        "evidenceCount": 0,
+        "candidateCount": 0,
+        "evidenceRefs": [],
+        "candidateRefs": [],
+        "readyEligible": false,
+        "metrics": {
+          "observedActions": 0,
+          "workers": 0,
+          "activeWorkers": 0,
+          "repairs": 0,
+          "evidence": 0,
+          "sandboxRuns": 0
+        },
+        "domain": "develop",
+        "skills": [
+          "hackathon"
+        ],
+        "planningPreference": "plan_once",
+        "planningState": "idle",
+        "planOnly": true
+      },
+      "targets": [
+        false,
+        false
+      ]
+    },
+    "rejectedExecute": {
+      "code": "PLAN_ID_MISMATCH",
+      "httpStatus": 400,
+      "before": {
+        "runId": "run-9319cb02-108f-4a11-8d8e-84663889b88d",
+        "targets": [
+          false,
+          false
+        ]
+      },
+      "after": {
+        "runId": "run-9319cb02-108f-4a11-8d8e-84663889b88d",
+        "targets": [
+          false,
+          false
+        ]
+      }
+    },
+    "malformedExecute": {
+      "message": "Use /execute [planId]",
+      "finalRunId": "run-ef5fd2d4-5f93-47e0-8ed9-65c860d6bd51",
+      "finalPhase": "ready"
+    },
+    "readyArtifactPath": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-Smf5h5\\state\\base-harness\\runs\\fa276da8c2b944da-b4768011\\artifacts\\45\\451a40ebd95e0d0abc02160c44ecbd02dbe194bd25fb8522f7fb69855fb36135.json",
+    "claimResults": [
+      {
+        "claimId": "claim-0",
+        "coverage": "full",
+        "evidenceIds": [
+          "c0be10e37f3d91dd6e90c1a91c269c713521bc39241a8c67b968dd5033fdaad1"
+        ],
+        "familyIds": [
+          "35272330bb29ccce2385fc932a55e68d2441f638e6b7a377e88a832e6dd86d1d"
+        ],
+        "historicalIndependentMethods": [],
+        "reason": "Typed predicate and adaptive independence policy are satisfied.",
+        "result": "verified"
+      },
+      {
+        "claimId": "claim-1",
+        "coverage": "full",
+        "evidenceIds": [
+          "00544cfdf539fa38529ab313e96bcbb1d9b6221ef7caf69b0dcc3b49f3f7adb0"
+        ],
+        "familyIds": [
+          "d067ffed62edeb8a6254d12b1de05be4738ada815158af49b3366a01d06ae7bc"
+        ],
+        "historicalIndependentMethods": [],
+        "reason": "Typed predicate and adaptive independence policy are satisfied.",
+        "result": "verified"
+      }
+    ],
+    "criterionResults": [
+      {
+        "claimIds": [
+          "claim-0"
+        ],
+        "coverage": "full",
+        "criterionId": "criterion-0",
+        "required": true,
+        "result": "verified",
+        "risk": "low"
+      },
+      {
+        "claimIds": [
+          "claim-1"
+        ],
+        "coverage": "full",
+        "criterionId": "criterion-1",
+        "required": true,
+        "result": "verified",
+        "risk": "low"
+      }
+    ],
+    "observations": [
+      {
+        "at": 1788799030204,
+        "stage": "discard_observed",
+        "runId": "",
+        "phase": "inactive"
+      },
+      {
+        "at": 1788799089287,
+        "stage": "new_plan_reviewed",
+        "runId": "run-9319cb02-108f-4a11-8d8e-84663889b88d",
+        "phase": "planning"
+      },
+      {
+        "at": 1788799162275,
+        "stage": "ready",
+        "runId": "run-ef5fd2d4-5f93-47e0-8ed9-65c860d6bd51",
+        "phase": "ready"
+      }
+    ],
+    "hosts": [
+      {
+        "pid": 5680,
+        "url": "http://127.0.0.1:60979",
+        "startupMs": 10745.4285,
+        "exitCode": 143
+      },
+      {
+        "pid": 15832,
+        "url": "http://127.0.0.1:61044",
+        "startupMs": 7109.919199999997,
+        "exitCode": 143
+      }
+    ],
+    "clients": [
+      {
+        "name": "plan",
+        "exitCode": 0,
+        "timedOut": false,
+        "elapsedMs": 18986.4552
+      },
+      {
+        "name": "interrupted-revise",
+        "exitCode": 143,
+        "timedOut": false,
+        "elapsedMs": 6313.979499999998
+      }
+    ],
+    "timings": {
+      "coldPendingStatusMs": 106.43509999999515,
+      "emptyStatus": {
+        "count": 20,
+        "medianMs": 20.35639999999694,
+        "p95Ms": 32.80829999999696,
+        "minMs": 15.334300000002258,
+        "maxMs": 53.502199999995355
+      },
+      "pendingStatus": {
+        "count": 20,
+        "medianMs": 38.7857499999991,
+        "p95Ms": 55.117700000002515,
+        "minMs": 30.840100000001257,
+        "maxMs": 56.108399999997346
+      }
+    },
+    "requests": [
+      {
+        "receivedAt": 1788798903875,
+        "model": "fixture-model",
+        "stream": true,
+        "authenticated": true,
+        "tools": [],
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798908643,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_contract",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798909200,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "max",
+        "reviewPhase": "goal_contract",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798911744,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "fixture_echo",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798913019,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_workgraph",
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798913607,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "max",
+        "reviewPhase": "plan",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798915655,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "max",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788798922790,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_contract",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799083382,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_contract",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799083955,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "high",
+        "reviewPhase": "goal_contract",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799086307,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "fixture_echo",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799087587,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "selected": "harness_workgraph",
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799088175,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "glob",
+          "grep",
+          "read"
+        ],
+        "reasoningEffort": "high",
+        "reviewPhase": "plan",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799090250,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "high",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799154882,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "webfetch",
+          "write"
+        ],
+        "selected": "write",
+        "reasoningEffort": "high",
+        "workUnitId": "unit-0",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799155269,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "webfetch",
+          "write"
+        ],
+        "selected": "write",
+        "reasoningEffort": "high",
+        "workUnitId": "unit-1",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799156311,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "high",
+        "workUnitId": "unit-0",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799157370,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "high",
+        "workUnitId": "unit-1",
+        "rootIntegration": false
+      },
+      {
+        "receivedAt": 1788799161003,
+        "model": "fixture-reasoner",
+        "stream": true,
+        "authenticated": true,
+        "tools": [
+          "bash",
+          "edit",
+          "fixture_echo",
+          "glob",
+          "grep",
+          "harness_contract",
+          "harness_workgraph",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "reasoningEffort": "high",
+        "rootIntegration": true
+      }
+    ],
+    "limitations": [
+      "Deterministic fixture responses, not live model capability or OAuth validation",
+      "At least one streaming PTY chunk was truncated by the tool",
+      "No Linux/WSL or packaged-binary validation in this turn"
+    ]
+  },
+  "sourceEvidencePaths": {
+    "result": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\restoration-phase35-tui-recovery-followup.result.json",
+    "gates": "C:/Users/doo33/Downloads/base_harness/.tools/validation/restoration-phase35-gates.log",
+    "tuiControlFrames": "C:/Users/doo33/Downloads/base_harness/.tools/validation/restoration-phase35-tui-control-frames.json"
+  },
+  "git": {
+    "used": false,
+    "committed": false,
+    "pushed": false,
+    "netMonitorTouched": false
+  }
+}

@@ -1,0 +1,374 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "First and cached local provider-list latency with opt-in bounded stage diagnostics",
+  "validation": {
+    "tests": {
+      "passed": 17,
+      "failed": 0,
+      "assertions": 55
+    },
+    "hostTypecheck": 0,
+    "diagnostic": 0,
+    "supervisor": 0
+  },
+  "measurement": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "success": true,
+    "phase": "catalog_cached",
+    "timedOut": false,
+    "healthMs": 9755.1836,
+    "queries": [
+      {
+        "kind": "first",
+        "elapsedMs": 10847.696800000002,
+        "responseBytes": 1485,
+        "connected": true,
+        "credentialsOmitted": true,
+        "nativeEffortsPreserved": true
+      },
+      {
+        "kind": "cached",
+        "elapsedMs": 97.03600000000006,
+        "responseBytes": 1485,
+        "connected": true,
+        "credentialsOmitted": true,
+        "nativeEffortsPreserved": true
+      }
+    ],
+    "startupEvents": [
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "launcher.start",
+        "sequence": 1,
+        "elapsedMs": 0,
+        "processUptimeMs": 939,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "launcher.workspace_ready",
+        "sequence": 2,
+        "elapsedMs": 2,
+        "processUptimeMs": 940,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "launcher.import_start",
+        "sequence": 3,
+        "elapsedMs": 2,
+        "processUptimeMs": 940,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "cli.modules_ready",
+        "sequence": 4,
+        "elapsedMs": 6096,
+        "processUptimeMs": 7034,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "cli.parse_start",
+        "sequence": 5,
+        "elapsedMs": 6109,
+        "processUptimeMs": 7047,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "cli.options_ready",
+        "sequence": 6,
+        "elapsedMs": 6121,
+        "processUptimeMs": 7060,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "runtime.import_start",
+        "sequence": 7,
+        "elapsedMs": 6140,
+        "processUptimeMs": 7079,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "runtime.import_ready",
+        "sequence": 8,
+        "elapsedMs": 7097,
+        "processUptimeMs": 8035,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "runtime.services_start",
+        "sequence": 9,
+        "elapsedMs": 7097,
+        "processUptimeMs": 8035,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.services_start",
+        "sequence": 10,
+        "elapsedMs": 7305,
+        "processUptimeMs": 8243,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.services_ready",
+        "sequence": 11,
+        "elapsedMs": 7305,
+        "processUptimeMs": 8243,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "host.handler_start",
+        "sequence": 12,
+        "elapsedMs": 7538,
+        "processUptimeMs": 8476,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "host.module_ready",
+        "sequence": 13,
+        "elapsedMs": 8308,
+        "processUptimeMs": 9246,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "host.options_ready",
+        "sequence": 14,
+        "elapsedMs": 8349,
+        "processUptimeMs": 9287,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "host.listen_start",
+        "sequence": 15,
+        "elapsedMs": 8349,
+        "processUptimeMs": 9287,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.services_start",
+        "sequence": 16,
+        "elapsedMs": 8444,
+        "processUptimeMs": 9382,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.services_ready",
+        "sequence": 17,
+        "elapsedMs": 8444,
+        "processUptimeMs": 9382,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "host.listen_ready",
+        "sequence": 18,
+        "elapsedMs": 8754,
+        "processUptimeMs": 9693,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.init_start",
+        "sequence": 19,
+        "elapsedMs": 9465,
+        "processUptimeMs": 10403,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.bridge_ready",
+        "sequence": 20,
+        "elapsedMs": 9465,
+        "processUptimeMs": 10403,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.config_ready",
+        "sequence": 21,
+        "elapsedMs": 9465,
+        "processUptimeMs": 10404,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.catalog_ready",
+        "sequence": 22,
+        "elapsedMs": 9465,
+        "processUptimeMs": 10404,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.catalog_mapped",
+        "sequence": 23,
+        "elapsedMs": 9478,
+        "processUptimeMs": 10416,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.plugins_ready",
+        "sequence": 24,
+        "elapsedMs": 9478,
+        "processUptimeMs": 10417,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.plugin_models_ready",
+        "sequence": 25,
+        "elapsedMs": 9478,
+        "processUptimeMs": 10417,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.config_models_ready",
+        "sequence": 26,
+        "elapsedMs": 9480,
+        "processUptimeMs": 10418,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.env_ready",
+        "sequence": 27,
+        "elapsedMs": 9480,
+        "processUptimeMs": 10419,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.credentials_ready",
+        "sequence": 28,
+        "elapsedMs": 19599,
+        "processUptimeMs": 20537,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.plugin_auth_ready",
+        "sequence": 29,
+        "elapsedMs": 19599,
+        "processUptimeMs": 20538,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.custom_loaders_ready",
+        "sequence": 30,
+        "elapsedMs": 19600,
+        "processUptimeMs": 20539,
+        "pid": 24392,
+        "pureRequested": true
+      },
+      {
+        "version": 1,
+        "type": "harness.startup",
+        "stage": "provider.init_ready",
+        "sequence": 31,
+        "elapsedMs": 19601,
+        "processUptimeMs": 20539,
+        "pid": 24392,
+        "pureRequested": true
+      }
+    ],
+    "missingStages": [],
+    "inferenceRequests": 0,
+    "lifecycle": {
+      "pid": 24392,
+      "exitCode": 143,
+      "intentionallyStoppedAfterDiagnostic": true
+    },
+    "stdoutBytes": 127,
+    "stderrBytes": 5607,
+    "outputTruncated": false
+  },
+  "derivedIntervals": {
+    "providerInitializationMs": 10136,
+    "credentialLoadingSpanMs": 10119,
+    "catalogMappingMs": 13,
+    "customLoaderSpanMs": 1
+  },
+  "interpretation": "In this sample the dominant measured provider initialization span surrounds auth.all and API-credential activation, not custom provider setup or model inference. Filesystem read, parse/registration and error handling are not yet separated.",
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

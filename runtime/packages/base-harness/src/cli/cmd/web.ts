@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
@@ -29,9 +30,8 @@ function getNetworkIPs() {
 }
 
 export const WebCommand = effectCmd({
-  command: "web",
+  ...EntryCommand.web,
   builder: (yargs) => withNetworkOptions(yargs),
-  describe: "start base-harness server and open web interface",
   // Server loads instances per-request via x-base-harness-directory header — no
   // ambient project InstanceContext needed at startup.
   instance: false,
@@ -45,12 +45,10 @@ export const WebCommand = effectCmd({
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-
     if (opts.hostname === "0.0.0.0") {
       // Show localhost for local access
       const localhostUrl = `http://localhost:${server.port}`
       UI.println(UI.Style.TEXT_INFO_BOLD + "  Local access:      ", UI.Style.TEXT_NORMAL, localhostUrl)
-
       // Show network IPs for remote access
       const networkIPs = getNetworkIPs()
       if (networkIPs.length > 0) {
@@ -62,7 +60,6 @@ export const WebCommand = effectCmd({
           )
         }
       }
-
       if (opts.mdns) {
         UI.println(
           UI.Style.TEXT_INFO_BOLD + "  mDNS:              ",
@@ -70,7 +67,6 @@ export const WebCommand = effectCmd({
           `${opts.mdnsDomain}:${server.port}`,
         )
       }
-
       // Open localhost in browser
       open(localhostUrl).catch(() => {})
     } else {
@@ -78,7 +74,6 @@ export const WebCommand = effectCmd({
       UI.println(UI.Style.TEXT_INFO_BOLD + "  Web interface:    ", UI.Style.TEXT_NORMAL, displayUrl)
       open(displayUrl).catch(() => {})
     }
-
     yield* Effect.never
   }),
 })

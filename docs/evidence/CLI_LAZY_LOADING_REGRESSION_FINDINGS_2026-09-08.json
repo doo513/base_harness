@@ -1,0 +1,113 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Phase48 lazy CLI loading regression gates",
+  "patchRecovery": {
+    "allSevenFilesMatchIntendedPatchIgnoringCRLF": true
+  },
+  "tests": {
+    "passed": 11,
+    "failed": 1,
+    "assertions": 23,
+    "failure": "Default-command help callback receives empty output"
+  },
+  "typecheck": {
+    "exitCode": 2,
+    "errors": 8,
+    "summary": [
+      "middlewares missing from CommandModule type",
+      "async builder cast incompatible with CommandBuilder",
+      "six implicit-any callback parameters in new tests"
+    ]
+  },
+  "actualHelp": {
+    "diagnosticOnly": true,
+    "cases": [
+      {
+        "args": [
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 8556.505000000001,
+        "stdoutBytes": 0,
+        "stderrBytes": 0,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": false,
+        "hasPassword": false,
+        "startsWithBrand": false,
+        "unexpectedError": false
+      },
+      {
+        "args": [
+          "run",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4923.529500000001,
+        "stdoutBytes": 0,
+        "stderrBytes": 3640,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": true,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false
+      },
+      {
+        "args": [
+          "execute",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4778.998599999999,
+        "stdoutBytes": 0,
+        "stderrBytes": 3659,
+        "hasCommandListing": false,
+        "hasMini": false,
+        "hasVariant": true,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false
+      },
+      {
+        "args": [
+          "attach",
+          "--help"
+        ],
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 4660.0131,
+        "stdoutBytes": 0,
+        "stderrBytes": 1692,
+        "hasCommandListing": false,
+        "hasMini": true,
+        "hasVariant": false,
+        "hasPassword": true,
+        "startsWithBrand": true,
+        "unexpectedError": false
+      }
+    ],
+    "inferenceRequests": 0
+  },
+  "conclusion": "Not promotion-ready: root help exits 0 with no output; newly authored code also fails typecheck",
+  "deferred": [
+    "startup comparison",
+    "worker repair fixture",
+    "real account/model use",
+    "native TUI end-to-end"
+  ],
+  "pendingUserApproval": "Fix new lazy CLI help regression, adapter typing and test callback typing without changing builders/handlers or verification policy",
+  "gitTouched": false,
+  "netMonitorTouched": false,
+  "priorFailuresNotResolved": [
+    "Phase38 title capitalization expectation",
+    "Phase40 readiness diagnostic timeout",
+    "Phase45 freshness test setup",
+    "Phase46 intermittent Host startup timeouts"
+  ]
+}

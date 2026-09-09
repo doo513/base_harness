@@ -1,0 +1,28 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "TUI identity and state-presentation fixture correction",
+  "changedFiles": [
+    "runtime/packages/tui/test/harness-identity-presentation.test.ts"
+  ],
+  "productionCodeChanged": false,
+  "policyChanged": false,
+  "correction": {
+    "previousExpected": "Build-tools",
+    "expected": "Build-Tools",
+    "additionalCustomRole": "plan-review",
+    "additionalExpected": "Plan-Review"
+  },
+  "validation": {
+    "passed": 27,
+    "failed": 0,
+    "assertions": 44,
+    "files": 2,
+    "tuiTypecheck": 0,
+    "exitCode": 0
+  },
+  "gitTouched": false,
+  "netMonitorTouched": false,
+  "overallProductCompletion": false
+}

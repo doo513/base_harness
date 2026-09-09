@@ -686,7 +686,7 @@ def test_sidecar_redacts_secret_like_values_before_persistence(tmp_path: Path) -
     assert "abcdefghijklmnopqrstuvwxyz" not in persisted
 
 
-def test_unknown_failure_exhausts_only_its_scope_and_independent_scope_continues(tmp_path: Path) -> None:
+def test_unknown_failure_suspends_only_its_scope_and_independent_scope_continues(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     write_config(workspace, [verifier()])
@@ -721,10 +721,11 @@ def test_unknown_failure_exhausts_only_its_scope_and_independent_scope_continues
         )
     )
 
-    exhausted = sidecar.handle(message("verify.request", {"reason": "automatic"}))
-    assert exhausted["outcome"] == "repair_exhausted"
-    assert exhausted["state"] == "open"
-    assert exhausted["repairable"] is False
+    failure = sidecar.handle(message("verify.request", {"reason": "automatic"}))
+    assert failure["outcome"] == "failure"
+    assert failure["state"] == "failure"
+    assert failure["repairCount"] == 0
+    assert failure["repairable"] is False
 
     sidecar.handle(
         message(
@@ -822,7 +823,10 @@ def test_revoked_verifier_recomputes_and_quarantines_dependent_case(tmp_path: Pa
     result = second.handle(message("verify.request", {"reason": "manual"}, run_id="run-2"))
     case = second.memory._load(goal_contract["claims"][0])  # type: ignore[index]
 
-    assert result["outcome"] == "repair"
+    assert result["outcome"] == "failure"
+    assert result["failureKind"] == "verifier_error"
+    assert result["repairCount"] == 0
+    assert result["repairable"] is False
     assert result["claimResults"][0]["result"] == "verifier_invalid"
     assert case["tier"] == "candidate"
     assert case["status"] == "quarantined"
@@ -868,3 +872,54 @@ def test_expired_evidence_cannot_supply_historical_independence(tmp_path: Path) 
     methods = sidecar.memory.independent_historical_methods(claim, set(), set())
 
     assert methods == set()
+
+
+def test_current_soft_counterevidence_prevents_ready_even_with_support(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    counter = verifier("counter", exit_code=1)
+    counter["contradictionSeverity"] = "soft"
+    write_config(workspace, [verifier("support"), counter])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    goal_contract = contract(src, verifier_ids=["support", "counter"])
+    propose_and_act(sidecar, workspace, goal_contract, value=src)
+
+    result = sidecar.handle(message("verify.request", {"reason": "manual"}))
+    assert result["outcome"] == "repair"
+    assert result["readyEligible"] is False
+    assert result["claimResults"][0]["result"] == "refuted"
+    assert len(result["claimResults"][0]["evidenceIds"]) == 2
+    assert all(item["status"] == "disputed" for item in result["evidenceFamilies"])
+    assert result["readyRef"] is None
+
+
+@pytest.mark.parametrize(
+    ("freshness_seconds", "expected_methods"),
+    [(None, set()), (3600, {"pass"})],
+    ids=["missing-freshness", "fresh-evidence"],
+)
+def test_disputed_history_cannot_supply_missing_independence(
+    tmp_path: Path,
+    freshness_seconds: int | None,
+    expected_methods: set[str],
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_config(workspace, [verifier(freshness_seconds=freshness_seconds)])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    goal_contract = contract(src)
+    propose_and_act(sidecar, workspace, goal_contract, value=src)
+    assert sidecar.handle(message("verify.request", {}))["outcome"] == "ready"
+    claim = goal_contract["claims"][0]
+    case = sidecar.memory._load(claim)
+    assert case["status"] == "active"
+    # Current verification can succeed without authorizing historical reuse.
+    assert sidecar.memory.independent_historical_methods(claim, set(), set()) == expected_methods
+    counter = dict(case["supports"][0])
+    counter.update({"evidenceId": "counter-evidence", "semanticFingerprint": "counter-fingerprint",
+                    "familyId": "counter-family"})
+    sidecar.memory.record(claim, counter, support=False, severity="soft")
+    assert sidecar.memory._load(claim)["status"] == "disputed"
+    assert sidecar.memory.independent_historical_methods(claim, set(), set()) == set()

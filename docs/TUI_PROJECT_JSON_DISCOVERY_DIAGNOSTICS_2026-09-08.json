@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "change": "Discover project tui.json and tui.jsonc with deterministic precedence; keep server project JSONC-only.",
+  "targeted": {
+    "passed": 48,
+    "failed": 0,
+    "assertions": 162,
+    "files": 4,
+    "seconds": 29.63,
+    "typecheckExitCode": 0,
+    "log": ".tools/validation/tui-json-discovery-1788846709927.log"
+  },
+  "broaderHost": {
+    "status": "running_at_last_observation",
+    "sessionId": 22159,
+    "log": ".tools/validation/host-suite-after-tui-json-1788846781735.log",
+    "bailAfterFailures": 5,
+    "fullPassProven": false,
+    "lastObservation": {
+      "chunk_id": "655dee",
+      "wall_time_seconds": 30.0052343,
+      "session_id": 22159,
+      "original_token_count": 0,
+      "output": ""
+    }
+  },
+  "userConfigMetadata": {
+    "directory": "C:/Users/doo33/AppData/Local/base-harness",
+    "files": [
+      {
+        "Name": "base-harness.jsonc",
+        "Exists": false,
+        "Length": null,
+        "LastWriteTimeUtc": null
+      },
+      {
+        "Name": "base-harness.jsonc.tui-migration.bak",
+        "Exists": false,
+        "Length": null,
+        "LastWriteTimeUtc": null
+      },
+      {
+        "Name": "tui.json",
+        "Exists": false,
+        "Length": null,
+        "LastWriteTimeUtc": null
+      },
+      {
+        "Name": "tui.jsonc",
+        "Exists": false,
+        "Length": null,
+        "LastWriteTimeUtc": null
+      }
+    ],
+    "preRunContentsKnown": false,
+    "restorationPerformed": false,
+    "credentialsRead": false
+  },
+  "remaining": [
+    "Observe existing Host test session to terminal status; do not restart a live run.",
+    "Original user configuration loss and recovery remain unproven; no guessed restore.",
+    "Real-account compatibility, full platform isolation and standalone distribution are not established."
+  ]
+}

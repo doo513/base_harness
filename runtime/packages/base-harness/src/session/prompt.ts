@@ -100,6 +100,8 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 }
 
 import { Coordinator, Orchestration } from "../harness/coordinator-service"
+import { captureExecutionContext } from "../harness/execution-context"
+import { requireExecutionModel } from "../harness/model-selection"
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -111,6 +113,57 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@base-harness/SessionPrompt") {}
+
+/** Rebuild capabilities in the current Host request. Persisted JSON never carries execution authority. */
+export const executeReviewedPlan = Effect.fn("SessionPrompt.executeReviewedPlan")(function* (input: {
+  sessionID: SessionID; planId?: string;
+}) {
+  const instance = yield* InstanceState.context
+  const sessions = yield* Session.Service
+  const prompt = yield* Service
+  const provider = yield* Provider.Service
+  const config = yield* Config.Service
+  const database = yield* Database.Service
+  const state = yield* SessionRunState.Service
+  yield* state.assertNotBusy(input.sessionID).pipe(Effect.orDie)
+  const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+  if (session.parentID) return yield* Effect.die(new Error("PLAN_ROOT_SESSION_REQUIRED"))
+  const descriptor = yield* Effect.promise(() => Coordinator.preparePlanExecution(input.sessionID, instance.directory, input.planId))
+  const selected = descriptor.selection
+  const model = requireExecutionModel(selected)
+  const available = yield* provider.getModel(model.providerID, model.modelID).pipe(Effect.orDie)
+  if (selected.variant !== undefined && !Object.hasOwn(available.variants ?? {}, selected.variant)) {
+    return yield* Effect.die(new Error("PLAN_REASONING_SELECTION_UNAVAILABLE"))
+  }
+  const original = yield* MessageV2.get({
+    sessionID: input.sessionID, messageID: MessageID.make(selected.messageID),
+  }).pipe(Effect.provideService(Database.Service, database), Effect.orDie)
+  if (original.info.role !== "assistant" || original.info.modelID !== model.modelID
+      || original.info.providerID !== model.providerID || original.info.variant !== selected.variant
+      || original.info.agent !== selected.agent) {
+    return yield* Effect.die(new Error("PLAN_MODEL_SELECTION_MISMATCH"))
+  }
+  const cfg = yield* config.get()
+  if ((cfg.verification?.profile ?? "adaptive") !== descriptor.policy.configuredProfile
+      || (cfg.verification?.trigger ?? "auto") !== descriptor.policy.trigger
+      || (cfg.verification?.maxSameFailureRepairs ?? 2) !== descriptor.policy.maxSameFailureRepairs
+      || Math.max(1, Math.min(2, cfg.orchestration?.maxParallelWorkUnits ?? 2)) !== descriptor.policy.maxParallelWorkUnits) {
+    return yield* Effect.die(new Error("PLAN_POLICY_STALE"))
+  }
+  const promptOps: TaskPromptOps = {
+    cancel: prompt.cancel, resolvePromptParts: prompt.resolvePromptParts,
+    prompt: (value) => prompt.prompt(value).pipe(Effect.catch(Effect.die)),
+  }
+  const context = yield* captureExecutionContext(input.sessionID, {
+    sessionID: input.sessionID, messageID: MessageID.make(selected.messageID), agent: selected.agent,
+    abort: new AbortController().signal, messages: [],
+    extra: { promptOps, modelSelection: model, variant: selected.variant },
+    metadata: () => Effect.void,
+    ask: () => Effect.die(new Error("PLAN_EXECUTION_DISPATCH_ONLY")),
+  } satisfies Tool.Context)
+  return yield* Effect.promise(() => Coordinator.control(input.sessionID,
+    { type: "planning.execute", planId: input.planId }, context))
+})
 
 const layer = Layer.effect(
   Service,
@@ -1064,9 +1117,9 @@ const layer = Layer.effect(
         const instance = yield* InstanceState.context
         const selectedModel = input.model ?? (yield* currentModel(input.sessionID))
         const kernelStatus = !session.parentID
-          ? (Coordinator.status(input.sessionID) as { planningPreference?: "auto" | "plan_once" })
+          ? yield* Effect.promise(() => Coordinator.readStatus(input.sessionID, instance.directory))
           : undefined
-        const planOnly = kernelStatus?.planningPreference === "plan_once"
+        const planOnly = kernelStatus?.planOnly === true
         const directive = Orchestration.beginPrompt({
           sessionID: input.sessionID,
           parentSessionID: session.parentID,
@@ -1083,6 +1136,13 @@ const layer = Layer.effect(
         })
         if (!session.parentID) {
           const rootPromptOps = yield* ops()
+          const executionContext = yield* captureExecutionContext(input.sessionID, {
+            promptOps: rootPromptOps,
+            messageID: input.messageID,
+            agent: input.agent,
+            model: selectedModel,
+            variant: input.variant,
+          })
           yield* Effect.promise(() =>
             Coordinator.openRun({
               sessionID: input.sessionID,
@@ -1094,13 +1154,7 @@ const layer = Layer.effect(
               maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
               trigger: cfg.verification?.trigger,
               defaultDomain: cfg.kernel?.defaultDomain ?? "develop",
-              context: {
-                promptOps: rootPromptOps,
-                messageID: input.messageID,
-                agent: input.agent,
-                model: selectedModel,
-                variant: input.variant,
-              },
+              context: executionContext,
             }),
           )
         }

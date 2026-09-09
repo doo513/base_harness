@@ -21,6 +21,8 @@ status = {
 
 for line in sys.stdin:
     request = json.loads(line)
+    if mode == "clean-exit":
+        raise SystemExit(0)
     if mode == "crash":
         raise SystemExit(7)
     if mode == "malformed":
@@ -34,8 +36,8 @@ for line in sys.stdin:
     elif request_type == "run.open":
         status.update(
             {
-                "runId": request["runId"],
-                "scopeId": request["scopeId"],
+                "runId": request["runId"] + ("-wrong" if mode == "wrong-run" else ""),
+                "scopeId": request["scopeId"] + ("-wrong" if mode == "wrong-scope" else ""),
                 "rootScopeId": request["scopeId"],
                 "goalContract": request["payload"].get("goalContract"),
             }
@@ -54,7 +56,7 @@ for line in sys.stdin:
     elif request_type == "scope.open":
         payload = {
             **status,
-            "scopeId": request["scopeId"],
+            "scopeId": request["scopeId"] + ("-wrong" if mode == "wrong-scope" else ""),
             "scopeKind": request["payload"].get("kind", "work_unit"),
         }
     elif request_type == "candidate.attach":
@@ -65,14 +67,14 @@ for line in sys.stdin:
         payload = dict(status)
     elif request_type == "candidate.commit":
         status["candidateCommitted"] = True
-        payload = dict(status)
+        payload = {**status, "committedCandidate": request["payload"]["attestation"]}
     elif request_type == "verify.request":
         if request["scopeId"] != status["rootScopeId"]:
             candidate = status.get("candidate", {})
             payload = {
                 **status,
                 "state": "open",
-                "scopeId": request["scopeId"],
+                "scopeId": request["scopeId"] + ("-wrong" if mode == "wrong-scope" else ""),
                 "outcome": "scope_verified",
                 "readyRef": None,
                 "scopeAttestation": {
@@ -86,8 +88,8 @@ for line in sys.stdin:
                     {
                         "version": version,
                         "id": request["id"],
-                        "runId": request["runId"],
-                        "scopeId": request["scopeId"],
+                        "runId": request["runId"] + ("-wrong" if mode == "wrong-run" else ""),
+                        "scopeId": request["scopeId"] + ("-wrong" if mode == "wrong-scope" else ""),
                         "type": "response",
                         "payload": payload,
                     }
@@ -106,13 +108,16 @@ for line in sys.stdin:
     elif request_type == "run.close":
         status["state"] = "closed"
         payload = dict(status)
+    if request_type != "hello":
+        payload["runId"] = request["runId"] + ("-wrong" if mode == "wrong-run" else "")
+        payload["scopeId"] = request["scopeId"] + ("-wrong" if mode == "wrong-scope" else "")
     print(
         json.dumps(
             {
                 "version": version,
                 "id": request["id"],
-                "runId": request["runId"],
-                "scopeId": request["scopeId"],
+                "runId": request["runId"] + ("-wrong" if mode == "wrong-run" else ""),
+                "scopeId": request["scopeId"] + ("-wrong" if mode == "wrong-scope" else ""),
                 "type": "response",
                 "payload": payload,
             }

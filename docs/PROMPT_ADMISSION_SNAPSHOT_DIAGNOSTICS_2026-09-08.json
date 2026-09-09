@@ -1,0 +1,51 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Prompt ordering, pre-contract exploration admission, and direct structured-write snapshot regression.",
+  "combined": {
+    "sessionId": 97784,
+    "exitCode": 1,
+    "passed": 52,
+    "skipped": 14,
+    "failed": 2,
+    "unhandledErrors": 1,
+    "assertions": 236,
+    "files": 3,
+    "tests": 68,
+    "durationSeconds": 6615.46,
+    "hostTypecheckExitCode": 0,
+    "log": ".tools/validation/prompt-admission-followup-1788852189721.log",
+    "failures": [
+      "running task tool preserves metadata after tool-call transition",
+      "loop sets status to busy then idle"
+    ],
+    "timingCause": "Not established; do not use this anomalous elapsed time as a performance benchmark."
+  },
+  "isolated": {
+    "sessionId": 12806,
+    "processId": 33556,
+    "exitCode": 1,
+    "passed": 1,
+    "failed": 1,
+    "filteredOut": 57,
+    "assertions": 2,
+    "durationSeconds": 17.57,
+    "parentDeadlineSeconds": 60,
+    "watchdogTriggered": false,
+    "stopped": true,
+    "failedTest": "running task tool preserves metadata after tool-call transition",
+    "passedTest": "loop sets status to busy then idle",
+    "stdout": ".tools/validation/prompt-timeout-isolation-1788858985673.stdout.log",
+    "stderr": ".tools/validation/prompt-timeout-isolation-1788858985673.stderr.log"
+  },
+  "gatePassed": false,
+  "fullSuitePassed": false,
+  "changedFiles": [
+    "runtime/packages/base-harness/src/tool/harness-contract-state.ts",
+    "runtime/packages/base-harness/src/session/tools.ts",
+    "runtime/packages/base-harness/test/tool/harness-contract.test.ts",
+    "runtime/packages/base-harness/test/session/prompt.test.ts",
+    "runtime/packages/base-harness/test/session/snapshot-tool-race.test.ts"
+  ]
+}

@@ -1,0 +1,22 @@
+/** Lightweight command identities shared by registration and implementation. */
+export const EntryCommand = {
+  debug: { command: "debug", describe: "debugging and troubleshooting tools" },
+  acp: { command: "acp", describe: "start ACP (Agent Client Protocol) server" },
+  tui: { command: "$0 [project]", describe: "start base-harness tui" },
+  attach: { command: "attach <url>", describe: "attach to a running base-harness server" },
+  run: { command: "run [message..]", describe: "run base-harness with a message" },
+  execute: { command: "execute <planId>", describe: "execute a reviewed plan in its original workspace" },
+  console: { command: "console", describe: false },
+  agent: { command: "agent", describe: "manage agents" },
+  models: { command: "models [provider]", describe: "list all available models" },
+  stats: { command: "stats", describe: "show token usage and cost statistics" },
+  export: { command: "export [sessionID]", describe: "export session data as JSON" },
+  import: { command: "import <file>", describe: "import session data from JSON file or URL" },
+  session: { command: "session", describe: "manage sessions" },
+  plugin: { command: "plugin <module>", aliases: ["plug"] as string[], describe: "install plugin and update config" },
+  db: { command: "db", describe: "database tools" },
+  serve: { command: "serve", describe: "starts a headless base-harness server" },
+  web: { command: "web", describe: "start base-harness server and open web interface" },
+  providers: { command: "providers", aliases: ["auth"] as string[], describe: "manage AI providers and credentials" },
+  mcp: { command: "mcp", describe: "manage MCP (Model Context Protocol) servers" },
+} as const

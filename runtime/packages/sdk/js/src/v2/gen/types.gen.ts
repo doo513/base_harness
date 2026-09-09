@@ -10467,6 +10467,45 @@ export type PermissionRespondResponses = {
 
 export type PermissionRespondResponse = PermissionRespondResponses[keyof PermissionRespondResponses]
 
+export type SessionHarnessPlanData = {
+  body?: never
+  path: {
+    planID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/harness/plan/{planID}"
+}
+
+export type SessionHarnessPlanErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionHarnessPlanError = SessionHarnessPlanErrors[keyof SessionHarnessPlanErrors]
+
+export type SessionHarnessPlanResponses = {
+  /**
+   * Reviewed plan execution location
+   */
+  200: {
+    sessionID: string
+    workspace: string
+    planId: string
+    revision: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type SessionHarnessPlanResponse = SessionHarnessPlanResponses[keyof SessionHarnessPlanResponses]
+
 export type SessionHarnessData = {
   body?: never
   path: {
@@ -10568,6 +10607,10 @@ export type SessionHarnessCancelResponses = {
 export type SessionHarnessControlData = {
   body?:
     | {
+        type: "execution.discover"
+        adapterID: string
+      }
+    | {
         type: "domain.set"
         domain: "develop" | "general"
       }
@@ -10575,6 +10618,17 @@ export type SessionHarnessControlData = {
         type: "skill.set"
         skill: "hackathon"
         enabled: boolean
+      }
+    | {
+        type: "execution.select"
+        selection?: {
+          adapterID: string
+          modelID?: string
+          options?: {
+            [key: string]: string
+          }
+          capabilityRevision?: string
+        }
       }
     | {
         type: "planning.plan_once"

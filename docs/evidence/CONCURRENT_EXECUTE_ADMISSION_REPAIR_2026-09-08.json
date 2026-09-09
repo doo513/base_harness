@@ -1,0 +1,42 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "KernelHost duplicate execute admission and existing planning regression suite",
+  "implementation": {
+    "source": "runtime/packages/kernel-host/src/index.ts",
+    "test": "runtime/packages/kernel-host/test/restored-planning-boundary.test.ts",
+    "policy": "Reserve planning.execute per session before queueing; reject duplicates with RUN_ACTIVE; release reservation in finally; retain ordered non-execute controls"
+  },
+  "validation": {
+    "bunVersion": "1.3.14",
+    "kernelHostSuite": {
+      "passed": 86,
+      "failed": 0,
+      "assertions": 463,
+      "files": 10,
+      "durationSeconds": 4.49,
+      "perTestTimeoutMs": 10000,
+      "exitCode": 0
+    },
+    "kernelHostTypecheck": 0,
+    "hostTypecheck": 0,
+    "supervisorExit": 0
+  },
+  "covered": [
+    "Same-tick duplicate execute rejection",
+    "Duplicate rejection while first handoff is explicitly held",
+    "A different session is not locked by the reservation",
+    "Failed plan-ID validation releases admission and preserves the reviewed plan",
+    "Existing domain/skill control serialization",
+    "Existing plan persistence, recovery and terminal-state regressions"
+  ],
+  "limitations": [
+    "No new real-model, OAuth or native TUI trial",
+    "No application-wide full suite in this turn",
+    "Reservation is local to one KernelHost; durable plan-consumption protection is unchanged",
+    "Earlier unrelated failing tests and startup variability remain open"
+  ],
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

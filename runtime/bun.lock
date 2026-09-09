@@ -60,6 +60,7 @@
         "@base-harness/codemode": "workspace:*",
         "@base-harness/coordinator": "workspace:*",
         "@base-harness/kernel": "workspace:*",
+        "@base-harness/kernel-host": "workspace:*",
         "@base-harness/llm": "workspace:*",
         "@base-harness/plugin": "workspace:*",
         "@base-harness/protocol": "workspace:*",
@@ -178,8 +179,9 @@
       "name": "@base-harness/coordinator",
       "version": "2.0.0",
       "dependencies": {
-        "@base-harness/core": "workspace:*",
+        "@base-harness/security": "workspace:*",
         "@base-harness/verification": "workspace:*",
+        "@base-harness/workspace": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -219,6 +221,8 @@
         "@base-harness/llm": "workspace:*",
         "@base-harness/plugin": "workspace:*",
         "@base-harness/schema": "workspace:*",
+        "@base-harness/security": "workspace:*",
+        "@base-harness/workspace": "workspace:*",
         "@effect/opentelemetry": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/sql-sqlite-bun": "catalog:",
@@ -332,6 +336,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/kernel-host": {
+      "name": "@base-harness/kernel-host",
+      "version": "2.0.0",
+      "dependencies": {
+        "@base-harness/kernel": "workspace:*",
+        "@base-harness/workspace": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/llm": {
       "name": "@base-harness/llm",
       "version": "0.1.0",
@@ -431,6 +447,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/security": {
+      "name": "@base-harness/security",
+      "version": "2.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/server": {
       "name": "@base-harness/server",
       "version": "0.1.0",
@@ -526,6 +550,14 @@
     },
     "packages/verification": {
       "name": "@base-harness/verification",
+      "version": "2.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/workspace": {
+      "name": "@base-harness/workspace",
       "version": "2.0.0",
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -882,6 +914,8 @@
 
     "@base-harness/kernel": ["@base-harness/kernel@workspace:packages/kernel"],
 
+    "@base-harness/kernel-host": ["@base-harness/kernel-host@workspace:packages/kernel-host"],
+
     "@base-harness/llm": ["@base-harness/llm@workspace:packages/llm"],
 
     "@base-harness/plugin": ["@base-harness/plugin@workspace:packages/plugin"],
@@ -894,6 +928,8 @@
 
     "@base-harness/sdk": ["@base-harness/sdk@workspace:packages/sdk/js"],
 
+    "@base-harness/security": ["@base-harness/security@workspace:packages/security"],
+
     "@base-harness/server": ["@base-harness/server@workspace:packages/server"],
 
     "@base-harness/tui": ["@base-harness/tui@workspace:packages/tui"],
@@ -901,6 +937,8 @@
     "@base-harness/ui": ["@base-harness/ui@workspace:packages/ui"],
 
     "@base-harness/verification": ["@base-harness/verification@workspace:packages/verification"],
+
+    "@base-harness/workspace": ["@base-harness/workspace@workspace:packages/workspace"],
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.12.0", "", {}, "sha512-B/XlCaFIP8LOwzo+bz5uFzATYokcwCKQcghqnlfwSmM5eX/qTkvDBnDPs+gXtX/RyjxJ4DRikECcPJbyALA8FA=="],
 

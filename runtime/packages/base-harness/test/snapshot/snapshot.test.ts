@@ -15,10 +15,25 @@ import {
   tmpdirScoped,
 } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { probeSymlinkCapabilities, requireSymlinkCapabilities } from "../lib/symlink-capability"
 
 const it = testEffect(
   Layer.mergeAll(LayerNode.compile(LayerNode.group([Snapshot.node, FSUtil.node])), testInstanceStoreLayer),
 )
+const symlinkCapabilities = await probeSymlinkCapabilities()
+requireSymlinkCapabilities(symlinkCapabilities, process.env.BASE_HARNESS_REQUIRE_SYMLINK_TESTS === "1")
+const fileSymlinkIt = symlinkCapabilities.file.supported ? it.instance : it.instance.skip
+const directorySymlinkIt = symlinkCapabilities.directory.supported ? it.instance : it.instance.skip
+const nestedSymlinkIt = symlinkCapabilities.file.supported && symlinkCapabilities.directory.supported
+  ? it.instance : it.instance.skip
+const symlinkTitle = (name: string, supported: boolean) => supported ? name : name + " [unavailable: Windows symlink permission]"
+for (const [kind, capability] of Object.entries(symlinkCapabilities)) {
+  if (!capability.supported) {
+    process.stderr.write("CAPABILITY_UNAVAILABLE: " + kind + " symlink: " + capability.reason
+      + "; not verified. Set BASE_HARNESS_REQUIRE_SYMLINK_TESTS=1 to enforce the required gate.\n")
+  }
+}
+
 // Windows forbids both * and : in directory names.
 const nonWindowsIt = process.platform === "win32" ? it.live.skip : it.live
 
@@ -188,8 +203,8 @@ it.instance(
   { git: true },
 )
 
-it.instance(
-  "symlink handling",
+fileSymlinkIt(
+  symlinkTitle("symlink handling", symlinkCapabilities.file.supported),
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
       yield* Effect.promise(() => fs.symlink(`${tmp.path}/a.txt`, `${tmp.path}/link.txt`, "file"))
@@ -381,8 +396,8 @@ it.instance(
   { git: true },
 )
 
-it.instance(
-  "nested symlinks",
+nestedSymlinkIt(
+  symlinkTitle("nested symlinks", symlinkCapabilities.file.supported && symlinkCapabilities.directory.supported),
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
       yield* mkdirp(`${tmp.path}/sub/dir`)
@@ -410,13 +425,12 @@ it.instance(
   { git: true },
 )
 
-it.instance(
-  "circular symlinks",
+directorySymlinkIt(
+  symlinkTitle("circular symlinks", symlinkCapabilities.directory.supported),
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
-      yield* Effect.promise(() =>
-        fs.symlink(`${tmp.path}/circular`, `${tmp.path}/circular`, "dir").catch(() => undefined),
-      )
+      yield* Effect.promise(() => fs.symlink(`${tmp.path}/circular`, `${tmp.path}/circular`, "dir"))
+      expect((yield* Effect.promise(() => fs.lstat(`${tmp.path}/circular`))).isSymbolicLink()).toBe(true)
       expect((yield* snapshot.patch(before)).files.length).toBeGreaterThanOrEqual(0)
     }),
   ),

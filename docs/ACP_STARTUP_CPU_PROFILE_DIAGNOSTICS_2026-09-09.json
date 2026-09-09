@@ -1,0 +1,666 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "profilePath": "C:/Users/doo33/Downloads/base_harness/.tools/validation/acp-initialize-1788914276435.cpuprofile",
+  "probe": [
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "initialized": true,
+      "modelCalls": 0,
+      "resources": {
+        "atSpawn": {
+          "parentRssBytes": 55463936,
+          "parentHeapUsedBytes": 587590,
+          "systemFreeBytes": 2562285568,
+          "systemTotalBytes": 16440479744
+        },
+        "atObservation": {
+          "parentRssBytes": 61472768,
+          "parentHeapUsedBytes": 6342554,
+          "systemFreeBytes": 1925222400,
+          "systemTotalBytes": 16440479744
+        }
+      }
+    },
+    {
+      "diagnosticOnly": true,
+      "notHarnessEvidence": true,
+      "notIndependentUserValidation": true,
+      "startup": [
+        {
+          "stage": "cli.modules_ready",
+          "processUptimeMs": 505
+        },
+        {
+          "stage": "cli.input_ready",
+          "processUptimeMs": 673
+        },
+        {
+          "stage": "runtime.import_start",
+          "processUptimeMs": 678
+        },
+        {
+          "stage": "runtime.modules_ready",
+          "processUptimeMs": 3969
+        },
+        {
+          "stage": "runtime.layer_ready",
+          "processUptimeMs": 3971
+        },
+        {
+          "stage": "runtime.managed_ready",
+          "processUptimeMs": 3972
+        },
+        {
+          "stage": "runtime.import_ready",
+          "processUptimeMs": 3972
+        },
+        {
+          "stage": "runtime.services_start",
+          "processUptimeMs": 3972
+        }
+      ],
+      "childStopped": true
+    }
+  ],
+  "summary": {
+    "diagnosticOnly": true,
+    "notHarnessEvidence": true,
+    "notIndependentUserValidation": true,
+    "nodeCount": 1683,
+    "sampleCount": 788,
+    "sampledDurationMs": 5759,
+    "self": [
+      {
+        "ms": 2712,
+        "percent": 47.1,
+        "functionName": "",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 122,
+        "percent": 2.1,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 41,
+        "percent": 0.7,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 33,
+        "percent": 0.6,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 32,
+        "percent": 0.6,
+        "functionName": "",
+        "scriptId": "24",
+        "url": "node:child_process",
+        "lineNumber": 787,
+        "columnNumber": 9
+      },
+      {
+        "ms": 32,
+        "percent": 0.6,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 32,
+        "percent": 0.6,
+        "functionName": "makeFn",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 793,
+        "columnNumber": 15
+      },
+      {
+        "ms": 31,
+        "percent": 0.5,
+        "functionName": "",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1185,
+        "columnNumber": 68
+      },
+      {
+        "ms": 31,
+        "percent": 0.5,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 29,
+        "percent": 0.5,
+        "functionName": "Map",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 28,
+        "percent": 0.5,
+        "functionName": "Map",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 28,
+        "percent": 0.5,
+        "functionName": "flatMap",
+        "scriptId": "7",
+        "url": "",
+        "lineNumber": 0,
+        "columnNumber": 10
+      },
+      {
+        "ms": 28,
+        "percent": 0.5,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 28,
+        "percent": 0.5,
+        "functionName": "run",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 26,
+        "percent": 0.5,
+        "functionName": "forEach",
+        "scriptId": "7",
+        "url": "",
+        "lineNumber": 0,
+        "columnNumber": 10
+      },
+      {
+        "ms": 25,
+        "percent": 0.4,
+        "functionName": "exitFilterCause",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1048,
+        "columnNumber": 31
+      },
+      {
+        "ms": 25,
+        "percent": 0.4,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "Map",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "Map",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "Map",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 24,
+        "percent": 0.4,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 23,
+        "percent": 0.4,
+        "functionName": "anonymous",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    ],
+    "inclusive": [
+      {
+        "ms": 5759,
+        "percent": 100,
+        "functionName": "(root)",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 4928,
+        "percent": 85.6,
+        "functionName": "processTicksAndRejections",
+        "scriptId": "11",
+        "url": "",
+        "lineNumber": 6,
+        "columnNumber": 38
+      },
+      {
+        "ms": 4653,
+        "percent": 80.8,
+        "functionName": "",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 773,
+        "percent": 13.4,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 773,
+        "percent": 13.4,
+        "functionName": "evaluate",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 403,
+        "columnNumber": 10
+      },
+      {
+        "ms": 773,
+        "percent": 13.4,
+        "functionName": "",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 653,
+        "columnNumber": 41
+      },
+      {
+        "ms": 773,
+        "percent": 13.4,
+        "functionName": "runTasks",
+        "scriptId": "227",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scheduler.js",
+        "lineNumber": 144,
+        "columnNumber": 10
+      },
+      {
+        "ms": 773,
+        "percent": 13.4,
+        "functionName": "afterScheduled",
+        "scriptId": "227",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scheduler.js",
+        "lineNumber": 137,
+        "columnNumber": 19
+      },
+      {
+        "ms": 708,
+        "percent": 12.3,
+        "functionName": "go",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1891,
+        "columnNumber": 15
+      },
+      {
+        "ms": 708,
+        "percent": 12.3,
+        "functionName": "",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1909,
+        "columnNumber": 26
+      },
+      {
+        "ms": 708,
+        "percent": 12.3,
+        "functionName": "bound ",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 708,
+        "percent": 12.3,
+        "functionName": "~effect/Effect/evaluate",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 713,
+        "columnNumber": 12
+      },
+      {
+        "ms": 696,
+        "percent": 12.1,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 696,
+        "percent": 12.1,
+        "functionName": "evaluate",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 403,
+        "columnNumber": 10
+      },
+      {
+        "ms": 696,
+        "percent": 12.1,
+        "functionName": "forkUnsafe",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 2074,
+        "columnNumber": 26
+      },
+      {
+        "ms": 605,
+        "percent": 10.5,
+        "functionName": "~effect/Effect/evaluate",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 713,
+        "columnNumber": 12
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "runLoop",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 428,
+        "columnNumber": 9
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "evaluate",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 403,
+        "columnNumber": 10
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "forkUnsafe",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 2074,
+        "columnNumber": 26
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "go",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1891,
+        "columnNumber": 15
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1909,
+        "columnNumber": 26
+      },
+      {
+        "ms": 595,
+        "percent": 10.3,
+        "functionName": "bound ",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      },
+      {
+        "ms": 468,
+        "percent": 8.1,
+        "functionName": "go",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1891,
+        "columnNumber": 15
+      },
+      {
+        "ms": 468,
+        "percent": 8.1,
+        "functionName": "",
+        "scriptId": "198",
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "lineNumber": 1909,
+        "columnNumber": 26
+      },
+      {
+        "ms": 468,
+        "percent": 8.1,
+        "functionName": "bound ",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    ],
+    "files": [
+      {
+        "url": "(native)",
+        "ms": 4264,
+        "percent": 74
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js",
+        "ms": 612,
+        "percent": 10.6
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/core.js",
+        "ms": 199,
+        "percent": 3.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Function.js",
+        "ms": 50,
+        "percent": 0.9
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Layer.js",
+        "ms": 39,
+        "percent": 0.7
+      },
+      {
+        "url": "node:child_process",
+        "ms": 32,
+        "percent": 0.6
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Context.js",
+        "ms": 25,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/zod@4.1.8/node_modules/zod/v4/classic/schemas.js",
+        "ms": 25,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/schema.js",
+        "ms": 24,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Schema.js",
+        "ms": 23,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaAST.js",
+        "ms": 22,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/zod@4.1.8/node_modules/zod/v4/core/core.js",
+        "ms": 21,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/drizzle-orm@1.0.0-rc.2+f63a802cc3611846/node_modules/drizzle-orm/cache/core/cache-effect.js",
+        "ms": 21,
+        "percent": 0.4
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/esprima@4.0.1/node_modules/esprima/dist/esprima.js",
+        "ms": 19,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Utils.js",
+        "ms": 17,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/cliui@9.0.1/node_modules/cliui/build/lib/index.js",
+        "ms": 17,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/@aws-crypto+util@5.2.0/node_modules/@aws-crypto/util/build/main/uint32ArrayFrom.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/packages/base-harness/src/server/routes/instance/httpapi/handlers/session.ts",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/find-my-way-ts@0.1.6/node_modules/find-my-way-ts/dist/esm/internal/router.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/@effect+platform-node-shared@4.0.0-beta.83+43902b222b0d7d3e/node_modules/@effect/platform-node-shared/dist/NodeFileSystem.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/zod@4.4.3/node_modules/zod/v4/core/to-json-schema.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/packages/effect-drizzle-sqlite/src/effect-sqlite/session.ts",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/zod@4.4.3/node_modules/zod/v4/classic/schemas.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "file:///C:/Users/doo33/Downloads/base_harness/runtime/node_modules/.bun/yargs@18.0.0/node_modules/yargs/build/lib/utils/obj-filter.js",
+        "ms": 16,
+        "percent": 0.3
+      },
+      {
+        "url": "internal:streams/destroy",
+        "ms": 15,
+        "percent": 0.3
+      }
+    ]
+  },
+  "interpretation": {
+    "namedApplicationHotspotEstablished": false,
+    "fullRunTimeoutReproduced": false,
+    "sampledIntervalsAreNotPreciseCpuDurations": true
+  },
+  "deadlineDecisionRequested": true,
+  "deadlineChanged": false,
+  "productionCodeChanged": false
+}

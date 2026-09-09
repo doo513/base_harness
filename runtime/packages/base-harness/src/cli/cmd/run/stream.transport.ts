@@ -283,6 +283,16 @@ function sameView(a: FooterView, b: FooterView) {
     return false
   }
 
+  if (a.type === "execution" && b.type === "execution") {
+    return a.adapterID === b.adapterID &&
+      a.capabilityRevision === b.capabilityRevision &&
+      a.currentModel === b.currentModel &&
+      a.currentEffort === b.currentEffort &&
+      a.reasoningOption === b.reasoningOption &&
+      JSON.stringify(a.models) === JSON.stringify(b.models) &&
+      JSON.stringify(a.reasoningEfforts) === JSON.stringify(b.reasoningEfforts)
+  }
+  if (a.type === "execution" || b.type === "execution") return false
   return a.request === b.request
 }
 

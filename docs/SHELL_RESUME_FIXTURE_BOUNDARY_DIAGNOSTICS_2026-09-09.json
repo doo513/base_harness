@@ -1,0 +1,62 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "typecheckExitCode": 0,
+  "diagnosticRuns": [
+    {
+      "passed": 2,
+      "failed": 0,
+      "assertions": 11,
+      "durationSeconds": 21.64,
+      "firstTest": {
+        "runnerStartMs": 5595,
+        "bodyStartMs": 7095,
+        "runnerReleasedMs": 14505,
+        "setupMs": 1500,
+        "totalMs": 8910
+      }
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "assertions": 11,
+      "durationSeconds": 20.02,
+      "firstTest": {
+        "runnerStartMs": 4363,
+        "bodyStartMs": 5864,
+        "runnerReleasedMs": 13085,
+        "setupMs": 1501,
+        "totalMs": 8722,
+        "providerInitStartMs": 6820,
+        "providerInitReadyMs": 7730,
+        "providerInitMs": 910
+      }
+    }
+  ],
+  "fullSuiteRerun": false,
+  "rootCauseEstablished": false,
+  "previousFailuresResolved": false,
+  "changes": "Opt-in bounded fixture and runner phase diagnostics only; no deadline or production policy changes.",
+  "bodyFollowup": {
+    "passed": 2,
+    "failed": 0,
+    "assertions": 11,
+    "durationSeconds": 20.32,
+    "firstTest": {
+      "setupMs": 1603,
+      "serverConfigReadyMs": 4,
+      "sessionCreatedMs": 21,
+      "shellForkedMs": 21,
+      "busyObservedMs": 57,
+      "loopForkedMs": 57,
+      "noEarlyModelCallMs": 121,
+      "shellCompletedMs": 3295,
+      "loopCompletedMs": 7184,
+      "runnerTotalMs": 8996,
+      "shellForkToCompletionMs": 3274,
+      "shellCompletionToLoopCompletionMs": 3889
+    },
+    "rootCauseEstablished": false
+  }
+}

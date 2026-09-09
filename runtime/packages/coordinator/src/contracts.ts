@@ -1,4 +1,4 @@
-import type * as Orchestration from "@base-harness/core/orchestration"
+import type * as Orchestration from "@base-harness/workspace/orchestration"
 import type {
   GoalContractProposal,
   VerificationProfile,
@@ -30,12 +30,15 @@ export interface HarnessStatus {
   workspace: string
   runId: string
   goal: string
-  phase: Orchestration.Phase | "inactive"
+  phase: Orchestration.Phase | "inactive" | "plan_ready"
+  executionPlan?: ExecutionPlanLink
+  revisesPlan?: ExecutionPlanLink
   workers: CoordinatorWorkerStatus[]
   activeCount: number
   queuedCount: number
   outcome?: VerificationStatus["outcome"]
   verificationState: VerificationStatus["state"]
+  contractStatus?: "missing" | "accepted"
   configuredProfile?: VerificationProfile
   effectiveProfile?: VerificationProfile
   assuranceLevel?: VerificationProfile
@@ -76,10 +79,27 @@ export interface IsolationStatus {
   inputBytes?: number
 }
 
+export interface ExecutionPlanLink {
+  planningRunId: string
+  planId: string
+  planRevision: number
+  goalContractHash: string
+}
+
+export interface PlanExecutionInput extends ExecutionPlanLink {
+  context?: unknown
+}
+
+export interface RestoredPlanExecutionInput extends PlanExecutionInput, Omit<BeginRunInput, "sessionID"> {
+  contract: GoalContractProposal
+}
+
 export interface BeginRunInput {
   sessionID: string
   workspace: string
   goal: string
+  /** Host-owned link to the reviewed plan being revised, never an actor proposal. */
+  revisesPlan?: ExecutionPlanLink
   configuredProfile?: VerificationProfile
   effectiveProfile?: VerificationProfile
   maxSameFailureRepairs?: number
@@ -99,6 +119,8 @@ export interface VerificationTarget {
 }
 
 export interface WorkerExecutionRequest {
+  /** Owned by the Coordinator run, not a parent model stream or tool call. */
+  signal: AbortSignal
   rootSessionID: string
   unit: Orchestration.WorkUnit
   context: unknown
@@ -114,6 +136,7 @@ export interface WorkerExecutionResult {
 export type WorkerExecutor = (request: WorkerExecutionRequest) => Promise<WorkerExecutionResult>
 
 export interface IntegrationExecutionRequest {
+  signal: AbortSignal
   rootSessionID: string
   context: unknown
   integrationPaths: string[]
@@ -138,4 +161,4 @@ export interface CoordinatorService {
 }
 
 export type { GoalContractProposal, VerificationProfile, VerificationStatus }
-export type { WorkGraph, WorkUnit } from "@base-harness/core/orchestration"
+export type { WorkGraph, WorkUnit } from "@base-harness/workspace/orchestration"

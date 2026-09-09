@@ -1,0 +1,32 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "status": "targeted_regressions_resolved",
+  "unit": {
+    "passed": 149,
+    "failed": 0,
+    "assertions": 350,
+    "seconds": 5.46
+  },
+  "subprocess": {
+    "passed": 12,
+    "failed": 0,
+    "assertions": 101,
+    "seconds": 81.53
+  },
+  "hostTypecheckExitCode": 0,
+  "confirmed": [
+    "Public catalog retains redacted private variant payloads",
+    "ACP consumes declared native names without label inference",
+    "Provider-default selection omits reasoning_effort",
+    "Actual local model requests carry high, omitted, max in order",
+    "Model identifiers change from test-model to second-model",
+    "Embedded text, image and file-link requests complete",
+    "Workspace overlapping Host-private state is rejected before model calls"
+  ],
+  "fullHostRerun": false,
+  "paidProviderCalls": false,
+  "repositoryGitOperations": false,
+  "netMonitorTouched": false
+}

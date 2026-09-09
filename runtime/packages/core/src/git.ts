@@ -182,21 +182,19 @@ const layer = Layer.effect(
       locks.withLock(repository.gitDirectory)(effect)
 
     const discover = Effect.fn("Git.repo.discover")(function* (input: AbsolutePath) {
-      const dotgit = yield* fs.up({ targets: [".git"], start: input }).pipe(
-        Effect.map((matches) => matches[0]),
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
-      if (!dotgit) return undefined
-
-      const cwd = path.dirname(dotgit)
+      // Start discovery at the requested directory. Walking to an ancestor
+      // first bypasses Git's discovery ceilings and filesystem boundaries.
+      const cwd = input
       const git = run(cwd, proc)
       const topLevel = yield* git(["rev-parse", "--show-toplevel"])
+      // This interface requires a worktree, not a bare repository.
+      if (topLevel.exitCode !== 0) return undefined
       const gitDir = yield* git(["rev-parse", "--git-dir"])
       const commonDir = yield* git(["rev-parse", "--git-common-dir"])
       if (gitDir.exitCode !== 0 || commonDir.exitCode !== 0) return undefined
 
       return new Repository({
-        worktree: AbsolutePath.make(topLevel.exitCode === 0 ? resolvePath(cwd, topLevel.text) : cwd),
+        worktree: AbsolutePath.make(resolvePath(cwd, topLevel.text)),
         gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDir.text)),
         commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDir.text)),
       })

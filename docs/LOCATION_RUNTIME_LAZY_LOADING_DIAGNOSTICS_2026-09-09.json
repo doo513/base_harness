@@ -1,0 +1,32 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "change": "defer_required_location_runtime_module_acquisition",
+  "core": {
+    "typecheckExitCode": 0,
+    "passed": 4,
+    "failed": 0,
+    "assertions": 8,
+    "durationSeconds": 2.78
+  },
+  "host": {
+    "typecheckExitCode": 0,
+    "passed": 23,
+    "failed": 0,
+    "assertions": 154,
+    "files": 5,
+    "durationSeconds": 92.68
+  },
+  "probe": {
+    "initialized": true,
+    "modelCalls": 0,
+    "childStopped": true,
+    "runtimeImportStartMs": 673,
+    "runtimeImportReadyMs": 3975,
+    "controlledBenchmark": false
+  },
+  "fullHostRerun": false,
+  "previousFullHostFailureResolved": false,
+  "independentPracticalStabilityEstablished": false
+}

@@ -1,15 +1,8 @@
 /**
- * Reproducer for snapshot race condition with instant tool execution.
- *
- * When the mock LLM returns a tool call response instantly, the AI SDK
- * processes the tool call and executes the tool (e.g. apply_patch) before
- * the processor's start-step handler can capture a pre-tool snapshot.
- * Both the "before" and "after" snapshots end up with the same git tree
- * hash, so computeDiff returns empty and the session summary shows 0 files.
- *
- * This is a real bug: the snapshot system assumes it can capture state
- * before tools run by hooking into start-step, but the AI SDK executes
- * tools internally during multi-step processing before emitting events.
+ * Guard pre-tool snapshot capture when the model responds with an instant write.
+ * Accept the real contract before the first model/tool step so admission remains
+ * active without adding an earlier model step that could conceal the race.
+ * A structured write exercises the same tool dispatch without a POSIX shell.
  */
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
@@ -31,6 +24,8 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { CrossSpawnSpawner } from "@base-harness/core/cross-spawn-spawner"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { registerHarnessContractProposal } from "@/tool/harness-contract-state"
+import { Coordinator } from "@/harness/coordinator-service"
 
 const mcp = Layer.succeed(
   MCP.Service,
@@ -135,12 +130,13 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
 
-      // Use bash tool (always registered) to create a file
-      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
-      yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
-        command,
-      })
-      yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("bash"), "done")
+      const filePath = path.join(dir, "race-test.txt")
+      const expected = "snapshot race test content\n"
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => Coordinator.cancel(session.id)).pipe(Effect.ignore),
+      )
+      yield* llm.tool("write", { filePath, content: expected })
+      yield* llm.text("done")
 
       // Seed user message
       yield* prompt.prompt({
@@ -150,12 +146,32 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
         parts: [{ type: "text", text: "create the file" }],
       })
 
+      // Host contract admission precedes the first instant mutation response.
+      const admission = yield* Effect.promise(() => registerHarnessContractProposal(session.id, {
+        goal: "create the file",
+        interpretation: { version: 1, candidates: [] },
+        criteria: [{
+          criterionId: "race-content", statement: "The file contains the requested content",
+          claimIds: ["race-file"], required: true, risk: "low",
+        }],
+        claims: [{
+          claimId: "race-file", criterionIds: ["race-content"], origin: "user",
+          statement: "race-test.txt contains the requested content", kind: "artifact",
+          scope: { targets: [filePath], capabilities: ["write"], exclusions: [] },
+          applicability: { os: process.platform, provider: "test", model: "test-model" },
+          predicate: { type: "content_equals", value: expected },
+          verifierPolicy: { minimumStrength: "structural", allowedVerifierIds: ["file"], minIndependentFamilies: 1 },
+        }],
+      }))
+      expect(admission.contractStatus).toBe("accepted")
+      expect(admission.planningState).toBe("executing")
+      expect(yield* Effect.promise(() => fs.access(filePath).then(() => true, () => false))).toBe(false)
+
       // Run the agent loop
       const result = yield* prompt.loop({ sessionID: session.id })
       expect(result.info.role).toBe("assistant")
 
       // Verify the file was created
-      const filePath = path.join(dir, "race-test.txt")
       const fileExists = yield* Effect.promise(() =>
         fs
           .access(filePath)
@@ -163,6 +179,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
           .catch(() => false),
       )
       expect(fileExists).toBe(true)
+      expect(yield* Effect.promise(() => fs.readFile(filePath, "utf8"))).toBe(expected)
 
       // Verify the tool call completed (in the first assistant message)
       const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
@@ -171,7 +188,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       )
       const tool = allMsgs
         .flatMap((m) => m.parts)
-        .find((p): p is SessionV1.ToolPart => p.type === "tool" && p.tool === "bash")
+        .find((p): p is SessionV1.ToolPart => p.type === "tool" && p.tool === "write")
       expect(tool?.state.status).toBe("completed")
       if (!user) throw new Error("Expected user message")
 
@@ -183,6 +200,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
         yield* Effect.sleep("100 millis")
       }
       expect(diff.length).toBeGreaterThan(0)
+      expect(diff.some((item) => item.file?.replaceAll("\\", "/").endsWith("race-test.txt"))).toBe(true)
     }),
     { git: true, config: providerCfg },
   ),

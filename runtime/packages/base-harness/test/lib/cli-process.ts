@@ -29,6 +29,8 @@ import path from "node:path"
 import { TestLLMServer } from "./llm-server"
 import { testProviderConfig } from "./test-provider"
 import { it } from "./effect"
+import { captureAcpResources, summarizeAcpStartup, type AcpDiagnostics } from "./acp-diagnostics"
+import { createAcpResponses, type AcpResponseStreamError } from "./acp-responses"
 
 const opencodeRoot = path.resolve(import.meta.dir, "../../")
 const cliEntry = path.join(opencodeRoot, "src/index.ts")
@@ -53,7 +55,18 @@ function forkStderrDrain(stream: ReadableStream<Uint8Array>, into: string[]) {
   return Effect.forkScoped(
     fromBunStream("stderr", () => stream).pipe(
       Stream.decodeText(),
-      Stream.runForEach((chunk) => Effect.sync(() => into.push(chunk))),
+Stream.runForEach((chunk) => Effect.sync(() => {
+        // Preserve only a bounded tail; diagnostics must not grow with a long run.
+        into.push(chunk.slice(-8192))
+        let size = into.reduce((total, item) => total + item.length, 0)
+        while (size > 8192) {
+          const excess = size - 8192
+          const removed = Math.min(excess, into[0].length)
+          if (removed === into[0].length) into.shift()
+          else into[0] = into[0].slice(removed)
+          size -= removed
+        }
+      })),
       Effect.ignore({ log: true }),
     ),
   )
@@ -142,12 +155,13 @@ export type AcpOpts = SpawnOpts & {
 }
 
 export type AcpHandle = {
+  readonly diagnostics?: () => AcpDiagnostics
   // Writes a single JSON-RPC message to the child's stdin as one ndjson line.
   readonly send: (msg: object) => Effect.Effect<void>
   // Resolves with the next parsed JSON-RPC line from the child's stdout.
   // Lines are buffered in a queue so multiple receives in a row won't drop
   // anything. Pair with `Effect.timeout` if a test wants a deadline.
-  readonly receive: Effect.Effect<unknown>
+  readonly receive: Effect.Effect<unknown, AcpResponseStreamError>
   // Closes stdin. ACP exits cleanly on stdin EOF; the scope finalizer also
   // calls this, so tests only need it when asserting exit behavior.
   readonly close: () => void
@@ -388,6 +402,8 @@ export function withCliFixture<A, E>(
     })
 
     const acp = Effect.fn("opencode.acp")(function* (opts?: AcpOpts) {
+      const startedAt = performance.now()
+      const resourcesAtSpawn = captureAcpResources()
       const argv = ["acp"]
       if (opts?.cwd) argv.push("--cwd", opts.cwd)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)
@@ -398,8 +414,8 @@ export function withCliFixture<A, E>(
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
           Bun.spawn([process.execPath, "run", "--conditions=browser", cliEntry, ...argv], {
-            cwd: opts?.cwd ?? home,
-            env: { ...process.env, ...env, ...opts?.env },
+cwd: opts?.cwd ?? home,
+            env: { ...process.env, ...env, BASE_HARNESS_TRACE_STARTUP: "1", ...opts?.env },
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
@@ -430,23 +446,13 @@ export function withCliFixture<A, E>(
       // Each ndjson line becomes one queue entry. JSON.parse failures are
       // surfaced as the raw string so a malformed protocol message doesn't
       // silently wedge the test in `receive`.
-      const responses = yield* Queue.unbounded<unknown>()
-      yield* Effect.forkScoped(
+let stdoutLines = 0
+      const receive = yield* createAcpResponses(
         fromBunStream("stdout", () => proc.stdout).pipe(
           Stream.decodeText(),
           Stream.splitLines,
-          Stream.runForEach((line) => {
-            if (line.length === 0) return Effect.void
-            let parsed: unknown
-            try {
-              parsed = JSON.parse(line)
-            } catch {
-              parsed = { _rawLine: line }
-            }
-            return Queue.offer(responses, parsed)
-          }),
-          Effect.ignore({ log: true }),
         ),
+        () => { stdoutLines += 1 },
       )
 
       return {
@@ -459,10 +465,18 @@ export function withCliFixture<A, E>(
             const ret = proc.stdin.write(JSON.stringify(msg) + "\n")
             if (typeof ret !== "number") await ret
           }),
-        receive: Queue.take(responses),
+        receive,
         // proc.stdin.end() is idempotent in Bun; no try/catch needed.
         close: () => proc.stdin.end(),
-        exited: proc.exited as Promise<number>,
+exited: proc.exited as Promise<number>,
+        diagnostics: () => ({
+          pid: proc.pid,
+          elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+          exitCode: proc.exitCode,
+          stdoutLines,
+          startup: summarizeAcpStartup(stderrChunks.join("")),
+          resources: { atSpawn: resourcesAtSpawn, atObservation: captureAcpResources() },
+        }),
       } satisfies AcpHandle
     })
 

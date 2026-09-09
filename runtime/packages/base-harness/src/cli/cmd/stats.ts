@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { Session } from "@/session/session"
@@ -47,8 +48,7 @@ interface SessionStats {
 }
 
 export const StatsCommand = effectCmd({
-  command: "stats",
-  describe: "show token usage and cost statistics",
+  ...EntryCommand.stats,
   builder: (yargs) =>
     yargs
       .option("days", {

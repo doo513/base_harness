@@ -99,7 +99,9 @@ const layer = Layer.effect(
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
-      const initialSnapshot = yield* snapshot.track()
+      // Host-generated compaction summaries have no execution tools. They do
+      // not need workspace snapshots, including during cancellation cleanup.
+      const initialSnapshot = input.assistantMessage.summary ? undefined : (yield* snapshot.track())
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -422,7 +424,7 @@ const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
-            if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
+            if (!ctx.assistantMessage.summary && !ctx.snapshot) ctx.snapshot = yield* snapshot.track()
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -433,7 +435,7 @@ const layer = Layer.effect(
             return
 
           case "step-finish": {
-            const completedSnapshot = yield* snapshot.track()
+            const completedSnapshot = ctx.assistantMessage.summary ? undefined : (yield* snapshot.track())
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,
@@ -645,14 +647,6 @@ const layer = Layer.effect(
               Stream.runDrain,
             )
           }).pipe(
-            Effect.onInterrupt(() =>
-              Effect.gen(function* () {
-                aborted = true
-                if (!ctx.assistantMessage.error) {
-                  yield* halt(new DOMException("Aborted", "AbortError"))
-                }
-              }),
-            ),
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => Effect.fail(Cause.squash(cause)),
@@ -670,6 +664,15 @@ const layer = Layer.effect(
                     next: info.next,
                   })
                 },
+              }),
+            ),
+            // Cover interruption of the retry schedule as well as the stream.
+            Effect.onInterrupt(() =>
+              Effect.gen(function* () {
+                aborted = true
+                if (!ctx.assistantMessage.error) {
+                  yield* halt(new DOMException("Aborted", "AbortError"))
+                }
               }),
             ),
             Effect.catch(halt),

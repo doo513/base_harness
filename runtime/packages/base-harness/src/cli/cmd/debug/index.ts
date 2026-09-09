@@ -4,6 +4,7 @@ import { Flag } from "@base-harness/core/flag/flag"
 import os from "os"
 import { Duration, Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
+import { EntryCommand } from "../../entry-command-metadata"
 import { cmd } from "../cmd"
 import { ConfigCommand } from "./config"
 import { FileCommand } from "./file"
@@ -17,8 +18,7 @@ import { StartupCommand } from "./startup"
 import { V2Command } from "./v2"
 
 export const DebugCommand = cmd({
-  command: "debug",
-  describe: "debugging and troubleshooting tools",
+  ...EntryCommand.debug,
   builder: (yargs) =>
     yargs
       .command(ConfigCommand)

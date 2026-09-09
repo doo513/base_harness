@@ -16,11 +16,24 @@ import { createOpencodeClient } from "@base-harness/sdk/v2"
 import { Flag } from "@base-harness/core/flag/flag"
 import { MessageID } from "@/session/schema"
 import { createRunDemo } from "./demo"
+import {
+  ANTIGRAVITY_ADAPTER_ID,
+  ANTIGRAVITY_REASONING_OPTION,
+} from "@base-harness/core/antigravity-protocol"
+import { AntigravityCli } from "@/harness/execution/antigravity-cli"
 import { resolveModelInfo, resolveRunTuiConfig, resolveSessionInfo } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
-import type { LocalReplayAnchor, LocalReplayRow, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
+import type {
+  ExecutionPickerSelection,
+  LocalReplayAnchor,
+  LocalReplayRow,
+  RunInput,
+  RunPrompt,
+  RunProvider,
+  StreamCommit,
+} from "./types"
 
 /** @internal Exported for testing */
 export { pickVariant, resolveVariant } from "./variant.shared"
@@ -225,6 +238,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     return state.session
   }
 
+  let selectedExecution: ExecutionPickerSelection | undefined
+  let selectExecution: ((selection: ExecutionPickerSelection) => Promise<void>) | undefined
+
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
     findFiles: (query) =>
@@ -337,6 +353,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         variants: state.variants,
       }
     },
+    onExecutionSelect: async (selection) => {
+      if (!selectExecution) throw new Error("Execution selection is not ready")
+      await selectExecution(selection)
+    },
     onInterrupt: () => {
       if (!hasSession(input, state) || state.aborting) {
         return
@@ -368,6 +388,170 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     state.localRows = [...state.localRows, { commit, after }].slice(-LOCAL_REPLAY_ROW_LIMIT)
   }
 
+  type MiniHarnessControl =
+    | { type: "domain.set"; domain: "develop" | "general" }
+    | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+    | {
+        type: "execution.select"
+        selection?: {
+          adapterID: string
+          modelID?: string
+          options?: Record<string, string>
+          capabilityRevision?: string
+        }
+      }
+    | { type: "planning.plan_once" }
+    | { type: "planning.discard" }
+    | { type: "planning.execute"; planId?: string }
+
+  const harnessClient = ctx.sdk.session as unknown as {
+    harnessControl(input: {
+      sessionID: string
+      directory?: string
+      body: MiniHarnessControl
+    }): Promise<unknown>
+    harness(input: { sessionID: string; directory?: string }): Promise<unknown>
+  }
+  const harnessCommands = [
+    { name: "develop", description: "Use the develop domain", source: "command" as const },
+    { name: "general", description: "Use the read-only general domain", source: "command" as const },
+    { name: "hackathon", description: "Toggle the hackathon skill", source: "command" as const },
+    { name: "plan", description: "Plan the next request or discard the active plan", source: "command" as const },
+    { name: "execute", description: "Execute the reviewed plan", source: "command" as const },
+    { name: "harness", description: "Show Kernel and verification status", source: "command" as const },
+    { name: "antigravity", description: "List or select an Antigravity execution model", source: "command" as const },
+  ]
+
+  const unwrapHarnessResponse = (response: unknown): unknown => {
+    if (!response || typeof response !== "object") return response
+    const envelope = response as { data?: unknown; error?: unknown }
+    if (envelope.error) {
+      const detail =
+        typeof envelope.error === "string" ? envelope.error : JSON.stringify(envelope.error, null, 2)
+      throw new Error(detail || "Harness control failed")
+    }
+    return "data" in envelope ? envelope.data : response
+  }
+  const appendHarnessStatus = (text: string) => {
+    const commit = {
+      kind: "system",
+      text,
+      phase: "final",
+      source: "system",
+    } as const
+    rememberLocal(commit)
+    footer.append(commit)
+  }
+  const controlHarness = async (body: MiniHarnessControl) => {
+    await ensureSession()
+    return unwrapHarnessResponse(
+      await harnessClient.harnessControl({
+        sessionID: state.sessionID,
+        directory: ctx.directory,
+        body,
+      }),
+    )
+  }
+  selectExecution = async (selection) => {
+    await controlHarness({ type: "execution.select", selection })
+    selectedExecution = selection
+    const effort = selection.options?.[ANTIGRAVITY_REASONING_OPTION]
+    appendHarnessStatus(
+      "Antigravity execution selected: " + selection.modelID + (effort ? " (" + effort + ")" : ""),
+    )
+  }
+
+  const handleHarnessCommand = async (prompt: RunPrompt): Promise<boolean> => {
+    if (prompt.mode === "shell") return false
+    const text = prompt.text.trim()
+    if (!text.startsWith("/")) return false
+    const [rawName, ...args] = text.slice(1).split(/\s+/)
+    const name = rawName?.toLowerCase()
+
+    if (name === "develop" || name === "general") {
+      await controlHarness({ type: "domain.set", domain: name })
+      appendHarnessStatus(`domain ${name}`)
+      return true
+    }
+
+    if (name === "hackathon") {
+      const enabled = args[0]?.toLowerCase() !== "off"
+      await controlHarness({ type: "skill.set", skill: "hackathon", enabled })
+      appendHarnessStatus(enabled ? "skill hackathon enabled" : "skill hackathon disabled")
+      return true
+    }
+
+    if (name === "plan") {
+      if (args[0]?.toLowerCase() === "discard") {
+        await controlHarness({ type: "planning.discard" })
+        appendHarnessStatus("active plan discarded")
+      } else {
+        await controlHarness({ type: "planning.plan_once" })
+        appendHarnessStatus("the next request will stop at plan_ready")
+      }
+      return true
+    }
+
+    if (name === "execute") {
+      await controlHarness({ type: "planning.execute", planId: args[0] })
+      appendHarnessStatus(args[0] ? `executing plan ${args[0]}` : "executing active plan")
+      return true
+    }
+
+    if (name === "harness") {
+      await ensureSession()
+      const status = unwrapHarnessResponse(
+        await harnessClient.harness({ sessionID: state.sessionID, directory: ctx.directory }),
+      )
+      appendHarnessStatus(JSON.stringify(status, null, 2))
+      return true
+    }
+
+    if (name === "antigravity") {
+      if (args[0]?.toLowerCase() === "off") {
+        await controlHarness({ type: "execution.select" })
+        selectedExecution = undefined
+        appendHarnessStatus("Antigravity execution adapter disabled")
+        return true
+      }
+
+      const capabilities = await AntigravityCli.capabilities()
+      const modelID = args[0]
+      const effort = args[1]
+      if (!modelID) {
+        footer.event({
+          type: "stream.view",
+          view: {
+            type: "execution",
+            adapterID: ANTIGRAVITY_ADAPTER_ID,
+            models: capabilities.models,
+            reasoningEfforts: capabilities.reasoningEfforts,
+            reasoningOption: ANTIGRAVITY_REASONING_OPTION,
+            capabilityRevision: capabilities.revision,
+            currentModel: selectedExecution?.modelID,
+            currentEffort: selectedExecution?.options?.[ANTIGRAVITY_REASONING_OPTION],
+          },
+        })
+        return true
+      }
+      if (!capabilities.models.includes(modelID)) {
+        throw new Error(`Antigravity model is not advertised by the CLI: ${modelID}`)
+      }
+      if (effort && !capabilities.reasoningEfforts.includes(effort)) {
+        throw new Error(`Antigravity reasoning effort is not advertised by the CLI: ${effort}`)
+      }
+      await selectExecution!({
+        adapterID: ANTIGRAVITY_ADAPTER_ID,
+        modelID,
+        options: effort ? { [ANTIGRAVITY_REASONING_OPTION]: effort } : undefined,
+        capabilityRevision: capabilities.revision,
+      })
+      return true
+    }
+
+    return false
+  }
+
   const loadCatalog = async (): Promise<void> => {
     if (footer.isClosed) {
       return
@@ -391,11 +575,16 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       return
     }
 
+    const mergedCommands = [...commands]
+    for (const command of harnessCommands) {
+      if (mergedCommands.some((item) => item.name === command.name)) continue
+      mergedCommands.push(command as (typeof mergedCommands)[number])
+    }
     footer.event({
       type: "catalog",
       agents,
       resources,
-      commands,
+      commands: mergedCommands,
     })
   }
 
@@ -638,6 +827,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           }
         : undefined,
       run: async (prompt, signal) => {
+        if (await handleHarnessCommand(prompt)) {
+          return
+        }
+
         if (state.demo && (await state.demo.prompt(prompt, signal))) {
           return
         }

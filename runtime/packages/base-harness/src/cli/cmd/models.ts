@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { EOL } from "os"
 import { Effect } from "effect"
 import { ModelsDev } from "@base-harness/core/models-dev"
@@ -6,8 +7,7 @@ import { UI } from "../ui"
 import { ProviderV2 } from "@base-harness/core/provider"
 
 export const ModelsCommand = effectCmd({
-  command: "models [provider]",
-  describe: "list all available models",
+  ...EntryCommand.models,
   builder: (yargs) =>
     yargs
       .positional("provider", {
@@ -29,10 +29,8 @@ export const ModelsCommand = effectCmd({
       yield* ModelsDev.Service.use((s) => s.refresh(true))
       UI.println(UI.Style.TEXT_SUCCESS_BOLD + "Models cache refreshed" + UI.Style.TEXT_NORMAL)
     }
-
     const provider = yield* Provider.Service
     const providers = yield* provider.list()
-
     const print = (providerID: ProviderV2.ID, verbose?: boolean) => {
       const p = providers[providerID]
       const sorted = Object.entries(p.models).sort(([a], [b]) => a.localeCompare(b))
@@ -45,14 +43,12 @@ export const ModelsCommand = effectCmd({
         }
       }
     }
-
     if (args.provider) {
       const providerID = ProviderV2.ID.make(args.provider)
       if (!providers[providerID]) return yield* fail(`Provider not found: ${args.provider}`)
       print(providerID, args.verbose)
       return
     }
-
     const ids = Object.keys(providers).sort((a, b) => {
       const aIsOpencode = a.startsWith("opencode")
       const bIsOpencode = b.startsWith("opencode")
@@ -60,7 +56,6 @@ export const ModelsCommand = effectCmd({
       if (!aIsOpencode && bIsOpencode) return 1
       return a.localeCompare(b)
     })
-
     for (const providerID of ids) print(ProviderV2.ID.make(providerID), args.verbose)
   }),
 })

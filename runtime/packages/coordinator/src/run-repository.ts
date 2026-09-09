@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
+import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistence"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -21,7 +22,7 @@ const defaultRoot = () =>
     ? path.join(process.env.LOCALAPPDATA ?? os.tmpdir(), "base-harness", "coordinator")
     : path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), ".local", "state"), "base-harness", "coordinator")
 
-const terminal = new Set(["ready", "blocked", "interrupted"])
+const terminal = new Set(["ready", "blocked", "interrupted", "plan_ready"])
 
 export class RunRepository<T extends RepositoryRun> {
   readonly runs = new Map<string, T>()
@@ -30,8 +31,12 @@ export class RunRepository<T extends RepositoryRun> {
   private readonly persistent: boolean
   private initialized = false
   private writes = Promise.resolve()
+  private readonly writeErrors = new Map<string, Error>()
 
-  constructor(options: RunRepositoryOptions = {}) {
+  constructor(
+    options: RunRepositoryOptions = {},
+    private readonly snapshotWriter: typeof writeAtomicSnapshot = writeAtomicSnapshot,
+  ) {
     this.stateDirectory = options.stateDirectory ?? defaultRoot()
     this.persistent = options.persistent ?? true
   }
@@ -87,6 +92,8 @@ export class RunRepository<T extends RepositoryRun> {
       runId: status.runId,
       workspace: status.workspace,
       goalDigest: digest,
+      executionPlan: status.executionPlan ?? null,
+      revisesPlan: status.revisesPlan ?? null,
       phase: status.phase,
       outcome: status.outcome ?? null,
       verificationState: status.verificationState,
@@ -99,19 +106,29 @@ export class RunRepository<T extends RepositoryRun> {
       updatedAt: new Date().toISOString(),
     }
     const target = path.join(this.stateDirectory, status.runId.replace(/[^A-Za-z0-9_.-]/g, "_") + ".json")
-    this.writes = this.writes.then(() => this.atomicWrite(target, body))
-    await this.writes
+    const operation = this.writes.then(async () => {
+      const failure = this.writeErrors.get(status.runId)
+      if (failure) throw failure
+      try {
+        await this.atomicWrite(target, body)
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error))
+        this.writeErrors.set(status.runId, failure)
+        throw failure
+      }
+    })
+    // A failed run stays failed, without poisoning snapshots belonging to other runs.
+    this.writes = operation.then(() => undefined, () => undefined)
+    await operation
   }
 
   reset() {
     this.runs.clear()
     this.scopeRoots.clear()
+    this.writeErrors.clear()
   }
 
   private async atomicWrite(target: string, value: unknown) {
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    const temporary = target + "." + randomUUID() + ".tmp"
-    await fs.writeFile(temporary, JSON.stringify(value, null, 2) + "\n", "utf8")
-    await fs.rename(temporary, target)
+    await this.snapshotWriter(target, JSON.stringify(value, null, 2) + "\n")
   }
 }

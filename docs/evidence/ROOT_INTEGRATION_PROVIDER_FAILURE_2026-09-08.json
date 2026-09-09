@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "scenario": "non_retryable_provider_failure_after_worker_completion",
+  "supervisorExitCode": 0,
+  "taskExitCode": 1,
+  "hostExitCode": 143,
+  "hostTerminationIntentional": true,
+  "runId": "run-fb38775a-49da-4bdf-9923-7e3b4940d5a5",
+  "sessionID": "ses_f815ea6c7ffehCSbjUMgFXQFhA",
+  "outcome": "blocked",
+  "failureKind": "model_provider_error",
+  "readyEligible": false,
+  "workers": [
+    {
+      "workUnitId": "unit-0",
+      "title": "Write result-0.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f815e5fc1ffellcBWjYXPrdnmA"
+    },
+    {
+      "workUnitId": "unit-1",
+      "title": "Write result-1.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f815e5fbcffeBPH0rITuwm3Jz0"
+    }
+  ],
+  "rootRepairCount": 0,
+  "checks": [
+    {
+      "route": "/provider",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "route": "/config/providers",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "scope": "worker_catalog",
+      "workUnits": 2,
+      "forbiddenToolsAdvertised": false,
+      "structuredEditorsAvailable": true
+    },
+    {
+      "scope": "integration_provider_failure",
+      "expectedClientExit": 1,
+      "failureKind": "model_provider_error",
+      "implementationRepairs": 0,
+      "replanned": false,
+      "completedFilesPreserved": true,
+      "rootReadyArtifacts": [],
+      "entriesVisited": 42,
+      "jsonFilesRead": 17,
+      "runArtifacts": 17
+    },
+    {
+      "scope": "private_runtime",
+      "authenticated": true,
+      "exactEffort": "high",
+      "fileMatches": true,
+      "currentRootReady": false
+    }
+  ],
+  "requestCounts": {
+    "integration": 1,
+    "contract": 1,
+    "workGraph": 1
+  },
+  "fullSuiteRun": false,
+  "typechecksRun": false,
+  "productionCodeChanged": false,
+  "gitUsed": false,
+  "netMonitorTouched": false,
+  "limitations": [
+    "Deterministic local provider and same-agent-authored fixture",
+    "No implementation-error repair exercised",
+    "No real OAuth, long-session or cross-platform evidence",
+    "Final-state/artifact inspection is not complete event-stream auditing",
+    "Success branch not rerun in this phase",
+    "Existing phase38/phase40 failures preserved"
+  ]
+}

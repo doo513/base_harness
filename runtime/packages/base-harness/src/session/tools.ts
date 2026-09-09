@@ -8,8 +8,11 @@ import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
-import { assertHarnessContractSubmitted } from "@/tool/harness-contract-state"
+import { assertMcpOperationAllowed, operationForMcpTool } from "@/harness/mcp-operation"
+import { executionModelFromProvider } from "@/harness/model-selection"
 import { Truncate } from "@/tool/truncate"
+import { Orchestration } from "@/harness/coordinator-service"
+import { assertHarnessContractSubmitted } from "@/tool/harness-contract-state"
 
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
@@ -64,6 +67,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     callID: options.toolCallId,
     extra: {
       model: input.model,
+      modelSelection: executionModelFromProvider(input.model),
       variant: input.processor.message.variant,
       bypassAgentCheck: input.bypassAgentCheck,
       promptOps: input.promptOps,
@@ -100,6 +104,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     providerID: input.model.providerID,
     agent: input.agent,
     permission: input.session.permission,
+    sessionID: input.session.id,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
@@ -109,6 +114,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
+            // Recheck before plugin hooks; an advertised tool may be stale after scope freeze.
+            const subagentType = item.id === "task" && isRecord(args) && typeof args.subagent_type === "string"
+              ? args.subagent_type
+              : undefined
+            assertHarnessContractSubmitted(ctx.sessionID, item.id, undefined, subagentType)
+            Orchestration.assertToolAllowed(ctx.sessionID, item.id, args)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -139,6 +150,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
+  const owner = Orchestration.snapshot(input.session.id)
+  // Existing MCP invocation policy denies all managed children, including resource tools.
+  if (owner && owner.sessionID !== input.session.id) return tools
+
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,
   )
@@ -163,6 +178,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            assertMcpOperationAllowed(ctx.sessionID, MCP_RESOURCE_TOOLS.list, "read")
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -246,6 +262,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            assertMcpOperationAllowed(ctx.sessionID, MCP_RESOURCE_TOOLS.listTemplates, "read")
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -333,6 +350,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
             const ctx = context(toRecord(args), opts)
+            assertMcpOperationAllowed(ctx.sessionID, MCP_RESOURCE_TOOLS.read, "read")
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -405,7 +423,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
-          assertHarnessContractSubmitted(ctx.sessionID, key)
+          assertMcpOperationAllowed(ctx.sessionID, key, operationForMcpTool(entry.def))
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },

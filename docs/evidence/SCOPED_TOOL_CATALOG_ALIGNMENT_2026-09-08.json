@@ -1,0 +1,221 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "scope": "Scoped tool schema visibility and local planned execution",
+  "assessment": "scoped_local_behavior_confirmed",
+  "gates": {
+    "tests": {
+      "passed": 8,
+      "failed": 0,
+      "assertions": 40
+    },
+    "typechecks": {
+      "workspace": 0,
+      "coordinator": 0,
+      "host": 0
+    },
+    "runtimeFixtureExitCode": 0,
+    "fullSuiteRun": false,
+    "tuiRunThisPhase": false
+  },
+  "sessionID": "ses_f816bd9aeffeL4wsLJNQLCS7d9",
+  "runId": "run-d01adc5c-1586-4ed2-8212-79236ecd39ff",
+  "checks": [
+    {
+      "route": "/provider",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "route": "/config/providers",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "scope": "worker_catalog",
+      "workUnits": 2,
+      "forbiddenToolsAdvertised": false,
+      "structuredEditorsAvailable": true
+    },
+    {
+      "scope": "private_runtime",
+      "authenticated": true,
+      "exactEffort": "high",
+      "fileMatches": true,
+      "currentRootReady": true
+    }
+  ],
+  "workers": [
+    {
+      "workUnitId": "unit-0",
+      "title": "Write result-0.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f816b9492ffeL0tzSwDVgT41WZ"
+    },
+    {
+      "workUnitId": "unit-1",
+      "title": "Write result-1.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f816b948cffeTxxul1z0IvapjF"
+    }
+  ],
+  "workerRequests": [
+    {
+      "workUnitId": "unit-0",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "write"
+      ],
+      "reasoningEffort": "high",
+      "authenticated": true
+    },
+    {
+      "workUnitId": "unit-1",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "write"
+      ],
+      "reasoningEffort": "high",
+      "authenticated": true
+    },
+    {
+      "workUnitId": "unit-0",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "write"
+      ],
+      "reasoningEffort": "high",
+      "authenticated": true
+    },
+    {
+      "workUnitId": "unit-1",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "write"
+      ],
+      "reasoningEffort": "high",
+      "authenticated": true
+    }
+  ],
+  "reviewerRequests": [
+    {
+      "phase": "goal_contract",
+      "tools": [
+        "glob",
+        "grep",
+        "read"
+      ]
+    },
+    {
+      "phase": "plan",
+      "tools": [
+        "glob",
+        "grep",
+        "read"
+      ]
+    }
+  ],
+  "readyArtifacts": [
+    {
+      "path": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-wM5EXO\\state\\base-harness\\runs\\6cf1165e748cc3fb-0a34fa51\\artifacts\\97\\97cd44fab9e79847525772d9c22b79aea95145ecacaa771a893c24ff2a31d471.json",
+      "artifactType": "ready_attestation",
+      "scopeId": "ses_f816bd9aeffeL4wsLJNQLCS7d9",
+      "assuranceLevel": "adaptive",
+      "claimResults": [
+        {
+          "claimId": "claim-0",
+          "coverage": "full",
+          "evidenceIds": [
+            "ed75d16498cc31dba8a0b6f4e8f49ae17dca5000dac8cae561d2c738bc84979b"
+          ],
+          "familyIds": [
+            "6a5af067e8a7e4c2901aec2f901db76ac857e735765e4c039e301ab036d3b529"
+          ],
+          "historicalIndependentMethods": [],
+          "reason": "Typed predicate and adaptive independence policy are satisfied.",
+          "result": "verified"
+        },
+        {
+          "claimId": "claim-1",
+          "coverage": "full",
+          "evidenceIds": [
+            "37850be8833a801c33c0f1f3459c19dbd024a44713bbc426869dfaf81c892233"
+          ],
+          "familyIds": [
+            "e8c20953b7b986dac5c61e46466f4de139afec5f9723ed2ce3bf86ac1ff269c7"
+          ],
+          "historicalIndependentMethods": [],
+          "reason": "Typed predicate and adaptive independence policy are satisfied.",
+          "result": "verified"
+        }
+      ],
+      "criterionResults": [
+        {
+          "claimIds": [
+            "claim-0"
+          ],
+          "coverage": "full",
+          "criterionId": "criterion-0",
+          "required": true,
+          "result": "verified",
+          "risk": "low"
+        },
+        {
+          "claimIds": [
+            "claim-1"
+          ],
+          "coverage": "full",
+          "criterionId": "criterion-1",
+          "required": true,
+          "result": "verified",
+          "risk": "low"
+        }
+      ]
+    }
+  ],
+  "timingsSingleSample": {
+    "healthStartupMs": 9446.3094,
+    "providerListingMs": 2100.4130000000005,
+    "clientMs": 28196.1227
+  },
+  "lifecycle": {
+    "clientExitCode": 0,
+    "hostExitCode": 143,
+    "hostTerminationIntentional": true
+  },
+  "limitations": [
+    "Same implementation agent authored tests and fixture",
+    "Scripted provider, not real OAuth or unscripted model work",
+    "No long-session, repair-loop, cross-platform or independent-review proof",
+    "Root Ready verifies two file predicates, not overall harness stability",
+    "Fixture config/dependency/workspace revision hashes remain unknown",
+    "Earlier phase38 test expectation and phase40 diagnostic failures are preserved"
+  ],
+  "gitUsed": false,
+  "netMonitorTouched": false
+}

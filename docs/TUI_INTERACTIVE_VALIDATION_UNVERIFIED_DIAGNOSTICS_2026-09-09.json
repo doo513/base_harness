@@ -1,0 +1,19 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "status": "not_verified",
+  "reason": "Execution tool failed to serialize the result of interactive/native PTY launch attempts; no controllable terminal handle was returned.",
+  "attempts": [
+    "Unified exec with tty=true",
+    "Project bun-pty transport with an inline diagnostic driver",
+    "Project bun-pty transport with a file-based diagnostic driver"
+  ],
+  "toolError": "failed to serialize JavaScript value: expected value at line 1 column 1",
+  "liveDiagnosticProcessObservedAfterRecovery": false,
+  "guiNodeReplAvailable": false,
+  "driverPath": "C:/Users/doo33/Downloads/base_harness/.tools/validation/tui-native-pty-smoke-1788919828271.ts",
+  "verifiedUIBehaviors": [],
+  "productRegressionEstablished": false,
+  "sourceProductChanged": false
+}

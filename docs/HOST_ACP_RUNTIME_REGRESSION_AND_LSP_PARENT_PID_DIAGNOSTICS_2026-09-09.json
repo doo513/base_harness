@@ -1,0 +1,100 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "fullHost": {
+    "state": "finished",
+    "sessionId": null,
+    "firstFixtureStartMs": 4145,
+    "observedFailures": [
+      {
+        "test": "LSPClient interop > document mode falls back to push diagnostics",
+        "reportedElapsedMs": 76631.64,
+        "testTimeoutMs": 30000,
+        "additionalError": {
+          "tag": "LSPInitializeError",
+          "serverID": "fake",
+          "operationTimeoutMs": 45000
+        },
+        "causeEstablished": false
+      }
+    ],
+    "sourceUnchangedDuringRun": true,
+    "summaryPending": false,
+    "exitCode": 1,
+    "tests": {
+      "pass": 3280,
+      "skip": 60,
+      "todo": 1,
+      "fail": 2,
+      "errors": 1,
+      "snapshots": 45,
+      "assertions": 8872,
+      "total": 3343,
+      "files": 254,
+      "seconds": 1871.19
+    },
+    "acpTimeoutRecurred": true,
+    "log": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\host-acp-runtime-boundary-1788915059798.log",
+    "acpTimeout": {
+      "pid": 2524,
+      "elapsedMs": 15013,
+      "exitCode": null,
+      "stdoutLines": 0,
+      "startup": [
+        {
+          "stage": "cli.modules_ready",
+          "processUptimeMs": 750
+        },
+        {
+          "stage": "cli.parse_start",
+          "processUptimeMs": 762
+        },
+        {
+          "stage": "cli.options_ready",
+          "processUptimeMs": 1014
+        },
+        {
+          "stage": "cli.input_wait",
+          "processUptimeMs": 1030
+        },
+        {
+          "stage": "cli.input_ready",
+          "processUptimeMs": 1039
+        }
+      ],
+      "resources": {
+        "atSpawn": {
+          "parentRssBytes": 1153884160,
+          "parentHeapUsedBytes": 693640388,
+          "systemFreeBytes": 1625993216,
+          "systemTotalBytes": 16440479744
+        },
+        "atObservation": {
+          "parentRssBytes": 1153835008,
+          "parentHeapUsedBytes": 696361644,
+          "systemFreeBytes": 1359106048,
+          "systemTotalBytes": 16440479744
+        }
+      }
+    },
+    "sourceState": "after ACP command runtime separation, before LSP parent PID fix"
+  },
+  "focusedLsp": {
+    "sourceState": "after LSP parent PID fix",
+    "hostTypecheckExitCode": 0,
+    "exitCode": 0,
+    "pass": 12,
+    "fail": 0,
+    "assertions": 24,
+    "files": 1,
+    "seconds": 23.25
+  },
+  "unresolved": [
+    "Long full-suite ACP initialize timeout",
+    "Full-suite LSP initialize timeout and late error; isolated rerun passes",
+    "Native Windows symlink cases unsupported",
+    "Independent end-user and OAuth validation not established"
+  ],
+  "command": "$env:BASE_HARNESS_TRACE_TEST_PHASES='1'; $env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_REQUIRE_SYMLINK_TESTS='0'; $env:BASE_HARNESS_PYTHON='C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\verifier\\Scripts\\python.exe'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 30000 --only-failures 2>&1 | Tee-Object -FilePath 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\host-acp-runtime-boundary-1788915059798.log'; exit $LASTEXITCODE"
+}

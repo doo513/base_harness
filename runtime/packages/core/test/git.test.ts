@@ -55,6 +55,128 @@ describe("Git", () => {
   )
 })
 
+describe("Git discovery boundaries", () => {
+  it.live("discovers from a nested directory without changing the caller's starting point", () =>
+    withDiscoveryRepository((directory) => Effect.gen(function* () {
+      const nested = path.join(directory, "scope", "nested")
+      yield* Effect.promise(() => fs.mkdir(nested, { recursive: true }))
+      const git = yield* Git.Service
+      const repository = yield* git.repo.discover(AbsolutePath.make(nested))
+      expect(repository?.worktree).toBe(AbsolutePath.make(directory))
+      expect(repository?.gitDirectory).toBe(AbsolutePath.make(path.join(directory, ".git")))
+      if (process.platform === "win32") {
+        const alternate = nested.toUpperCase().split(path.sep).join("/")
+        const same = yield* git.repo.discover(AbsolutePath.make(alternate))
+        expect(same?.worktree.toLowerCase()).toBe(directory.toLowerCase())
+      }
+    })),
+  )
+
+  it.live("does not discover an ancestor repository above an explicit ceiling", () =>
+    withDiscoveryRepository((directory) => Effect.gen(function* () {
+      const ceiling = path.join(directory, "scope")
+      const nested = path.join(ceiling, "nested")
+      yield* Effect.promise(() => fs.mkdir(nested, { recursive: true }))
+      const git = yield* Git.Service
+      const repository = yield* withDiscoveryCeilings([ceiling], () =>
+        git.repo.discover(AbsolutePath.make(nested)),
+      )
+      expect(repository).toBeUndefined()
+    })),
+  )
+
+  it.live("excludes a ceiling ancestor but still discovers when starting at that directory", () =>
+    withDiscoveryRepository((directory) => Effect.gen(function* () {
+      const nested = path.join(directory, "nested")
+      yield* Effect.promise(() => fs.mkdir(nested))
+      const git = yield* Git.Service
+      yield* withDiscoveryCeilings([directory], () => Effect.gen(function* () {
+        expect(yield* git.repo.discover(AbsolutePath.make(nested))).toBeUndefined()
+        expect((yield* git.repo.discover(AbsolutePath.make(directory)))?.worktree).toBe(AbsolutePath.make(directory))
+      }))
+    })),
+  )
+
+  it.live("keeps the nearest repository below a ceiling and ignores sibling-prefix ceilings", () =>
+    withDiscoveryRepository((directory) => Effect.gen(function* () {
+      const ceiling = path.join(directory, "scope")
+      const inner = path.join(ceiling, "inner")
+      const nested = path.join(inner, "nested")
+      const sibling = path.join(directory, "sco")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(nested, { recursive: true })
+        await fs.mkdir(sibling)
+        await initRepo(inner)
+      })
+      const git = yield* Git.Service
+      yield* withDiscoveryCeilings([ceiling, sibling], () => Effect.gen(function* () {
+        const repository = yield* git.repo.discover(AbsolutePath.make(nested))
+        expect(repository?.worktree).toBe(AbsolutePath.make(inner))
+        expect(repository?.gitDirectory).toBe(AbsolutePath.make(path.join(inner, ".git")))
+      }))
+    })),
+  )
+
+  it.live("discovers a linked worktree below a ceiling with its common directory outside", () =>
+    withDiscoveryRepository((directory) => Effect.gen(function* () {
+      const ceiling = path.join(directory, "copies")
+      const linked = AbsolutePath.make(path.join(ceiling, "linked"))
+      yield* Effect.promise(() => fs.mkdir(ceiling))
+      const git = yield* Git.Service
+      const source = yield* git.repo.discover(AbsolutePath.make(directory))
+      if (!source) throw new Error("Fixture source repository not found")
+      yield* git.worktree.create({ repository: source, directory: linked })
+      const nested = path.join(linked, "nested")
+      yield* Effect.promise(() => fs.mkdir(nested))
+      yield* withDiscoveryCeilings([ceiling], () => Effect.gen(function* () {
+        const repository = yield* git.repo.discover(AbsolutePath.make(nested))
+        expect(repository?.worktree).toBe(linked)
+        expect(repository?.commonDirectory).toBe(source.commonDirectory)
+        expect(repository?.gitDirectory).not.toBe(source.gitDirectory)
+      }))
+      yield* git.worktree.remove({ repository: source, directory: linked, force: true })
+    })),
+  )
+
+  it.live("does not advertise a bare repository as a working tree", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (root) => Effect.gen(function* () {
+        yield* Effect.promise(() => $`git init --bare`.cwd(root.path).quiet())
+        const git = yield* Git.Service
+        expect(yield* git.repo.discover(AbsolutePath.make(root.path))).toBeUndefined()
+      }),
+      (root) => Effect.promise(() => root[Symbol.asyncDispose]()),
+    ),
+  )
+})
+
+function withDiscoveryRepository<A, E, R>(body: (directory: string) => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (root) => Effect.gen(function* () {
+      yield* Effect.promise(() => initRepo(root.path))
+      return yield* body(root.path)
+    }),
+    (root) => Effect.promise(() => root[Symbol.asyncDispose]()),
+  )
+}
+
+function withDiscoveryCeilings<A, E, R>(ceilings: string[], body: () => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = process.env.GIT_CEILING_DIRECTORIES
+      process.env.GIT_CEILING_DIRECTORIES = [previous, ...ceilings].filter(Boolean).join(path.delimiter)
+      return previous
+    }),
+    body,
+    (previous) => Effect.sync(() => {
+      if (previous === undefined) delete process.env.GIT_CEILING_DIRECTORIES
+      else process.env.GIT_CEILING_DIRECTORIES = previous
+    }),
+  )
+}
+
 function withRemote<A, E, R>(body: (fixture: Awaited<ReturnType<typeof gitRemote>>) => Effect.Effect<A, E, R>) {
   return Effect.acquireUseRelease(
     Effect.promise(async () => {

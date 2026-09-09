@@ -174,6 +174,23 @@ export type FooterView =
   | { type: "prompt" }
   | { type: "permission"; request: PermissionRequest }
   | { type: "question"; request: QuestionRequest }
+  | {
+      type: "execution"
+      adapterID: string
+      models: string[]
+      reasoningEfforts: string[]
+      reasoningOption: string
+      capabilityRevision: string
+      currentModel?: string
+      currentEffort?: string
+    }
+
+export type ExecutionPickerSelection = {
+  adapterID: string
+  modelID: string
+  options?: Record<string, string>
+  capabilityRevision: string
+}
 
 export type FooterPromptRoute =
   | { type: "composer" }

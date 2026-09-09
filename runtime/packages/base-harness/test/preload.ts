@@ -10,8 +10,10 @@ import { afterAll } from "bun:test"
 const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
-  const { AppRuntime } = await import("../src/effect/app-runtime")
-  await AppRuntime.dispose()
+  // Loading the full application just to dispose it makes pure tests pay for
+  // provider, tool, and plugin imports. Only finalize a runtime already loaded.
+  const { appRuntimeFinalizer } = await import("../src/effect/app-runtime-lifecycle")
+  await appRuntimeFinalizer.dispose()
 
   const busy = (error: unknown) =>
     typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
@@ -28,8 +30,28 @@ afterAll(async () => {
 
   // Windows can keep SQLite WAL handles alive until GC finalizers run, so we
   // force GC and retry teardown to avoid flaky EBUSY in test cleanup.
+  const resolved = path.resolve(dir)
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir())
+      || path.basename(resolved) !== "opencode-test-data-" + process.pid) {
+    throw new Error("Refusing test cleanup outside its process scratch directory")
+  }
   await rm(30)
 })
+
+// Non-repository scratch directories must not inherit an ancestor checkout.
+// This bounds Git discovery in tests; it is not a filesystem sandbox.
+process.env.GIT_CEILING_DIRECTORIES = [
+  process.env.GIT_CEILING_DIRECTORIES,
+  await fs.realpath(os.tmpdir()),
+].filter(Boolean).join(path.delimiter)
+
+// Windows Global paths use LOCALAPPDATA, not XDG. Set both before application imports.
+process.env["LOCALAPPDATA"] = path.join(dir, "local")
+process.env["APPDATA"] = path.join(dir, "roaming")
+for (const key of [
+  "BASE_HARNESS_CONFIG", "BASE_HARNESS_CONFIG_DIR", "BASE_HARNESS_TUI_CONFIG",
+  "BASE_HARNESS_CONFIG_CONTENT", "BASE_HARNESS_AUTH_CONTENT",
+]) delete process.env[key]
 
 process.env["XDG_DATA_HOME"] = path.join(dir, "share")
 process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
@@ -50,7 +72,9 @@ const testManagedConfigDir = path.join(dir, "managed")
 process.env["BASE_HARNESS_TEST_MANAGED_CONFIG_DIR"] = testManagedConfigDir
 
 // Write the cache version file to prevent global/index.ts from clearing the cache
-const cacheDir = path.join(dir, "cache", "opencode")
+const cacheDir = process.platform === "win32"
+  ? path.join(dir, "local", "base-harness", "cache")
+  : path.join(dir, "cache", "base-harness")
 await fs.mkdir(cacheDir, { recursive: true })
 await fs.writeFile(path.join(cacheDir, "version"), "14")
 
@@ -85,6 +109,15 @@ delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 
 // Use in-memory sqlite
 process.env["BASE_HARNESS_DB"] = ":memory:"
+
+// Fail before any test can write or clean a user's real configuration.
+const { Global } = await import("@base-harness/core/global")
+for (const key of ["data", "cache", "config", "state"] as const) {
+  const relative = path.relative(dir, Global.Path[key])
+  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
+    throw new Error("HOST_TEST_STATE_NOT_ISOLATED: " + key)
+  }
+}
 
 // Now safe to import from src/
 const { initProjectors } = await import("../src/server/projectors")

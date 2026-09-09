@@ -17,7 +17,8 @@ import type { ConsoleState } from "@base-harness/core/v1/config/console-state"
 import { FSUtil } from "@base-harness/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { provisionBuiltinPluginModule } from "@/plugin/builtin-module"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Service, type Info } from "./service"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { EffectFlock } from "@base-harness/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
@@ -139,11 +140,7 @@ async function resolveLoadedPlugins<T extends { plugin?: ConfigPluginV1.Spec[] }
   return config
 }
 
-type Info = ConfigV1.Info & {
-  // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
-  // with the file and scope it came from so later runtime code can make location-sensitive decisions.
-  plugin_origins?: ConfigPlugin.Origin[]
-}
+
 
 type State = {
   config: Info
@@ -152,18 +149,7 @@ type State = {
   consoleState: ConsoleState
 }
 
-export interface Interface {
-  readonly get: () => Effect.Effect<Info>
-  readonly getGlobal: () => Effect.Effect<Info>
-  readonly getConsoleState: () => Effect.Effect<ConsoleState>
-  readonly update: (config: Info) => Effect.Effect<void>
-  readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
-  readonly invalidate: () => Effect.Effect<void>
-  readonly directories: () => Effect.Effect<string[]>
-  readonly waitForDependencies: () => Effect.Effect<void>
-}
-
-export class Service extends Context.Service<Service, Interface>()("@base-harness/Config") {}
+export { Service, type Interface } from "./service"
 
 export const use = serviceUse(Service)
 

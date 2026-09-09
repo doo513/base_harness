@@ -1068,3 +1068,76 @@ export function RunModelSelectBody(props: {
     </PanelShell>
   )
 }
+
+export function RunChoiceSelectBody(props: {
+  title: string
+  theme: Accessor<RunFooterTheme>
+  items: Accessor<string[]>
+  current: Accessor<string | undefined>
+  onClose: () => void
+  onSelect: (value: string) => void
+}) {
+  let field: InputRenderable | undefined
+  const [query, setQuery] = createSignal("")
+  const entries = createMemo(() =>
+    props.items().map((value) => ({
+      category: "",
+      display: value,
+      footer: props.current() === value ? "current" : undefined,
+      keywords: value,
+      value,
+    })),
+  )
+  const items = createMemo(() => match(query(), entries()))
+  const menu = createFooterMenuState({ count: () => items().length, limit: PANEL_LIST_ROWS })
+  const select = () => {
+    const item = items()[menu.selected()]
+    if (item) props.onSelect(item.value)
+  }
+
+  createEffect(() => {
+    query()
+    menu.reset()
+  })
+  createEffect(() => {
+    if (query().trim()) return
+    const index = items().findIndex((item) => item.value === props.current())
+    if (index !== -1) menu.reveal(index)
+  })
+  useKeyboard((event) => {
+    if (event.defaultPrevented) return
+    handleKey({ event, menu, field: () => field, setQuery, select, close: props.onClose })
+  })
+
+  return (
+    <PanelShell
+      title={props.title}
+      query={query()}
+      count={items().length}
+      total={entries().length}
+      placeholder="Search"
+      theme={props.theme}
+      inputRef={(input) => {
+        field = input
+      }}
+      onQuery={setQuery}
+      dark
+      chrome="minimal"
+    >
+      <RunFooterMenu
+        theme={props.theme}
+        items={items}
+        selected={menu.selected}
+        offset={menu.offset}
+        rows={() => PANEL_LIST_ROWS}
+        limit={PANEL_LIST_ROWS}
+        empty="No results found"
+        border={false}
+        paddingLeft={PANEL_PAD}
+        paddingRight={PANEL_PAD}
+        grouped={false}
+        background
+      />
+    </PanelShell>
+  )
+}

@@ -368,8 +368,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           },
           current() {
             const v = this.selected()
-            if (!v) return undefined
-            if (!this.list().includes(v)) return undefined
+            if (!v || v === "default") return undefined
+            // Preserve an explicit stale selection so the Host can reject it;
+            // never silently send provider-default instead of the user's choice.
             return v
           },
           list() {
@@ -512,10 +513,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const status = sync.data.mcp[name]
         if (status?.status === "connected") {
           // Disable: disconnect the MCP
-          await sdk.client.mcp.disconnect({ name })
+          const result = await sdk.client.mcp.disconnect({ name })
+          if (result.error) throw new Error(JSON.stringify(result.error))
         } else {
           // Enable/Retry: connect the MCP (handles disabled, failed, and other states)
-          await sdk.client.mcp.connect({ name })
+          const result = await sdk.client.mcp.connect({ name })
+          if (result.error) throw new Error(JSON.stringify(result.error))
         }
       },
     }

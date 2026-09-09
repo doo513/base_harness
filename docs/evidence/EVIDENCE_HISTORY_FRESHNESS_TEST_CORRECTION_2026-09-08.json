@@ -1,0 +1,38 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Correct the historical-evidence freshness prerequisite in the disputed-memory regression fixture",
+  "changedFiles": [
+    "tests/test_verified_sidecar.py"
+  ],
+  "productionCodeChanged": false,
+  "policyWeakened": false,
+  "cases": [
+    {
+      "freshnessSeconds": null,
+      "activeHistoricalMethods": [],
+      "disputedHistoricalMethods": []
+    },
+    {
+      "freshnessSeconds": 3600,
+      "activeHistoricalMethods": [
+        "pass"
+      ],
+      "disputedHistoricalMethods": []
+    }
+  ],
+  "validation": {
+    "files": [
+      "tests/test_verified_sidecar.py",
+      "tests/test_restored_verification_boundary.py"
+    ],
+    "passed": 66,
+    "failed": 0,
+    "seconds": 10.89,
+    "exitCode": 0
+  },
+  "gitTouched": false,
+  "netMonitorTouched": false,
+  "overallProductCompletion": false
+}

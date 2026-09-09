@@ -1,0 +1,49 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Task parameter wire contract and current-role sensitive ReadTool permissions",
+  "roles": [
+    "build",
+    "general",
+    "explore",
+    "meta-review"
+  ],
+  "suite": {
+    "sessionId": 48280,
+    "passed": 115,
+    "failed": 0,
+    "assertions": 177,
+    "files": 2,
+    "durationSeconds": 22.96,
+    "exitCode": 0,
+    "typecheckExitCode": 0
+  },
+  "cleanSnapshotRun": {
+    "passed": 61,
+    "failed": 0,
+    "snapshots": 16,
+    "assertions": 73,
+    "durationSeconds": 5.15,
+    "exitCode": 0,
+    "updateMode": false
+  },
+  "snapshotGeneration": {
+    "taskOnly": {
+      "passed": 1,
+      "filteredOut": 60,
+      "snapshotsAdded": 1
+    },
+    "fullSuite": {
+      "snapshotsPassed": 1,
+      "snapshotsAdded": 15
+    },
+    "cleanComparisonPerformedAfterGeneration": true
+  },
+  "remainingKnownBaselineFailures": [
+    "(fail) session.compaction.process > stops quickly when aborted during retry backoff [3190.86ms]",
+    "(fail) symlink handling [3983.59ms]",
+    "(fail) nested symlinks [3224.17ms]"
+  ],
+  "fullCompletionProven": false
+}

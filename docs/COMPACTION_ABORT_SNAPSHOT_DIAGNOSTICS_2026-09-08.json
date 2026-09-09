@@ -1,0 +1,46 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Compaction retry-backoff cancellation and tool-free summary snapshot elimination",
+  "baseline": {
+    "sessionId": 45842,
+    "exitCode": 1,
+    "passed": 0,
+    "failed": 1,
+    "filteredOut": 55,
+    "observedCancellationMs": 379,
+    "thresholdMs": 250
+  },
+  "targeted": {
+    "sessionId": 62446,
+    "passed": 3,
+    "failed": 0,
+    "filteredOut": 54,
+    "assertions": 14,
+    "durationSeconds": 10.88,
+    "exitCode": 0,
+    "typecheckExitCode": 0,
+    "thresholdMs": 250
+  },
+  "regression": {
+    "sessionId": 87173,
+    "processId": 9412,
+    "passed": 57,
+    "skipped": 1,
+    "failed": 0,
+    "assertions": 183,
+    "files": 2,
+    "durationSeconds": 39.28,
+    "stopped": true,
+    "watchdogTriggered": false,
+    "exitCode": 0,
+    "stdout": ".tools/validation/compaction-and-snapshot-regression-1788861694137.stdout.log",
+    "stderr": ".tools/validation/compaction-and-snapshot-regression-1788861694137.stderr.log"
+  },
+  "remainingKnownBaselineFailures": [
+    "(fail) symlink handling [3983.59ms]",
+    "(fail) nested symlinks [3224.17ms]"
+  ],
+  "fullCompletionProven": false
+}

@@ -2,6 +2,13 @@ export type DomainId = "develop" | "general"
 export type SkillId = "hackathon"
 export type PlanningPreference = "auto" | "plan_once"
 export type PlanningDecision = "direct" | "planned"
+
+export interface ExecutionSelection {
+  adapterID: string
+  modelID?: string
+  options?: Record<string, string>
+  capabilityRevision?: string
+}
 export type PlanningState =
   | "idle"
   | "contract_building"
@@ -19,6 +26,7 @@ export interface KernelSessionState {
   skills: SkillId[]
   planningPreference: PlanningPreference
   planningState: PlanningState
+  execution?: ExecutionSelection
   activePlanId?: string
   activePlanRevision?: number
 }
@@ -173,6 +181,7 @@ export interface PlanningSignals {
 export type HarnessControl =
   | { type: "domain.set"; domain: DomainId }
   | { type: "skill.set"; skill: SkillId; enabled: boolean }
+  | { type: "execution.select"; selection?: ExecutionSelection }
   | { type: "planning.plan_once" }
   | { type: "planning.discard" }
   | { type: "planning.execute"; planId?: string }
@@ -232,6 +241,18 @@ export function applyControl(state: KernelSessionState, control: HarnessControl)
       ...state,
       domain: control.enabled ? "develop" : state.domain,
       skills: [...skills],
+    }
+  }
+
+  if (control.type === "execution.select") {
+    return {
+      ...state,
+      execution: control.selection
+        ? {
+            ...control.selection,
+            options: control.selection.options ? { ...control.selection.options } : undefined,
+          }
+        : undefined,
     }
   }
   if (control.type === "planning.plan_once") {

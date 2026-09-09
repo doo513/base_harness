@@ -195,7 +195,7 @@ describe("cross-spawn spawner", () => {
     fx.effect(
       "captures stdout via .all when no stderr",
       Effect.gen(function* () {
-        const handle = yield* ChildProcess.make("echo", ["hello from stdout"])
+        const handle = yield* js('process.stdout.write("hello from stdout")')
         const all = yield* decodeByteStream(handle.all)
         expect(all).toBe("hello from stdout")
       }),
@@ -229,6 +229,39 @@ describe("cross-spawn spawner", () => {
   })
 
   describe("process control", () => {
+    fx.effect(
+      "repeated kill after successful exit is a no-op",
+      Effect.gen(function* () {
+        const handle = yield* ChildProcess.make(process.execPath, ["-e", "process.exit(0)"])
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+        yield* handle.kill()
+        yield* handle.kill({ forceKillAfter: 100 })
+        expect(yield* handle.isRunning).toBe(false)
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+      }),
+    )
+
+    fx.effect(
+      "late kill preserves a non-zero exit code",
+      Effect.gen(function* () {
+        const handle = yield* ChildProcess.make(process.execPath, ["-e", "process.exit(42)"])
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(42))
+        yield* handle.kill()
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(42))
+      }),
+    )
+
+    fx.effect(
+      "checks completion when a previously created kill Effect runs",
+      Effect.gen(function* () {
+        const handle = yield* ChildProcess.make(process.execPath, ["-e", "setTimeout(() => process.exit(0), 50)"])
+        const kill = handle.kill({ forceKillAfter: 100 })
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+        yield* kill
+        expect(yield* handle.isRunning).toBe(false)
+      }),
+    )
+
     fx.effect(
       "kills a running process",
       Effect.gen(function* () {

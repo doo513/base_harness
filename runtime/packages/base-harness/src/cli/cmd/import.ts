@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import type { Session as SDKSession, Message, Part } from "@base-harness/sdk/v2"
 import { SessionV1 } from "@base-harness/core/v1/session"
 import { Session } from "@/session/session"
@@ -92,8 +93,7 @@ export function transformShareData(shareData: ShareData[]): {
 type ExportData = { info: SDKSession; messages: Array<{ info: Message; parts: Part[] }> }
 
 export const ImportCommand = effectCmd({
-  command: "import <file>",
-  describe: "import session data from JSON file or URL",
+  ...EntryCommand.import,
   builder: (yargs) =>
     yargs.positional("file", {
       describe: "path to JSON file or share URL",

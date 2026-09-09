@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "baseline": {
+    "pass": 270,
+    "skip": 1,
+    "fail": 7,
+    "tests": 278,
+    "files": 52,
+    "assertions": 819
+  },
+  "final": {
+    "pass": 286,
+    "skip": 1,
+    "fail": 0,
+    "tests": 287,
+    "files": 52,
+    "snapshots": 8,
+    "assertions": 836,
+    "typecheckExitCode": 0,
+    "commandExitCode": 0
+  },
+  "otherScopedGates": [
+    {
+      "package": "kernel",
+      "pass": 8,
+      "typecheckExitCode": 0
+    },
+    {
+      "package": "kernel-host",
+      "pass": 86,
+      "typecheckExitCode": 0
+    },
+    {
+      "package": "coordinator",
+      "pass": 46,
+      "typecheckExitCode": 0
+    },
+    {
+      "package": "verification",
+      "pass": 25,
+      "typecheckExitCode": 0
+    }
+  ],
+  "skip": "DiffViewerFileTree > renders sorted hierarchical file rows",
+  "snapshotCommand": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000 --update-snapshots ./test/cli/tui/inline-tool-wrap-snapshot.test.tsx; exit $LASTEXITCODE",
+  "gateCommand": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000; $testCode=$LASTEXITCODE; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $typeCode=$LASTEXITCODE; Write-Output \"GATE_RESULT tests=$testCode typecheck=$typeCode\"; if ($testCode -ne 0 -or $typeCode -ne 0) { exit 1 }; exit 0",
+  "snapshotResult": {
+    "chunk_id": "ad5523",
+    "wall_time_seconds": 3.9228034000000003,
+    "exit_code": 0,
+    "original_token_count": 444,
+    "output": "bun test v1.3.14 (0d9b296a)\n\ntest\\cli\\tui\\inline-tool-wrap-snapshot.test.tsx:\n(pass) TUI inline tool wrapping > falls back for unknown tool names [0.25ms]\n(pass) TUI inline tool wrapping > replaces pending copy when a tool fails before completion [42.11ms]\n(pass) TUI inline tool wrapping > preserves useful completed copy when a tool fails [7.04ms]\n(pass) TUI inline tool wrapping > filters malformed nested tool wire data [0.70ms]\n(pass) TUI inline tool wrapping > ignores diagnostics with malformed nested ranges [0.27ms]\n(pass) TUI inline tool wrapping > formats completed subagent toolcall details [0.13ms]\n(pass) TUI inline tool wrapping > keeps background state attached to the subagent identity [0.10ms]\n(pass) TUI inline tool wrapping > keeps retry status ahead of wrapping messages [0.09ms]\n(pass) TUI inline tool wrapping > snapshots consecutive grep, glob, and read rows at a narrow width [27.48ms]\n(pass) TUI inline tool wrapping > snapshots expanded tool errors under the tool text [12.16ms]\n(pass) TUI inline tool wrapping > keeps separation after a shell output block [13.30ms]\n(pass) TUI inline tool wrapping > keeps separation after a padded user message [10.61ms]\n(pass) TUI inline tool wrapping > separates after a multi-line task row [7.60ms]\n(pass) TUI inline tool wrapping > separates a task row from a preceding inline detail [7.01ms]\n(pass) TUI inline tool wrapping > separates an inline row from the previous assistant summary [4.48ms]\n(pass) TUI inline tool wrapping > separates an inline row from the previous assistant error [5.22ms]\n(pass) TUI inline tool wrapping > updates sticky-bottom geometry when a text separator mounts and unmounts [18.83ms]\n\n 17 pass\n 0 fail\nsnapshots: +8 added\n 33 expect() calls\nRan 17 tests across 1 file. [3.47s]\n"
+  },
+  "finalTerminalResult": {
+    "chunk_id": "dfde5d",
+    "wall_time_seconds": 0.0000035,
+    "exit_code": 0,
+    "original_token_count": 9,
+    "output": "GATE_RESULT tests=0 typecheck=0\r\n"
+  },
+  "outputTruncated": true,
+  "realAccountValidation": false,
+  "securityBoundaryChanged": false,
+  "gitUsed": false,
+  "netMonitorTouched": false
+}
+

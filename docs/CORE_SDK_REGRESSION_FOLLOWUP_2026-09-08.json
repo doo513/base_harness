@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-08",
+  "status": "incomplete",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "baseline": {
+    "scope": "full Core package",
+    "passed": 1082,
+    "skipped": 7,
+    "failed": 18,
+    "tests": 1107,
+    "files": 146,
+    "assertions": 3002,
+    "typecheckExitCode": 0
+  },
+  "sdk": {
+    "passed": 1,
+    "failed": 0,
+    "assertions": 1,
+    "typecheckExitCode": 0
+  },
+  "postEdit": {
+    "scope": "9 targeted Core test files",
+    "passed": 84,
+    "failed": 3,
+    "tests": 87,
+    "files": 9,
+    "assertions": 174,
+    "typecheckExitCode": 2,
+    "fullCoreRerun": false
+  },
+  "pendingFixes": {
+    "status": "incomplete",
+    "introducedTypeRegression": {
+      "path": "runtime/packages/core/test/models.test.ts",
+      "line": 152,
+      "code": "TS2769",
+      "cause": "Bun expect.toBe inferred ModelsDev.Provider types are not assignable from widened imported JSON literals",
+      "proposedFix": "Compare object identity as a boolean via Object.is, without an unsafe Provider cast; identity test does not assert catalog schema validity"
+    },
+    "remainingTestFailures": [
+      "ProjectV2.resolve > returns global for non-git directory",
+      "ProjectCopy > refresh ignores existing directories that are no longer git checkouts",
+      "Snapshot > treats capture outside Git as unavailable"
+    ],
+    "cause": "Git.repo.discover uses FSUtil.up to select an ancestor .git, then runs rev-parse with cwd at that ancestor. GIT_CEILING_DIRECTORIES set in preload cannot constrain that earlier filesystem walk.",
+    "proposedBoundaryWork": "Enforce an explicit discovery boundary before the filesystem walk. Preserve ordinary nested and linked worktree discovery; add deterministic ancestor-ceiling fixtures. Do not delete or alter the user's home .git.",
+    "requiresResumption": true
+  },
+  "commands": {
+    "baseline": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000; $tests=$LASTEXITCODE; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $types=$LASTEXITCODE; Write-Output \"CORE_GATE tests=$tests typecheck=$types\"; if ($tests -ne 0 -or $types -ne 0) { exit 1 }; exit 0",
+    "targeted": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; $output = & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000 ./test/global.test.ts ./test/models.test.ts ./test/orchestration.test.ts ./test/project.test.ts ./test/project-copy.test.ts ./test/snapshot.test.ts ./test/effect/cross-spawn-spawner.test.ts ./test/plugin/provider-cloudflare-ai-gateway.test.ts ./test/plugin/provider-cloudflare-workers-ai.test.ts 2>&1; $tests=$LASTEXITCODE; $output | Select-Object -Last 160; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $types=$LASTEXITCODE; Write-Output \"CORE_TARGETED_GATE tests=$tests typecheck=$types\"; if ($tests -ne 0 -or $types -ne 0) { exit 1 }; exit 0",
+    "sdk": "$env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_PURE='1'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 10000; $tests=$LASTEXITCODE; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' run typecheck; $types=$LASTEXITCODE; Write-Output \"SDK_GATE tests=$tests typecheck=$types\"; if ($tests -ne 0 -or $types -ne 0) { exit 1 }; exit 0"
+  },
+  "terminalResults": {
+    "baseline": 1,
+    "targeted": 1,
+    "sdk": 0
+  },
+  "productionSourceChanged": false,
+  "repositoryCommit": false,
+  "pushed": false,
+  "netMonitorTouched": false
+}
+

@@ -1,0 +1,109 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "change": "Separate Kernel completion admission from terminal planning presentation",
+  "files": [
+    "runtime/packages/kernel-host/src/index.ts",
+    "runtime/packages/base-harness/src/harness/coordinator-service.ts",
+    "runtime/packages/kernel-host/test/terminal-status.test.ts"
+  ],
+  "targeted": {
+    "passed": 25,
+    "failed": 0,
+    "assertions": 193,
+    "perTestTimeoutMs": 10000,
+    "exitCode": 0
+  },
+  "typechecks": {
+    "kernelHost": 0,
+    "host": 0
+  },
+  "fullKernelHostSuite": {
+    "passed": false,
+    "exitCode": -1,
+    "operatorTerminated": true,
+    "pid": 22928,
+    "parent": 31060,
+    "lastTest": "concurrent execute controls cannot dispatch the same reviewed plan twice",
+    "reason": "Second control queues behind held first control; test releases first only after second settles",
+    "notPass": true
+  },
+  "integration": {
+    "fixtureExit": 0,
+    "success": true,
+    "terminalPlanningIdle": true,
+    "ready": true,
+    "runId": "run-1a6bc4ce-d4bb-421b-b2f1-8772af0c2d90",
+    "sessionID": "ses_f8108bbb4ffefUbFICy76a0M8M",
+    "checks": [
+      {
+        "route": "/provider",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "route": "/config/providers",
+        "credentialsOmitted": true,
+        "privateOptionsOmitted": true,
+        "exactEfforts": [
+          "high",
+          "max"
+        ]
+      },
+      {
+        "scope": "worker_catalog",
+        "workUnits": 2,
+        "forbiddenToolsAdvertised": false,
+        "structuredEditorsAvailable": true
+      },
+      {
+        "scope": "ready_family_consistency",
+        "selectedFamiliesActive": true,
+        "historicalDisputePreserved": true,
+        "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-4bqHPY\\state\\base-harness\\runs\\f92287bf247fc211-fee24e8e\\artifacts\\94\\9429b22cbb8d298fc3ad27439e0bf7e5e8ca27045aa614d95fc1e488beb14544.json"
+      },
+      {
+        "scope": "worker_local_repair",
+        "workUnitId": "unit-0",
+        "scopeId": "ses_f81087706ffePvwio2ywME1zyd",
+        "repairCount": 1,
+        "sameSessionWriteCount": 2,
+        "unaffectedWorkerWriteCount": 1,
+        "baseWorkspaceAbsentBeforeRepair": true,
+        "model": "fixture-reasoner",
+        "exactEffort": "high",
+        "replanned": false
+      },
+      {
+        "scope": "private_runtime",
+        "authenticated": true,
+        "exactEffort": "high",
+        "fileMatches": true,
+        "retainedFilesMatch": true,
+        "currentRootReady": true
+      }
+    ],
+    "timings": {
+      "/global/health": 25.24279999999999,
+      "healthStartupMs": 14846.401999999998,
+      "/provider": 2157.028699999999,
+      "/config/providers": 19.762299999998504,
+      "/session": 59.09240000000136,
+      "clientMs": 31367.888199999998,
+      "/session/ses_f8108bbb4ffefUbFICy76a0M8M/harness": 22.599400000006426,
+      "/session/ses_f81087706ffePvwio2ywME1zyd/message": 8.41479999999865
+    },
+    "clientExit": 0,
+    "hostExit": 143,
+    "hostTerminationIntentional": true
+  },
+  "repairCounterSemantics": "Top-level repairCount and metrics.repairs currently mirror the root verifier count; child repairCount remains per worker. Unchanged in this patch.",
+  "overallPromotionReady": false,
+  "gitTouched": false,
+  "netMonitorTouched": false
+}

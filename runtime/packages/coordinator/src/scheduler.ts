@@ -23,7 +23,9 @@ export const hasPendingWork = <T extends SchedulableWorker>(
 ) => {
   if (activeCount > 0) return true
   if ([...workers.values()].some((worker) => ["running", "candidate_ready", "verifying", "committing", "repairing"].includes(worker.state))) return true
-  if (integrationStarted && !integrationComplete && outcome !== "blocked") return true
-  if (workers.size && [...workers.values()].every((worker) => worker.state === "completed")) return !integrationComplete
+  const integrationSettled = integrationComplete || outcome === "blocked" || outcome === "failure"
+    || outcome === "repair_exhausted" || outcome === "needs_input"
+  if (integrationStarted && !integrationSettled) return true
+  if (workers.size && [...workers.values()].every((worker) => worker.state === "completed")) return !integrationSettled
   return [...workers.values()].some((worker) => worker.state === "queued" && dependenciesComplete(worker, workers))
 }

@@ -1,12 +1,13 @@
 import { cmd } from "./cmd"
+import { EntryCommand } from "../entry-command-metadata"
 import { UI } from "@/cli/ui"
 import { errorMessage } from "@base-harness/tui/util/error"
 import { validateSession } from "../tui/validate-session"
 import { ServerAuth } from "@/server/auth"
+import { prepareTuiRuntime } from "../tui/prepare-runtime"
 
 export const AttachCommand = cmd({
-  command: "attach <url>",
-  describe: "attach to a running base-harness server",
+  ...EntryCommand.attach,
   builder: (yargs) =>
     yargs
       .positional("url", {
@@ -104,6 +105,7 @@ export const AttachCommand = cmd({
       return
     }
 
+    await prepareTuiRuntime()
     const { TuiConfig } = await import("@/config/tui")
     if (args.fork && !args.continue && !args.session) {
       UI.error("--fork requires --continue or --session")

@@ -8,6 +8,7 @@ import { memoMap } from "@base-harness/core/effect/memo-map"
 import type { Config } from "@/config/config"
 import { TestInstance, withTmpdirInstance } from "../fixture/fixture"
 import { InstanceStore } from "@/project/instance-store"
+import { traceTestPhase } from "./test-phase-trace"
 
 type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
 type InstanceOptions<E, R> = {
@@ -37,7 +38,12 @@ type Runner = <A, E, R, E2>(value: Body<A, E, R | Scope.Scope>, layer: Layer.Lay
 
 const isolatedRun: Runner = (value, layer) =>
   Effect.gen(function* () {
-    const exit = yield* body(value).pipe(Effect.scoped, Effect.provide(layer), Effect.exit)
+    traceTestPhase("runner.isolated.start")
+    const exit = yield* Effect.gen(function* () {
+      traceTestPhase("runner.isolated.layer_ready")
+      return yield* body(value)
+    }).pipe(Effect.scoped, Effect.provide(layer), Effect.exit)
+    traceTestPhase("runner.isolated.released")
     if (Exit.isFailure(exit)) {
       for (const err of Cause.prettyErrors(exit.cause)) {
         yield* Effect.logError(err)
@@ -52,10 +58,14 @@ const isolatedRun: Runner = (value, layer) =>
 // the server's handlers.
 const sharedRun: Runner = (value, layer) =>
   Effect.gen(function* () {
+    traceTestPhase("runner.shared.start")
     const scope = yield* Scope.make()
     const ctx = yield* Layer.buildWithMemoMap(layer, memoMap, scope)
+    traceTestPhase("runner.shared.layer_ready")
     const exit = yield* body(value).pipe(Effect.scoped, Effect.provide(ctx), Effect.exit)
+    traceTestPhase("runner.shared.body_complete")
     yield* Scope.close(scope, Exit.void)
+    traceTestPhase("runner.shared.released")
     if (Exit.isFailure(exit)) {
       for (const err of Cause.prettyErrors(exit.cause)) {
         yield* Effect.logError(err)

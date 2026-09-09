@@ -5,11 +5,12 @@ import json
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 
 PROTOCOL_VERSION = 4
 DEFAULT_MAX_SAME_FAILURE_REPAIRS = 2
+FILE_PREDICATES = {"exists", "content_contains", "content_equals", "sha256"}
+COMMAND_PREDICATES = {"command_exit", "output_contains"}
 MAX_CAPTURE_CHARS = 32_000
 MAX_ARTIFACT_BYTES = 10 * 1024 * 1024
 MAX_RUN_ARTIFACT_BYTES = 100 * 1024 * 1024
@@ -63,6 +66,14 @@ SECRET_VALUE = re.compile(
 
 
 class ProtocolError(RuntimeError):
+    pass
+
+
+class ProtocolVersionError(ProtocolError):
+    pass
+
+
+class CandidateIntegrityError(RuntimeError):
     pass
 
 
@@ -227,6 +238,7 @@ class VerifierSpec:
     revision: str
     source_hash: str
     policy_hash: str
+    builtin: str | None = None
 
     def attestation(self) -> dict[str, Any]:
         return {
@@ -251,6 +263,10 @@ class ScopeState:
     pending: dict[str, dict[str, Any]] = field(default_factory=dict)
     candidate: dict[str, Any] | None = None
     committed_candidate_ids: list[str] = field(default_factory=list)
+    verified_candidate_attestation: dict[str, Any] | None = None
+    rejection: dict[str, Any] | None = None
+    runtime_failure: dict[str, Any] | None = None
+    repair_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -426,7 +442,9 @@ class EvidenceMemory:
         revoked: set[str],
     ) -> set[str]:
         case = self._load(claim)
-        if case.get("status") == "quarantined":
+        # Historical cases are advisory. Disputed/unknown cases cannot supply
+        # the missing independence needed to accept a current Claim.
+        if case.get("status") != "active":
             return set()
         methods: set[str] = set()
         for event in case.get("supports", []):
@@ -602,6 +620,8 @@ class VerificationEngine:
             if not isinstance(value, dict):
                 raise ProtocolError("verification.verifiers entries must be objects")
             verifier_id = as_nonempty_string(value.get("id", "verifier-" + str(index + 1)), "verifier.id")
+            if verifier_id == "file":
+                raise ProtocolError("file is a reserved built-in verifier ID")
             command = value.get("command")
             if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
                 raise ProtocolError("verification.verifiers[].command must be a non-empty argv array")
@@ -702,6 +722,20 @@ class VerificationEngine:
                 source_hash=source_hash,
                 policy_hash=canonical_hash(policy),
             )
+        file_policy = {
+            "builtin": "file", "strength": "structural",
+            "claimKinds": ["artifact", "configuration"],
+            "predicates": sorted(FILE_PREDICATES),
+            "maxBytes": MAX_ARTIFACT_BYTES, "maxTargets": 64,
+        }
+        specs["file"] = VerifierSpec(
+            verifier_id="file", command=None, cwd=run.workspace,
+            strength="structural", claim_kinds=("artifact", "configuration"),
+            method_id="builtin:file", timeout_seconds=30.0, deterministic_oracle=False,
+            freshness_seconds=0, contradiction_severity="soft",
+            revision=canonical_hash(file_policy), source_hash=source_hash,
+            policy_hash=canonical_hash(file_policy), builtin="file",
+        )
         return specs
 
     @staticmethod
@@ -795,6 +829,7 @@ class VerificationEngine:
                     verifier_id
                     for verifier_id, spec in verifier_specs.items()
                     if kind in spec.claim_kinds and STRENGTH[spec.strength] >= STRENGTH[minimum]
+                    and predicate["type"] in (FILE_PREDICATES if spec.builtin == "file" else COMMAND_PREDICATES)
                 ]
                 if not allowed:
                     raise ProtocolError("no applicable verifier is registered for claim " + claim_id)
@@ -805,6 +840,40 @@ class VerificationEngine:
                     raise ProtocolError("claim references unknown verifier: " + verifier_id)
                 if kind not in spec.claim_kinds or STRENGTH[spec.strength] < STRENGTH[minimum]:
                     raise ProtocolError("verifier is not strong enough or cannot verify claim " + claim_id)
+                supported = FILE_PREDICATES if spec.builtin == "file" else COMMAND_PREDICATES
+                if predicate["type"] not in supported:
+                    raise ProtocolError("verifier does not support the typed predicate for " + claim_id)
+                if spec.builtin == "file":
+                    targets = as_string_list(scope["targets"], "file targets")
+                    if len(targets) > 64:
+                        raise ProtocolError("file verifier supports at most 64 targets per Claim")
+                    normalized_targets = []
+                    for target in targets:
+                        if target.startswith(("\\\\", "//")):
+                            raise ProtocolError("file verifier does not accept network or device paths")
+                        resolved = (run.workspace / target).resolve()
+                        if not inside(run.workspace, resolved):
+                            raise ProtocolError("file Claim target must remain inside the workspace")
+                        relative = resolved.relative_to(run.workspace.resolve())
+                        if any(":" in part for part in relative.parts):
+                            raise ProtocolError("file Claim cannot address an alternate data stream")
+                        if os.name == "nt" and any(
+                            re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?", part.rstrip(" ."), re.I)
+                            for part in relative.parts
+                        ):
+                            raise ProtocolError("file Claim cannot address a Windows device")
+                        normalized_targets.append(relative.as_posix())
+                    scope["targets"] = normalized_targets
+                    if predicate["type"] in {"content_contains", "content_equals"}:
+                        if not isinstance(predicate.get("value"), str):
+                            raise ProtocolError("file content predicate requires a string value")
+                        if predicate["type"] == "content_contains" and not predicate["value"]:
+                            raise ProtocolError("content_contains requires a non-empty value")
+                    if predicate["type"] == "sha256" and not (
+                        isinstance(predicate.get("value"), str)
+                        and re.fullmatch(r"[0-9a-fA-F]{64}", predicate["value"])
+                    ):
+                        raise ProtocolError("sha256 predicate requires a SHA-256 value")
             minimum_families = policy.get("minIndependentFamilies", 1)
             if not isinstance(minimum_families, int) or minimum_families < 1:
                 raise ProtocolError("minIndependentFamilies must be a positive integer")
@@ -870,6 +939,9 @@ class VerificationEngine:
                         "pendingActionCount": len(value.pending),
                         "candidateId": value.candidate.get("candidateId") if value.candidate else None,
                         "committedCandidateIds": value.committed_candidate_ids,
+                        "rejection": value.rejection,
+                        "runtimeFailure": value.runtime_failure,
+                        "repairCounts": value.repair_counts,
                     }
                     for key, value in run.scopes.items()
                 },
@@ -889,8 +961,17 @@ class VerificationEngine:
         )
 
     def _status(self, run: RunState, scope_id: str) -> dict[str, Any]:
+        scope = run.scopes.get(scope_id)
+        if scope is None:
+            raise ProtocolError("scope is not open")
+        is_root = scope_id == run.root_scope_id
+        rejection = scope.rejection or {}
+        state = run.status if is_root or run.status == "closed" else (
+            "open" if rejection.get("outcome") == "repair_exhausted"
+            else rejection.get("outcome", "open")
+        )
         return {
-            "state": run.status,
+            "state": state,
             "goal": str((run.goal_contract or {}).get("goal", "")),
             "runId": run.run_id,
             "scopeId": scope_id,
@@ -904,10 +985,25 @@ class VerificationEngine:
             "evidenceFamilies": run.evidence_families,
             "evidenceRefs": run.evidence_refs,
             "candidateRefs": run.candidate_refs,
-            "readyRef": run.ready_ref,
-            "runtimeFailure": run.runtime_failure,
+            "readyRef": run.ready_ref if is_root else None,
+            "runtimeFailure": scope.runtime_failure,
+            "scopeAttestation": scope.verified_candidate_attestation if not is_root else None,
+            "outcome": (
+                "ready" if is_root and run.status == "ready" and run.ready_ref
+                else "scope_verified" if not is_root and scope.verified_candidate_attestation
+                else None
+            ),
+            "failureKind": None,
+            "failedCriterion": None,
+            "missingEvidence": [],
+            "repairScope": None,
+            "repairScopeId": None,
+            "repairCount": 0,
+            "failureFingerprint": None,
+            "message": None,
+            **rejection,
             **self._assurance_metadata(run),
-            "readyEligible": run.status == "ready",
+            "readyEligible": is_root and run.status == "ready" and run.ready_ref is not None and not rejection,
             "maxSameFailureRepairs": int(
                 self._verification_config(run).get(
                     "maxSameFailureRepairs",
@@ -984,6 +1080,195 @@ class VerificationEngine:
             "terminal": terminal,
         }
 
+    def _candidate_paths(
+        self, workspace: Path, candidate: dict[str, Any]
+    ) -> list[tuple[dict[str, Any], Path, Path]]:
+        root = workspace.resolve()
+        result: list[tuple[dict[str, Any], Path, Path]] = []
+        seen: set[str] = set()
+        for item in candidate["files"]:
+            raw = item["path"]
+            logical = Path(raw)
+            if (
+                not raw or "\x00" in raw or not logical.is_absolute()
+                or raw.startswith(("\\\\", "//")) or ".." in logical.parts
+                or (os.name == "nt" and ":" in raw[2:])
+            ):
+                raise CandidateIntegrityError("candidate paths must be absolute ordinary workspace files")
+            absolute = Path(os.path.abspath(logical))
+            try:
+                relative = absolute.relative_to(root)
+            except ValueError as error:
+                raise CandidateIntegrityError("candidate path escapes the original workspace") from error
+            if not relative.parts or absolute.resolve() != absolute:
+                raise CandidateIntegrityError("candidate path crosses a link boundary")
+            key = os.path.normcase(str(absolute))
+            if key in seen:
+                raise CandidateIntegrityError("candidate contains duplicate file paths")
+            seen.add(key)
+            result.append((item, absolute, relative))
+        return result
+
+    @staticmethod
+    def _read_candidate_file(logical: Path, boundary: Path) -> dict[str, Any]:
+        absolute = Path(os.path.abspath(logical))
+        resolved = logical.resolve()
+        if resolved != absolute or not inside(boundary, resolved):
+            raise CandidateIntegrityError("candidate file crossed a link boundary")
+        entry = logical.lstat()
+        if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+            raise CandidateIntegrityError("candidate requires a single-link regular file")
+        if entry.st_size > MAX_ARTIFACT_BYTES:
+            raise CandidateIntegrityError("candidate file exceeds the 10 MiB limit")
+        identity = lambda value: (
+            value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_nlink,
+        )
+        descriptor = os.open(
+            logical, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        )
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if identity(before) != identity(entry) or not stat.S_ISREG(before.st_mode):
+                raise CandidateIntegrityError("candidate changed before opening")
+            data = stream.read(MAX_ARTIFACT_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        current = logical.lstat()
+        if (
+            len(data) > MAX_ARTIFACT_BYTES
+            or identity(before) != identity(after) or identity(after) != identity(current)
+            # Windows path and descriptor ctime can use different semantics.
+            # Compare each accessor with itself, never discard change detection.
+            or before.st_ctime_ns != after.st_ctime_ns
+            or entry.st_ctime_ns != current.st_ctime_ns
+            or logical.resolve() != resolved
+        ):
+            raise CandidateIntegrityError("candidate changed while being independently read")
+        return {
+            "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
+            "identity": (*identity(after), current.st_ctime_ns, after.st_ctime_ns),
+        }
+
+    def _assert_candidate_binding(
+        self, run: RunState, candidate: dict[str, Any], *,
+        workspace: Path | None = None, committed: bool = False,
+    ) -> list[dict[str, Any]]:
+        original = (workspace or run.workspace).resolve()
+        try:
+            paths = self._candidate_paths(original, candidate)
+            candidate_root = candidate.get("candidateWorkspace")
+            if paths and not committed and not candidate_root:
+                raise CandidateIntegrityError("changed candidates require an independent candidateWorkspace")
+            snapshot = original if committed or not candidate_root else Path(candidate_root).resolve()
+            if not committed and candidate_root and (
+                not snapshot.is_dir() or snapshot == self.state_root.resolve()
+                or not inside(self.state_root, snapshot) or inside(original, snapshot)
+            ):
+                raise CandidateIntegrityError("candidateWorkspace no longer satisfies its isolation boundary")
+            observations = []
+            for item, logical, relative in paths:
+                base = None
+                if not committed:
+                    try:
+                        base = self._read_candidate_file(logical, original)
+                    except FileNotFoundError:
+                        pass
+                    if (base["sha256"] if base else None) != item["beforeHash"]:
+                        raise CandidateIntegrityError("original workspace no longer matches candidate beforeHash")
+                observed = self._read_candidate_file(
+                    snapshot / relative, original if committed else self.state_root,
+                )
+                if observed["sha256"] != item["afterHash"]:
+                    raise CandidateIntegrityError("candidate bytes do not match manifest afterHash")
+                observations.append({
+                    "path": str(logical), **observed,
+                    "baseIdentity": base["identity"] if base else None,
+                })
+            return observations
+        except CandidateIntegrityError:
+            raise
+        except (OSError, RuntimeError, ValueError) as error:
+            raise CandidateIntegrityError("candidate integrity inspection failed: " + str(error)) from error
+
+    def _observe_verifier(
+        self, run: RunState, spec: VerifierSpec, claim: dict[str, Any],
+        cache: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        key = spec.verifier_id
+        if spec.builtin == "file":
+            key += ":" + canonical_hash({"scope": claim["scope"], "predicate": claim["predicate"]})
+        if key not in cache:
+            cache[key] = (
+                self._run_file_verifier(run, spec, claim)
+                if spec.builtin == "file" else self._run_verifier(run, spec)
+            )
+        return cache[key]
+
+    def _run_file_verifier(
+        self, run: RunState, spec: VerifierSpec, claim: dict[str, Any]
+    ) -> dict[str, Any]:
+        started = time.monotonic()
+        predicate = claim["predicate"]
+        observations: list[dict[str, Any]] = []
+        result: dict[str, Any] = {
+            "verifierId": spec.verifier_id, "methodId": spec.method_id,
+            "builtin": "file", "predicateType": predicate["type"],
+            "command": ["builtin:file", *claim["scope"]["targets"]],
+            "cwd": str(run.workspace), "artifacts": observations,
+            "attestation": spec.attestation(),
+        }
+        try:
+            for target in claim["scope"]["targets"]:
+                logical = run.workspace / target
+                resolved = logical.resolve()
+                if not inside(run.workspace, resolved):
+                    raise OSError("file verifier target escaped the workspace")
+                try:
+                    entry = resolved.stat()
+                    if not stat.S_ISREG(entry.st_mode):
+                        raise OSError("file verifier requires a regular file")
+                    descriptor = os.open(
+                        resolved, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+                    )
+                except FileNotFoundError:
+                    observations.append({"path": target, "exists": False, "matched": False})
+                    continue
+                with os.fdopen(descriptor, "rb") as stream:
+                    before = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                        raise OSError("file verifier requires a single-link regular file")
+                    if before.st_size > MAX_ARTIFACT_BYTES:
+                        raise OSError("file verifier input exceeds the 10 MiB limit")
+                    data = stream.read(MAX_ARTIFACT_BYTES + 1)
+                    after = os.fstat(stream.fileno())
+                current = logical.stat()
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
+                if (
+                    len(data) > MAX_ARTIFACT_BYTES
+                    or identity(before) != identity(after)
+                    or identity(after) != identity(current)
+                    or logical.resolve() != resolved
+                ):
+                    raise OSError("file changed during independent verification")
+                digest = hashlib.sha256(data).hexdigest()
+                kind = predicate["type"]
+                expected = predicate.get("value", "")
+                matched = (
+                    kind == "exists"
+                    or (kind == "content_contains" and expected.encode("utf-8") in data)
+                    or (kind == "content_equals" and data == expected.encode("utf-8"))
+                    or (kind == "sha256" and digest == expected.lower())
+                )
+                observations.append({
+                    "path": target, "exists": True, "sha256": digest,
+                    "size": len(data), "matched": matched,
+                })
+            result["matched"] = bool(observations) and all(item["matched"] for item in observations)
+        except (OSError, RuntimeError, ValueError) as error:
+            result["error"] = str(error)
+            result["matched"] = False
+        result["durationMs"] = round((time.monotonic() - started) * 1000)
+        return result
+
     def _run_verifier(self, run: RunState, spec: VerifierSpec) -> dict[str, Any]:
         started = time.monotonic()
         try:
@@ -1035,6 +1320,14 @@ class VerificationEngine:
     @staticmethod
     def _predicate_result(predicate: dict[str, Any], result: dict[str, Any]) -> tuple[bool, str]:
         predicate_type = str(predicate.get("type"))
+        if predicate_type in FILE_PREDICATES:
+            return (
+                result.get("builtin") == "file"
+                and result.get("predicateType") == predicate_type
+                and result.get("matched") is True
+                and "error" not in result,
+                "artifacts",
+            )
         if predicate_type == "command_exit":
             expected = int(predicate.get("expectedExitCode", 0))
             return result.get("exitCode") == expected, "exitCode"
@@ -1051,9 +1344,10 @@ class VerificationEngine:
         verifier_specs: dict[str, VerifierSpec],
         cache: dict[str, dict[str, Any]],
         revoked: set[str],
+        candidate_binding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         policy = claim["verifierPolicy"]
-        self.memory.recompute(claim, revoked)
+        case = self.memory.recompute(claim, revoked)
         allowed = [item for item in policy["allowedVerifierIds"] if item not in revoked]
         if not allowed:
             return {
@@ -1066,9 +1360,14 @@ class VerificationEngine:
         passed: list[tuple[VerifierSpec, dict[str, Any], dict[str, Any]]] = []
         failed: list[tuple[VerifierSpec, dict[str, Any], dict[str, Any]]] = []
         quarantined = False
+        current_families: list[dict[str, Any]] = []
+        invalid_results: list[str] = []
         for verifier_id in allowed:
             spec = verifier_specs[verifier_id]
-            result = cache.setdefault(verifier_id, self._run_verifier(run, spec))
+            result = self._observe_verifier(run, spec, claim, cache)
+            if "error" in result or "timeoutSeconds" in result:
+                invalid_results.append(verifier_id + ": verifier could not complete")
+                continue
             verified, observed_field = self._predicate_result(claim["predicate"], result)
             semantic = {
                 "claimId": claim["claimId"],
@@ -1077,6 +1376,7 @@ class VerificationEngine:
                 "cwd": result.get("cwd"),
                 "observedField": observed_field,
                 "observedValue": result.get(observed_field),
+                "candidateBinding": candidate_binding,
             }
             semantic_fingerprint = canonical_hash(semantic)
             family_id = canonical_hash(
@@ -1096,6 +1396,7 @@ class VerificationEngine:
                 "applicability": claim["applicability"],
                 "result": result,
                 "verified": verified,
+                "candidateBinding": candidate_binding,
             }
             reference = self._artifact(run, "claim_evidence", "verifier_observed", payload)
             event = {
@@ -1124,12 +1425,38 @@ class VerificationEngine:
                 "runId": run.run_id,
                 "claimId": claim["claimId"],
                 "trustTier": case["tier"],
-                "status": case["status"],
+                "statusScope": "verification_observation",
+                "memoryCaseStatus": case["status"],
+                "evidenceIds": [reference["sha256"]],
+                **({
+                    "candidateId": candidate_binding["candidateId"],
+                    "candidateRevision": candidate_binding["candidateRevision"],
+                    "patchHash": candidate_binding["patchHash"],
+                } if candidate_binding else {}),
             }
-            if all(item.get("familyId") != family_id for item in run.evidence_families):
-                run.evidence_families.append(family)
+            current_families.append(family)
             self._append_unique(run.evidence_refs, reference)
             (passed if verified else failed).append((spec, result, event))
+
+        # Case history and the verdict for this observation have different scope.
+        # A repaired revision can pass while its case retains prior soft failures.
+        # Simultaneous counterevidence, however, must prevent current acceptance.
+        observation_status = "quarantined" if quarantined else "disputed" if failed else "active"
+        for family in current_families:
+            family["status"] = observation_status
+            family["memoryCaseStatus"] = case["status"]
+            family["trustTier"] = case["tier"]
+            prior = next((
+                item for item in run.evidence_families
+                if item.get("familyId") == family["familyId"] and item.get("claimId") == claim["claimId"]
+            ), None)
+            if prior is None:
+                run.evidence_families.append(family)
+            else:
+                # Same command/cwd may observe corrected content later in the run.
+                # Immutable claim_evidence artifacts retain the previous observation.
+                prior.clear()
+                prior.update(family)
 
         methods = {spec.method_id for spec, _, _ in passed}
         deterministic = any(spec.deterministic_oracle for spec, _, _ in passed)
@@ -1164,6 +1491,14 @@ class VerificationEngine:
                 "evidenceIds": [event["evidenceId"] for _, _, event in passed + failed],
                 "reason": "A hard contradiction or revoked verifier dependency quarantined this Claim case.",
             }
+        if passed and failed:
+            return {
+                "claimId": claim["claimId"],
+                "result": "refuted",
+                "coverage": "none",
+                "evidenceIds": [event["evidenceId"] for _, _, event in passed + failed],
+                "reason": "Current verification contains both supporting and contradicting observations; resolve the contradiction before acceptance.",
+            }
         if passed and enough:
             return {
                 "claimId": claim["claimId"],
@@ -1182,6 +1517,11 @@ class VerificationEngine:
                 "evidenceIds": [event["evidenceId"] for _, _, event in passed],
                 "missingIndependentFamilies": max(0, required - len(effective_methods)),
                 "reason": "Direct evidence passed but the adaptive independence requirement is incomplete.",
+            }
+        if not failed and invalid_results:
+            return {
+                "claimId": claim["claimId"], "result": "verifier_invalid",
+                "coverage": "none", "evidenceIds": [], "reason": "; ".join(invalid_results),
             }
         return {
             "claimId": claim["claimId"],
@@ -1212,6 +1552,10 @@ class VerificationEngine:
             ),
             {},
         )
+        scope = run.scopes.get(scope_id)
+        if scope is None:
+            raise ProtocolError("scope is not open")
+        repair_scope_id = self._repair_scope_id(run, scope_id, missing_evidence, details or [])
         body = {
             "failureKind": failure_kind,
             "code": envelope.get("code"),
@@ -1220,10 +1564,18 @@ class VerificationEngine:
             "scopeId": scope_id,
             "failedCriterion": failed_criterion,
             "repairScope": repair_scope,
+            "repairTargetScopeId": repair_scope_id,
         }
         fingerprint = canonical_hash(body)
-        count = run.repair_counts.get(fingerprint, 0) + 1
-        run.repair_counts[fingerprint] = count
+        automatic_repair = repairable and not needs_input and failure_kind in {
+            "verification_failed", "implementation_error", "tool_execution_error",
+        }
+        count = scope.repair_counts.get(fingerprint, 0)
+        if automatic_repair:
+            count += 1
+            scope.repair_counts[fingerprint] = count
+            # Retain the legacy manifest index, with scope-bound fingerprints.
+            run.repair_counts[fingerprint] = count
         maximum = int(
             self._verification_config(run).get(
                 "maxSameFailureRepairs",
@@ -1233,22 +1585,26 @@ class VerificationEngine:
         outcome = (
             "needs_input"
             if needs_input
-            else ("repair_exhausted" if not repairable or count > maximum else "repair")
+            else ("failure" if not automatic_repair else ("repair_exhausted" if count > maximum else "repair"))
         )
-        run.status = "open" if outcome == "repair_exhausted" else outcome
+        if scope_id == run.root_scope_id:
+            run.status = "open" if outcome == "repair_exhausted" else outcome
         run.ready_ref = None
+        scope.verified_candidate_attestation = None
         rejection = {
             "outcome": outcome,
             "failureKind": failure_kind,
             "failedCriterion": failed_criterion,
             "missingEvidence": missing_evidence,
             "repairScope": repair_scope,
-            "repairScopeId": self._repair_scope_id(run, scope_id, missing_evidence, details or []),
-            "repairCount": count,
-            "repairable": repairable and count <= maximum,
+            "repairScopeId": repair_scope_id,
+            "repairCount": min(count, maximum),
+            "rejectionCount": count,
+            "repairable": automatic_repair and count <= maximum,
             "failureFingerprint": fingerprint,
             "details": details or [],
         }
+        scope.rejection = rejection
         reference = self._artifact(run, "verification_rejection", "verifier_attested", rejection)
         self._event(run, "verification.rejected", {"reference": reference, **rejection})
         self._manifest(run)
@@ -1263,8 +1619,12 @@ class VerificationEngine:
     ) -> str:
         if requested_scope_id != run.root_scope_id:
             return requested_scope_id
-        if run.runtime_failure and isinstance(run.runtime_failure.get("scopeId"), str):
-            return str(run.runtime_failure["scopeId"])
+        failed_scopes = {
+            item["scopeId"] for item in details
+            if isinstance(item, dict) and item.get("scopeId") in run.scopes
+        }
+        if failed_scopes:
+            return next(iter(failed_scopes)) if len(failed_scopes) == 1 else run.root_scope_id
         claim_ids = {item.split(":", 1)[0] for item in missing if ":" in item}
         for detail in details:
             if isinstance(detail, dict):
@@ -1279,7 +1639,7 @@ class VerificationEngine:
 
     def handle(self, envelope: dict[str, Any]) -> dict[str, Any]:
         if envelope.get("version") != PROTOCOL_VERSION:
-            raise ProtocolError(
+            raise ProtocolVersionError(
                 "sidecar protocol version mismatch: expected "
                 + str(PROTOCOL_VERSION)
                 + ", received "
@@ -1357,6 +1717,8 @@ class VerificationEngine:
             return self._status(run, scope_id)
 
         run = self._run(run_id)
+        if run.status == "closed" and request_type not in {"status.get", "run.close"}:
+            raise ProtocolError("run is closed")
         if request_type == "scope.open":
             parent = payload.get("parentScopeId")
             if not isinstance(parent, str) or parent not in run.scopes:
@@ -1381,10 +1743,15 @@ class VerificationEngine:
             scope = run.scopes.get(scope_id)
             if scope is None or scope_id == run.root_scope_id:
                 raise ProtocolError("scope.reopen requires an existing child scope")
+            if scope.pending:
+                raise ProtocolError("scope.reopen cannot discard pending actions")
+            if not scope.rejection or not scope.rejection.get("repairable"):
+                raise ProtocolError("scope.reopen requires a repairable rejection with remaining budget")
             scope.kind = "repair"
             scope.candidate = None
-            if run.runtime_failure and run.runtime_failure.get("scopeId") == scope_id:
-                run.runtime_failure = None
+            scope.verified_candidate_attestation = None
+            scope.rejection = None
+            scope.runtime_failure = None
             self._event(run, "scope.reopened", {"scopeId": scope_id})
             self._manifest(run)
             return self._status(run, scope_id)
@@ -1404,7 +1771,7 @@ class VerificationEngine:
                 raise ProtocolError("candidateId must be a non-empty string")
             if not isinstance(candidate.get("workUnitId"), str) or not candidate["workUnitId"]:
                 raise ProtocolError("workUnitId must be a non-empty string")
-            if not isinstance(candidate.get("revision"), int) or candidate["revision"] < 1:
+            if type(candidate.get("revision")) is not int or candidate["revision"] < 1:
                 raise ProtocolError("candidate revision must be a positive integer")
             if not isinstance(candidate.get("patchHash"), str) or not re.fullmatch(r"[0-9a-f]{64}", candidate["patchHash"]):
                 raise ProtocolError("candidate patchHash must be a SHA-256 digest")
@@ -1433,6 +1800,10 @@ class VerificationEngine:
             )
             if candidate["patchHash"] != expected_hash:
                 raise ProtocolError("candidate patchHash does not match the manifest")
+            try:
+                self._candidate_paths(run.workspace, {**candidate, "files": normalized_files})
+            except CandidateIntegrityError as error:
+                raise ProtocolError(str(error)) from error
             candidate_workspace = candidate.get("candidateWorkspace")
             if candidate_workspace is not None:
                 if not isinstance(candidate_workspace, str) or not candidate_workspace:
@@ -1452,6 +1823,7 @@ class VerificationEngine:
                 "attachedAt": utc_now(),
             }
             scope.candidate = accepted
+            scope.verified_candidate_attestation = None
             run.candidates[candidate["candidateId"]] = accepted
             reference = self._artifact(run, "candidate_manifest", "verifier_observed", accepted)
             self._append_unique(run.candidate_refs, reference)
@@ -1473,6 +1845,20 @@ class VerificationEngine:
             }
             if any(attestation.get(key) != value for key, value in expected.items()):
                 raise ProtocolError("candidate commit attestation does not match the attached candidate")
+            issued = scope.verified_candidate_attestation
+            if issued is None or any(issued.get(key) != value for key, value in expected.items()):
+                raise ProtocolError("candidate commit requires an independently issued scope attestation")
+            if scope.pending:
+                raise ProtocolError("candidate commit cannot proceed with pending actions")
+            scope.verified_candidate_attestation = None
+            try:
+                self._assert_candidate_binding(run, candidate, committed=True)
+            except CandidateIntegrityError as error:
+                return self._reject(
+                    run, scope_id, "candidate_commit_integrity", [str(error)],
+                    "Reconcile the workspace conflict before preparing a new candidate.",
+                    failure_kind="workspace_conflict", repairable=False,
+                )
             scope.committed_candidate_ids.append(candidate["candidateId"])
             self._event(run, "candidate.committed", expected)
             self._manifest(run)
@@ -1490,6 +1876,10 @@ class VerificationEngine:
                     if not previous_claims.issubset(new_claims):
                         raise ProtocolError("contract amendments cannot remove claims after actions")
             run.goal_contract = contract
+            for existing_scope in run.scopes.values():
+                existing_scope.verified_candidate_attestation = None
+                existing_scope.rejection = None
+            run.ready_ref = None
             run.contract_status = "accepted"
             run.status = "open"
             self._event(run, "contract.accepted", {"contract": contract, "amendment": request_type == "contract.amend"})
@@ -1528,6 +1918,10 @@ class VerificationEngine:
                 "startedAt": payload.get("startedAt", utc_now()),
             }
             scope.pending[action_id] = action
+            scope.verified_candidate_attestation = None
+            scope.rejection = None
+            run.ready_ref = None
+            run.status = "open"
             self._event(run, "action.opened", action)
             self._manifest(run)
             return self._status(run, scope_id)
@@ -1565,7 +1959,7 @@ class VerificationEngine:
             self._append_unique(run.candidate_refs, reference)
             if status == "error":
                 failure = self._validate_failure_envelope(run, scope_id, action_id, payload)
-                run.runtime_failure = {
+                scope.runtime_failure = {
                     **failure,
                     "scopeId": scope_id,
                     "tool": action["tool"],
@@ -1579,18 +1973,19 @@ class VerificationEngine:
                         }
                     ),
                 }
-            elif (
-                run.runtime_failure
-                and run.runtime_failure.get("tool") == action["tool"]
-                and run.runtime_failure.get("scopeId") == scope_id
-            ):
-                run.runtime_failure = None
+            elif scope.runtime_failure and scope.runtime_failure.get("tool") == action["tool"]:
+                scope.runtime_failure = None
+            if scope_id == run.root_scope_id:
+                # Backward-compatible root field; child failures stay in their scopes.
+                run.runtime_failure = scope.runtime_failure
             self._event(run, "action.closed", {"action": action, "reference": reference})
             self._manifest(run)
             return self._status(run, scope_id)
         if request_type == "status.get":
             return self._status(run, scope_id)
         if request_type == "run.close":
+            if scope_id != run.root_scope_id:
+                raise ProtocolError("only the root scope may close a run")
             run.status = "closed"
             self._event(run, "run.closed", {})
             self._manifest(run)
@@ -1610,6 +2005,7 @@ class VerificationEngine:
         if scope is None:
             raise ProtocolError("scope is not open")
         is_root = scope_id == run.root_scope_id
+        scope.verified_candidate_attestation = None
         if not is_root and scope.kind in {"work_unit", "repair"} and scope.candidate is None:
             return self._reject(
                 run,
@@ -1627,6 +2023,18 @@ class VerificationEngine:
         if any(item not in known_claims for item in requested_claim_ids):
             raise ProtocolError("verify.request references an unknown Claim")
         selected_claim_ids = set(requested_claim_ids) if requested_claim_ids else known_claims
+        if is_root and selected_claim_ids != known_claims:
+            raise ProtocolError("root verification requires all GoalContract Claims")
+        if not is_root and not selected_claim_ids.issubset(set(scope.assigned_claim_ids)):
+            raise ProtocolError("child verification cannot exceed assigned Claims")
+        requested_criteria = payload.get("criterionIds", [])
+        if not isinstance(requested_criteria, list) or any(not isinstance(item, str) for item in requested_criteria):
+            raise ProtocolError("verify.request criterionIds must be strings")
+        known_criteria = {item["criterionId"] for item in run.goal_contract["criteria"]}
+        if not set(requested_criteria).issubset(known_criteria):
+            raise ProtocolError("verify.request references an unknown Criterion")
+        if is_root and requested_criteria and set(requested_criteria) != known_criteria:
+            raise ProtocolError("root verification requires all GoalContract Criteria")
         if not is_root and not selected_claim_ids:
             return self._reject(
                 run,
@@ -1653,16 +2061,23 @@ class VerificationEngine:
                 ["No host-observed action is bound to the GoalContract."],
                 "Execute the minimum action required by the accepted Claim.",
             )
-        if run.runtime_failure and (is_root or run.runtime_failure.get("scopeId") == scope_id):
+        failure_scopes = run.scopes.values() if is_root else [scope]
+        failures = [item.runtime_failure for item in failure_scopes if item.runtime_failure]
+        if failures:
+            repairable_kinds = {"implementation_error", "tool_execution_error"}
+            failure = next(
+                (item for item in failures if item.get("failureKind") not in repairable_kinds),
+                failures[0],
+            )
             return self._reject(
                 run,
                 scope_id,
                 "runtime_failure",
-                [str(run.runtime_failure.get("failureKind"))],
+                [str(item.get("failureKind")) for item in failures],
                 "Repair only the failed provider, model, tool or implementation boundary.",
-                failure_kind=str(run.runtime_failure.get("failureKind", "verification_failed")),
-                details=[run.runtime_failure],
-                repairable=str(run.runtime_failure.get("failureKind")) != "unknown_failure",
+                failure_kind=str(failure.get("failureKind", "unknown_failure")),
+                details=failures,
+                repairable=all(item.get("failureKind") in repairable_kinds for item in failures),
             )
 
         verifier_specs = self._verifiers(run)
@@ -1681,13 +2096,59 @@ class VerificationEngine:
         candidate_workspace = None if is_root or scope.candidate is None else scope.candidate.get("candidateWorkspace")
         if candidate_workspace:
             run.workspace = Path(str(candidate_workspace)).resolve()
+            verifier_specs = {
+                key: replace(spec, cwd=run.workspace / spec.cwd.relative_to(original_workspace))
+                for key, spec in verifier_specs.items()
+            }
+        binding_failure: CandidateIntegrityError | None = None
+        candidate_binding = None
         try:
+            if not is_root and scope.candidate is not None:
+                before = self._assert_candidate_binding(
+                    run, scope.candidate, workspace=original_workspace,
+                )
+                # Keep observations unpromoted until the checked snapshot is stable.
+                for claim in selected_claims:
+                    for verifier_id in claim["verifierPolicy"]["allowedVerifierIds"]:
+                        if verifier_id not in revoked and verifier_id in verifier_specs:
+                            self._observe_verifier(run, verifier_specs[verifier_id], claim, cache)
+                after = self._assert_candidate_binding(
+                    run, scope.candidate, workspace=original_workspace,
+                )
+                if before != after:
+                    raise CandidateIntegrityError("candidate changed during verifier execution")
+                candidate_binding = {
+                    "candidateId": scope.candidate["candidateId"],
+                    "candidateRevision": scope.candidate["revision"],
+                    "patchHash": scope.candidate["patchHash"],
+                    "observedFiles": [
+                        {key: value for key, value in item.items() if key in {"path", "sha256", "size"}}
+                        for item in after
+                    ],
+                }
             current_claim_results = [
-                self._verify_claim(run, claim, verifier_specs, cache, revoked)
+                self._verify_claim(run, claim, verifier_specs, cache, revoked, candidate_binding)
                 for claim in selected_claims
             ]
+        except CandidateIntegrityError as error:
+            binding_failure = error
         finally:
             run.workspace = original_workspace
+        if binding_failure is not None:
+            return self._reject(
+                run, scope_id, "candidate_integrity", [str(binding_failure)],
+                "Preserve the candidate and reconcile the workspace or verifier mutation.",
+                failure_kind="workspace_conflict", repairable=False,
+            )
+        invalid_claims = [item for item in current_claim_results if item["result"] == "verifier_invalid"]
+        if invalid_claims:
+            run.claim_results = current_claim_results
+            return self._reject(
+                run, scope_id, "verifier_unavailable",
+                [item["claimId"] + ": " + item["reason"] for item in invalid_claims],
+                "Restore the verifier boundary instead of changing the implementation.",
+                failure_kind="verifier_error", repairable=False,
+            )
         merged_claims = {item["claimId"]: item for item in run.claim_results}
         merged_claims.update({item["claimId"]: item for item in current_claim_results})
         run.claim_results = list(merged_claims.values())
@@ -1706,6 +2167,8 @@ class VerificationEngine:
             )
             and all(item in selected_claim_ids for item in criterion["claimIds"])
         ]
+        if not selected_criteria:
+            raise ProtocolError("verification target does not cover a complete Criterion")
         current_criterion_results = []
         for criterion in selected_criteria:
             linked = [result_by_claim[item] for item in criterion["claimIds"]]
@@ -1753,8 +2216,10 @@ class VerificationEngine:
                 missing,
                 "Repair only the failed Claim or add the required independent verifier evidence.",
                 details=failed,
+                failure_kind="implementation_error" if first["result"] == "refuted" else "verification_failed",
             )
 
+        scope.rejection = None
         if not is_root:
             candidate = scope.candidate
             if candidate is None:
@@ -1773,8 +2238,14 @@ class VerificationEngine:
                     "candidateId": candidate["candidateId"],
                     "candidateRevision": candidate["revision"],
                     "patchHash": candidate["patchHash"],
+                    "candidateBinding": candidate_binding,
                 },
             )
+            scope.verified_candidate_attestation = {
+                "candidateId": candidate["candidateId"],
+                "candidateRevision": candidate["revision"],
+                "patchHash": candidate["patchHash"],
+            }
             self._event(run, "scope.verified", {"scopeId": scope_id, "attestation": attestation})
             self._manifest(run)
             return {

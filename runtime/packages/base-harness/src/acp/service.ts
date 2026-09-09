@@ -34,7 +34,7 @@ import { AppNodeBuilder } from "@base-harness/core/effect/app-node-builder"
 import type { AssistantMessage, Message, OpencodeClient, SessionMessageResponse } from "@base-harness/sdk/v2"
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import * as ACPError from "./error"
-import { buildConfigOptions, parseModelSelection } from "./config-option"
+import { buildConfigOptions, DEFAULT_VARIANT_VALUE, parseModelSelection } from "./config-option"
 import { promptContentToParts } from "./content"
 import { Directory } from "./directory"
 import { ACPEvent } from "./event"
@@ -164,7 +164,7 @@ export function make(input: {
     const started = performance.now()
     const snapshot = yield* directorySnapshot(params.cwd)
     const selected = selectDefaultModel(snapshot)
-    const variant = selectVariant(snapshot, selected)
+    const variant: string | undefined = undefined
     const modeId = snapshot.availableModes.length > 0 ? snapshot.defaultModeID : undefined
     const created = yield* profiledRequest(
       "acp.newSession.session.create",
@@ -225,7 +225,7 @@ export function make(input: {
       cwd: params.cwd,
       mcpServers: params.mcpServers,
       model,
-      variant: restored.variant ?? selectVariant(snapshot, model),
+      variant: restored.variant,
       modeId: restored.modeId ?? (snapshot.availableModes.length > 0 ? snapshot.defaultModeID : undefined),
     })
     sessionSnapshots.set(state.id, snapshot)
@@ -310,7 +310,7 @@ export function make(input: {
       cwd: params.cwd,
       mcpServers: params.mcpServers ?? [],
       model,
-      variant: restored.variant ?? selectVariant(snapshot, model),
+      variant: restored.variant,
       modeId: restored.modeId ?? (snapshot.availableModes.length > 0 ? snapshot.defaultModeID : undefined),
     })
     sessionSnapshots.set(state.id, snapshot)
@@ -378,7 +378,7 @@ export function make(input: {
       cwd: params.cwd,
       mcpServers: params.mcpServers ?? [],
       model,
-      variant: restored.variant ?? selectVariant(snapshot, model),
+      variant: restored.variant,
       modeId: restored.modeId ?? (snapshot.availableModes.length > 0 ? snapshot.defaultModeID : undefined),
     })
     sessionSnapshots.set(state.id, snapshot)
@@ -408,7 +408,7 @@ export function make(input: {
 
     if (params.configId === "model") {
       const selected = yield* parseSelectedModel(snapshot, params.value)
-      const variant = selected.variant ?? selectVariant(snapshot, selected.model)
+      const variant = selected.variant
       const state = yield* session
         .setVariant(params.sessionId, Directory.variants(snapshot, selected.model) ? variant : undefined)
         .pipe(Effect.andThen(session.setModel(params.sessionId, selected.model)))
@@ -424,10 +424,12 @@ export function make(input: {
     if (params.configId === "effort") {
       const model = current.model ?? selectDefaultModel(snapshot)
       const variants = Directory.variants(snapshot, model)
-      if (!variants || !Object.keys(variants).includes(params.value)) {
+      if (params.value !== DEFAULT_VARIANT_VALUE && (!variants || !Object.hasOwn(variants, params.value))) {
         return yield* new ACPError.InvalidEffortError({ effort: params.value })
       }
-      const state = yield* session.setVariant(params.sessionId, params.value)
+      const state = yield* session.setVariant(
+        params.sessionId, params.value === DEFAULT_VARIANT_VALUE ? undefined : params.value,
+      )
       return {
         configOptions: configOptions(snapshot, {
           model: state.model ?? model,
@@ -472,7 +474,7 @@ export function make(input: {
       .setVariant(
         params.sessionId,
         Directory.variants(snapshot, selected.model)
-          ? (selected.variant ?? selectVariant(snapshot, selected.model))
+          ? selected.variant
           : undefined,
       )
       .pipe(Effect.andThen(session.setModel(params.sessionId, selected.model)))
@@ -498,7 +500,10 @@ export function make(input: {
       if (!current.model) {
         yield* session.setModel(params.sessionId, selected)
       }
-      const variant = current.variant ?? selectVariant(snapshot, selected)
+      const variant = current.variant
+      if (variant !== undefined && !Object.hasOwn(Directory.variants(snapshot, selected) ?? {}, variant)) {
+        return yield* new ACPError.InvalidEffortError({ effort: variant })
+      }
       const modeId = current.modeId ?? (snapshot.availableModes.length > 0 ? snapshot.defaultModeID : undefined)
       const parts = promptContentToParts(params.prompt)
       const command = detectSlashCommand(parts)
@@ -892,13 +897,6 @@ function sendUsageUpdate(
   })
 }
 
-function selectVariant(snapshot: Directory.Snapshot, model: Directory.DefaultModel) {
-  const variants = Directory.variants(snapshot, model)
-  if (!variants) return
-  if (variants.default) return "default"
-  return Object.keys(variants)[0]
-}
-
 function configOptions(snapshot: Directory.Snapshot, session: ConfigState) {
   return buildConfigOptions({
     providers: Object.values(snapshot.providers),
@@ -921,7 +919,9 @@ function parseSelectedModel(snapshot: Directory.Snapshot, modelId: string) {
       }),
     )
   }
-  if (selected.variant && !model.variants?.[selected.variant]) {
+  if (selected.variant && !Object.hasOwn(Directory.variants(snapshot, {
+    providerID: provider.id, modelID: model.id,
+  }) ?? {}, selected.variant)) {
     return Effect.fail(new ACPError.InvalidEffortError({ effort: selected.variant }))
   }
   return Effect.succeed({

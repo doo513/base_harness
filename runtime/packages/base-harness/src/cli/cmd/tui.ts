@@ -1,4 +1,6 @@
 import { cmd } from "@/cli/cmd/cmd"
+import { EntryCommand } from "../entry-command-metadata"
+import { TuiCommandBuilder } from "../tui-options"
 import { Rpc } from "@/util/rpc"
 import { type rpc } from "../tui/worker"
 import path from "path"
@@ -6,7 +8,7 @@ import { fileURLToPath } from "url"
 import { UI } from "@/cli/ui"
 import { errorMessage } from "@base-harness/tui/util/error"
 import { withTimeout } from "@/util/timeout"
-import { withNetworkOptions, resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
+import { resolveNetworkOptionsNoConfig, hasArg } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
 import type { GlobalEvent } from "@base-harness/sdk/v2"
 import type { EventSource } from "@base-harness/tui/context/sdk"
@@ -14,6 +16,7 @@ import { writeHeapSnapshot } from "v8"
 import { ServerAuth } from "@/server/auth"
 import { validateSession } from "../tui/validate-session"
 import { win32InstallCtrlCGuard } from "@base-harness/tui/terminal-win32"
+import { prepareTuiRuntime } from "../tui/prepare-runtime"
 
 declare global {
   const BASE_HARNESS_WORKER_PATH: string
@@ -70,77 +73,8 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
 }
 
 export const TuiThreadCommand = cmd({
-  command: "$0 [project]",
-  describe: "start base-harness tui",
-  builder: (yargs) =>
-    withNetworkOptions(yargs)
-      .positional("project", {
-        type: "string",
-        describe: "path to start base-harness in",
-      })
-      .option("model", {
-        type: "string",
-        alias: ["m"],
-        describe: "model to use in the format of provider/model",
-      })
-      .option("continue", {
-        alias: ["c"],
-        describe: "continue the last session",
-        type: "boolean",
-      })
-      .option("session", {
-        alias: ["s"],
-        type: "string",
-        describe: "session id to continue",
-      })
-      .option("fork", {
-        type: "boolean",
-        describe: "fork the session when continuing (use with --continue or --session)",
-      })
-      .option("prompt", {
-        type: "string",
-        describe: "prompt to use",
-      })
-      .option("agent", {
-        type: "string",
-        describe: "agent to use",
-      })
-      .option("auto", {
-        type: "boolean",
-        describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
-        default: false,
-      })
-      .option("yolo", {
-        type: "boolean",
-        hidden: true,
-        default: false,
-      })
-      .option("dangerously-skip-permissions", {
-        type: "boolean",
-        hidden: true,
-        default: false,
-      })
-      .option("mini", {
-        type: "boolean",
-        describe: "start the minimal interactive interface",
-        default: false,
-      })
-      .option("replay", {
-        type: "boolean",
-        hidden: true,
-      })
-      .option("no-replay", {
-        type: "boolean",
-        describe: "disable mini session history replay on resume and after resize",
-      })
-      .option("replay-limit", {
-        type: "number",
-        describe: "cap visible mini replay to the newest N messages",
-      })
-      .option("demo", {
-        type: "boolean",
-        hidden: true,
-      }),
+  ...EntryCommand.tui,
+  builder: TuiCommandBuilder,
   handler: async (args) => {
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
@@ -188,6 +122,7 @@ export const TuiThreadCommand = cmd({
 
     const unguard = win32InstallCtrlCGuard()
     try {
+      await prepareTuiRuntime()
       const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")

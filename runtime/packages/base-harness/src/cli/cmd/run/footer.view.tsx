@@ -14,6 +14,7 @@ import { registerOpencodeSpinner } from "@base-harness/tui/component/register-sp
 import { createColors, createFrames } from "@base-harness/tui/ui/spinner"
 import {
   RUN_SUBAGENT_PANEL_ROWS,
+  RunChoiceSelectBody,
   RunCommandMenuBody,
   RunModelSelectBody,
   RunQueuedPromptSelectBody,
@@ -36,6 +37,7 @@ import {
   type OpenTuiKeymap,
 } from "@base-harness/tui/keymap"
 import type {
+  ExecutionPickerSelection,
   FooterPromptRoute,
   FooterQueuedPrompt,
   FooterState,
@@ -106,6 +108,8 @@ type RunFooterViewProps = {
   onExit: () => void
   onModelSelect: (model: NonNullable<RunInput["model"]>) => void
   onVariantSelect: (variant: string | undefined) => void
+  onExecutionSelect: (selection: ExecutionPickerSelection) => void | Promise<void>
+  onExecutionClose: () => void
   onRows: (rows: number) => void
   onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
   onStatus: (text: string) => void
@@ -146,6 +150,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     () =>
       active().type === "permission" ||
       active().type === "question" ||
+      active().type === "execution" ||
       selectingQueued() ||
       selectingSubagent() ||
       commanding() ||
@@ -277,6 +282,18 @@ export function RunFooterView(props: RunFooterViewProps) {
   const question = createMemo<Extract<FooterView, { type: "question" }> | undefined>(() => {
     const view = active()
     return view.type === "question" ? view : undefined
+  })
+  const execution = createMemo<Extract<FooterView, { type: "execution" }> | undefined>(() => {
+    const view = active()
+    return view.type === "execution" ? view : undefined
+  })
+  const [executionStep, setExecutionStep] = createSignal<"model" | "reasoning">("model")
+  const [executionModel, setExecutionModel] = createSignal<string | undefined>()
+  createEffect(() => {
+    const next = execution()
+    if (!next) return
+    setExecutionModel(next.currentModel)
+    setExecutionStep("model")
   })
   const promptView = createMemo(() => {
     if (active().type !== "prompt") {
@@ -776,6 +793,58 @@ export function RunFooterView(props: RunFooterViewProps) {
                               closePanel()
                             }}
                           />
+                        </Match>
+                        <Match when={execution()}>
+                          <Show
+                            when={executionStep() === "reasoning"}
+                            fallback={
+                              <RunChoiceSelectBody
+                                title="Select Antigravity model"
+                                theme={theme}
+                                items={() => execution()!.models}
+                                current={executionModel}
+                                onClose={props.onExecutionClose}
+                                onSelect={(modelID) => {
+                                  setExecutionModel(modelID)
+                                  if (execution()!.reasoningEfforts.length > 0) {
+                                    setExecutionStep("reasoning")
+                                    return
+                                  }
+                                  void Promise.resolve(
+                                    props.onExecutionSelect({
+                                      adapterID: execution()!.adapterID,
+                                      modelID,
+                                      capabilityRevision: execution()!.capabilityRevision,
+                                    }),
+                                  )
+                                    .then(props.onExecutionClose)
+                                    .catch((error) => props.onStatus(error instanceof Error ? error.message : String(error)))
+                                }}
+                              />
+                            }
+                          >
+                            <RunChoiceSelectBody
+                              title="Select reasoning effort"
+                              theme={theme}
+                              items={() => execution()!.reasoningEfforts}
+                              current={() => execution()!.currentEffort}
+                              onClose={() => setExecutionStep("model")}
+                              onSelect={(effort) => {
+                                const modelID = executionModel()
+                                if (!modelID) return
+                                void Promise.resolve(
+                                  props.onExecutionSelect({
+                                    adapterID: execution()!.adapterID,
+                                    modelID,
+                                    options: { [execution()!.reasoningOption]: effort },
+                                    capabilityRevision: execution()!.capabilityRevision,
+                                  }),
+                                )
+                                  .then(props.onExecutionClose)
+                                  .catch((error) => props.onStatus(error instanceof Error ? error.message : String(error)))
+                              }}
+                            />
+                          </Show>
                         </Match>
                         <Match when={active().type === "permission"}>
                           <RunPermissionBody

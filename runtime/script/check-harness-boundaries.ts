@@ -24,6 +24,10 @@ const roots = {
   core: path.join(packageRoot, "core", "src"),
   verification: path.join(packageRoot, "verification", "src"),
   coordinator: path.join(packageRoot, "coordinator", "src"),
+  kernel: path.join(packageRoot, "kernel", "src"),
+  kernelHost: path.join(packageRoot, "kernel-host", "src"),
+  workspace: path.join(packageRoot, "workspace", "src"),
+  security: path.join(packageRoot, "security", "src"),
 }
 const facade = path.join(roots.host, "harness", "coordinator-service.ts")
 
@@ -34,6 +38,15 @@ for (const [area, root] of Object.entries(roots)) {
       if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return
       const specifier = node.moduleSpecifier.text
       const relative = path.relative(runtimeRoot, file).replaceAll("\\", "/")
+      if (["kernel", "workspace", "security"].includes(area) && /^(?:base-harness$|@base-harness\/(?:core|coordinator|kernel-host|tui|verification)(?:\/|$))/.test(specifier)) {
+        errors.push(`${relative}: foundational package cannot depend on execution or policy orchestration`)
+      }
+      if (area === "coordinator" && (specifier === "base-harness" || specifier.startsWith("@base-harness/core") || specifier.startsWith("@base-harness/tui"))) {
+        errors.push(`${relative}: coordinator must use execution ports, not execution package imports`)
+      }
+      if (area === "tui" && ["workspace", "kernel-host", "security"].some((name) => specifier === `@base-harness/${name}` || specifier.startsWith(`@base-harness/${name}/`))) {
+        errors.push(`${relative}: TUI must request policy-owned actions through Host API`)
+      }
       if ((area === "host" || area === "tui") && specifier === "@base-harness/core/orchestration") {
         errors.push(`${relative}: orchestration must be accessed through the Host Coordinator facade`)
       }
@@ -53,7 +66,7 @@ for (const [area, root] of Object.entries(roots)) {
   }
 }
 
-const packageNames = ["base-harness", "coordinator", "core", "verification", "tui"]
+const packageNames = ["base-harness", "coordinator", "core", "verification", "tui", "kernel", "kernel-host", "workspace", "security"]
 const graph = new Map<string, string[]>()
 for (const directory of packageNames) {
   const manifest = JSON.parse(await fs.readFile(path.join(packageRoot, directory, "package.json"), "utf8"))

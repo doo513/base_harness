@@ -1,0 +1,52 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "scope": "Snapshot symlink capability classification, not successful native symlink validation",
+  "baseline": {
+    "sessionId": 81896,
+    "passed": 0,
+    "failed": 2,
+    "filteredOut": 54,
+    "durationSeconds": 11.73,
+    "exitCode": 1,
+    "code": "EPERM"
+  },
+  "capabilities": {
+    "file": {
+      "supported": false,
+      "code": "EPERM"
+    },
+    "directory": {
+      "supported": false,
+      "code": "EPERM"
+    },
+    "host": {
+      "elevated": false,
+      "developerModeRegistryValue": null
+    }
+  },
+  "suite": {
+    "sessionId": 19502,
+    "passed": 52,
+    "skipped": 6,
+    "failed": 0,
+    "assertions": 731,
+    "files": 2,
+    "durationSeconds": 204.95,
+    "exitCode": 0,
+    "typecheckExitCode": 0
+  },
+  "requiredGate": {
+    "env": "BASE_HARNESS_REQUIRE_SYMLINK_TESTS=1",
+    "exitCode": 1,
+    "passed": 0,
+    "failed": 1,
+    "moduleErrors": 1,
+    "durationSeconds": 5.34,
+    "code": "SYMLINK_CAPABILITY_REQUIRED",
+    "environmentRestored": true
+  },
+  "nativeSymlinkVerificationComplete": false,
+  "fullCompletionProven": false
+}

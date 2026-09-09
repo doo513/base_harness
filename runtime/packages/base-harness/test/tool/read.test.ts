@@ -270,7 +270,7 @@ describe("tool.read env file permissions", () => {
     ["environment.ts", false],
   ]
 
-  for (const agentName of ["build", "plan"] as const) {
+  for (const agentName of ["build", "general", "explore", "meta-review"] as const) {
     describe(`agent=${agentName}`, () => {
       for (const [filename, shouldAsk] of cases) {
         it.live(`${filename} asks=${shouldAsk}`, () =>
@@ -285,6 +285,7 @@ describe("tool.read env file permissions", () => {
                 let asked = false
                 const next = {
                   ...ctx,
+                  agent: agentName,
                   ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
                     Effect.sync(() => {
                       for (const pattern of req.patterns) {

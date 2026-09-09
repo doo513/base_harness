@@ -17,6 +17,7 @@ import type { InstanceContext } from "../../src/project/instance-context"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestLLMServer } from "../lib/llm-server"
+import { traceTestPhase } from "../lib/test-phase-trace"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 export const testInstanceStoreLayer = LayerNode.compile(InstanceStore.node, [
@@ -126,19 +127,30 @@ export function tmpdirScoped<E = never, R = never>(options?: {
 }) {
   return Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    traceTestPhase("fixture.tmpdir.create_start")
     const dirpath = sanitizePath(path.join(os.tmpdir(), "base-harness-test-" + Math.random().toString(36).slice(2)))
     yield* Effect.promise(() => fs.mkdir(dirpath, { recursive: true }))
     const dir = sanitizePath(yield* Effect.promise(() => fs.realpath(dirpath)))
+    traceTestPhase("fixture.tmpdir.created")
 
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
+        traceTestPhase("fixture.tmpdir.cleanup_start")
         if (options?.git) await stop(dir).catch(() => undefined)
         await clean(dir).catch(() => undefined)
+        traceTestPhase("fixture.tmpdir.cleanup_end")
       }),
     )
 
     const git = (...args: string[]) =>
-      spawner.spawn(ChildProcess.make("git", args, { cwd: dir })).pipe(Effect.flatMap((handle) => handle.exitCode))
+      Effect.gen(function* () {
+        traceTestPhase("fixture.git.spawn")
+        const handle = yield* spawner.spawn(ChildProcess.make("git", args, { cwd: dir }))
+        traceTestPhase("fixture.git.started")
+        const code = yield* handle.exitCode
+        traceTestPhase("fixture.git.exited")
+        return code
+      })
 
     if (options?.git) {
       yield* git("init")
@@ -161,6 +173,7 @@ export function tmpdirScoped<E = never, R = never>(options?: {
 
     if (options?.init) yield* options.init(dir)
 
+    traceTestPhase("fixture.tmpdir.ready")
     return dir
   })
 }
@@ -206,8 +219,13 @@ export const withTmpdirInstance =
   }) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
+      traceTestPhase("fixture.instance.setup_start")
       const directory = yield* tmpdirScoped(options)
-      return yield* self.pipe(Effect.provideService(TestInstance, { directory }), provideInstanceEffect(directory))
+      traceTestPhase("fixture.instance.load_start")
+      return yield* Effect.suspend(() => {
+        traceTestPhase("fixture.instance.body_start")
+        return self
+      }).pipe(Effect.provideService(TestInstance, { directory }), provideInstanceEffect(directory))
     }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node)))
 
 export function provideTmpdirServer<A, E, R>(

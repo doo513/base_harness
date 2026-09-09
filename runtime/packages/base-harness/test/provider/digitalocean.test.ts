@@ -53,6 +53,11 @@ it.instance(
         const baseModel = Object.values(providers[DIGITALOCEAN].models)[0]
         expect(baseModel.api.url).toBe("https://inference.do-ai.run/v1")
         expect(baseModel.api.npm).toBe("@ai-sdk/openai-compatible")
+        const publicModel = Provider.toPublicInfo(providers[DIGITALOCEAN]).models[baseModel.id]
+        expect(publicModel.api.url).toBe("")
+        expect(publicModel.options).toEqual({})
+        expect(publicModel.headers).toEqual({})
+        expect(Object.values(publicModel.variants ?? {}).every((value) => Object.keys(value).length === 0)).toBe(true)
         const routerEntries = Object.keys(providers[DIGITALOCEAN].models).filter((id) => id.startsWith("router:"))
         expect(routerEntries.length).toBe(0)
       }),

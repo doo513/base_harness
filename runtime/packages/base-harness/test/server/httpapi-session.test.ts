@@ -849,7 +849,7 @@ describe("session HttpApi", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
-        const currentDir = path.join(test.directory, "packages", "opencode", "src")
+        const currentDir = path.join(test.directory, "packages", "base-harness", "src")
         yield* Effect.promise(() => mkdir(currentDir, { recursive: true }))
 
         const store = yield* InstanceStore.Service

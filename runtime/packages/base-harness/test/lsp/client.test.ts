@@ -88,7 +88,7 @@ describe("LSPClient interop", () => {
     await client.shutdown()
   })
 
-  test("initialize does not overclaim unsupported diagnostics capabilities", async () => {
+  test("initialize advertises the parent process and supported diagnostics capabilities", async () => {
     const handle = spawnFakeServer() as any
 
     const client = await withTestInstance({
@@ -103,11 +103,15 @@ describe("LSPClient interop", () => {
         }),
     })
 
-    const params = await client.connection.sendRequest<any>("test/get-initialize-params", {})
-    expect(params.capabilities.workspace.diagnostics.refreshSupport).toBe(false)
-    expect(params.capabilities.textDocument.publishDiagnostics.versionSupport).toBe(false)
-
-    await client.shutdown()
+    try {
+      const params = await client.connection.sendRequest<any>("test/get-initialize-params", {})
+      expect(params.processId).toBe(process.pid)
+      expect(params.processId).not.toBe(handle.process.pid)
+      expect(params.capabilities.workspace.diagnostics.refreshSupport).toBe(false)
+      expect(params.capabilities.textDocument.publishDiagnostics.versionSupport).toBe(false)
+    } finally {
+      await client.shutdown()
+    }
   })
 
   test("workspace/configuration returns one result per requested item", async () => {

@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "priorHostRun": {
+    "log": ".tools/validation/host-suite-after-tui-json-1788846781735.log",
+    "terminalExitCode": 1,
+    "testsRun": 667,
+    "files": 52,
+    "seconds": 227.82,
+    "stoppedAfterFailures": 5,
+    "failures": [
+      "Git branch lookup inherited ancestor repository in non-repository scratch directory",
+      "Four Coordinator status fixtures omitted required workspace"
+    ]
+  },
+  "targeted": {
+    "log": ".tools/validation/host-git-status-followup-1788847190160.log",
+    "passed": 63,
+    "failed": 0,
+    "assertions": 200,
+    "files": 6,
+    "seconds": 23.58,
+    "typecheckExitCode": 0
+  },
+  "nextHostRun": {
+    "sessionId": 89513,
+    "log": ".tools/validation/host-suite-expanded-1788847294624.log",
+    "status": "running_at_last_observation",
+    "bailAfterFailures": 20,
+    "perTestTimeoutMs": 30000,
+    "fullSuitePassProven": false
+  },
+  "productionSourceChanged": false,
+  "remaining": [
+    "Complete current Host suite observation and address remaining failures.",
+    "Prior real-user config exposure and recovery remain unresolved.",
+    "No real-account or independent usage validation is implied."
+  ]
+}

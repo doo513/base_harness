@@ -1,0 +1,31 @@
+{
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "state": "finished",
+  "exitCode": 0,
+  "tests": {
+    "pass": 3283,
+    "skip": 60,
+    "todo": 1,
+    "fail": 0,
+    "additionalErrors": 0,
+    "snapshots": 45,
+    "assertions": 8889,
+    "total": 3344,
+    "files": 254,
+    "seconds": 1676.63
+  },
+  "command": "$env:BASE_HARNESS_TRACE_TEST_PHASES='1'; $env:BASE_HARNESS_DISABLE_MODELS_FETCH='true'; $env:BASE_HARNESS_REQUIRE_SYMLINK_TESTS='0'; $env:BASE_HARNESS_PYTHON='C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\verifier\\Scripts\\python.exe'; & 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\bun-1.3.14\\bun.exe' test --timeout 30000 --only-failures 2>&1 | Tee-Object -FilePath 'C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\host-acp-bootstrap-stages-1788917737312.log'; exit $LASTEXITCODE",
+  "log": "C:\\Users\\doo33\\Downloads\\base_harness\\.tools\\validation\\host-acp-bootstrap-stages-1788917737312.log",
+  "sourceChangedDuringRun": false,
+  "acpTimeoutReproduced": false,
+  "lspTimeoutReproduced": false,
+  "causalFixEstablished": false,
+  "remaining": [
+    "Prior intermittent startup failures have no proven cause",
+    "60 skipped tests and one todo remain",
+    "Windows native symlink capability is not validated",
+    "Independent real-user TUI/OAuth stability is not established"
+  ]
+}

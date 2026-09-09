@@ -17,6 +17,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
+import { Snapshot } from "../../src/snapshot"
 import { SessionV2 } from "@base-harness/core/session"
 import { SessionExecution } from "@base-harness/core/session/execution"
 import { SessionProjector } from "@base-harness/core/session/projector"
@@ -250,6 +251,7 @@ type CompactionProcessOptions = {
   plugin?: Layer.Layer<Plugin.Service>
   provider?: ReturnType<typeof wide>
   config?: Layer.Layer<Config.Service>
+  snapshot?: Layer.Layer<Snapshot.Service>
 }
 
 function withCompaction(options?: CompactionProcessOptions) {
@@ -261,6 +263,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     [Provider.node, (options?.provider ?? wide()).layer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
     [SessionSummary.node, summary],
+    ...(options?.snapshot ? ([[Snapshot.node, options.snapshot]] as const) : []),
   ]
   if (!options?.llm) {
     return AppNodeBuilder.build(compactionTestNode, [
@@ -1200,9 +1203,37 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
+    "tool-free summary generation does not snapshot the workspace",
+    () => {
+      const stub = llm()
+      stub.push(reply("summary without workspace execution"))
+      let snapshots = 0
+      const snapshot = Layer.mock(Snapshot.Service)({
+        track: () => Effect.sync(() => { snapshots++; throw new Error("Unexpected compaction snapshot") }),
+        patch: () => Effect.sync(() => { snapshots++; throw new Error("Unexpected compaction patch") }),
+      })
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "hello")
+        const messages = yield* ssn.messages({ sessionID: session.id })
+        yield* SessionCompaction.use.process({ parentID: msg.id, messages, sessionID: session.id, auto: false })
+        expect(snapshots).toBe(0)
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          item => item.info.role === "assistant" && item.info.summary,
+        )
+        expect(summary?.parts.some(part => part.type === "text" && part.text === "summary without workspace execution")).toBe(true)
+        expect(summary?.parts.some(part => part.type === "patch")).toBe(false)
+      }).pipe(withCompaction({ llm: stub.llmLayer, snapshot }))
+    },
+    { git: true },
+  )
+
+  itCompaction.instance(
     "stops quickly when aborted during retry backoff",
     () => {
       const stub = llm()
+      let retried = false
       stub.push(
         Stream.fromAsyncIterable(
           {
@@ -1223,17 +1254,25 @@ describe("session.compaction.process", () => {
         ),
       )
 
+      stub.push(() => {
+        retried = true
+        return Stream.empty
+      })
+
       return Effect.gen(function* () {
         const ssn = yield* SessionNs.Service
         const events = yield* EventV2Bridge.Service
         const ready = yield* Deferred.make<void>()
+        const statuses: string[] = []
         const session = yield* ssn.create({})
         const msg = yield* createUserMessage(session.id, "hello")
         const msgs = yield* ssn.messages({ sessionID: session.id })
         const off = yield* events.listen((evt) => {
           if (evt.type !== SessionStatus.Event.Status.type) return Effect.void
           const data = evt.data as typeof SessionStatus.Event.Status.data.Type
-          if (data.sessionID !== session.id || data.status.type !== "retry") return Effect.void
+          if (data.sessionID !== session.id) return Effect.void
+          statuses.push(data.status.type)
+          if (data.status.type !== "retry") return Effect.void
           Deferred.doneUnsafe(ready, Effect.void)
           return Effect.void
         })
@@ -1250,13 +1289,23 @@ describe("session.compaction.process", () => {
 
         yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
         const start = Date.now()
-        yield* Fiber.interrupt(fiber)
+        yield* Fiber.interrupt(fiber).pipe(Effect.timeout("250 millis"))
         const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
           expect(Date.now() - start).toBeLessThan(250)
+        }
+        expect(retried).toBe(false)
+        expect(statuses.at(-1)).toBe("idle")
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          item => item.info.role === "assistant" && item.info.summary,
+        )
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error?.name).toContain("Aborted")
+          expect(summary.info.time.completed).toBeDefined()
         }
       }).pipe(withCompaction({ llm: stub.llmLayer }))
     },

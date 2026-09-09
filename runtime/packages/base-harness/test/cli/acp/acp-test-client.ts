@@ -2,6 +2,8 @@ import { expect } from "bun:test"
 import type { SessionConfigOption, SessionConfigSelectOption } from "@agentclientprotocol/sdk"
 import { Duration, Effect } from "effect"
 import type { AcpHandle } from "../../lib/cli-process"
+import { acpTimeoutError } from "../../lib/acp-diagnostics"
+import type { AcpResponseStreamError } from "../../lib/acp-responses"
 
 type JsonRpcRequest = {
   readonly jsonrpc: "2.0"
@@ -25,7 +27,7 @@ type JsonRpcNotification<T = unknown> = {
 
 export type AcpClient = {
   readonly request: <T>(method: string, params?: unknown) => Effect.Effect<JsonRpcResponse<T>, unknown>
-  readonly receive: Effect.Effect<unknown>
+  readonly receive: Effect.Effect<unknown, AcpResponseStreamError>
   readonly waitForNotification: <T>(
     method: string,
     predicate: (params: T) => boolean,
@@ -44,19 +46,25 @@ export function createAcpClient(acp: AcpHandle): AcpClient {
       yield* acp.send(message)
 
       while (true) {
-        const received = yield* acp.receive.pipe(Effect.timeout(Duration.seconds(15)))
-        if (isJsonRpcResponse<T>(received) && received.id === id) return received
+const received = yield* acp.receive
+if (isJsonRpcResponse<T>(received) && received.id === id) return received
       }
-    })
+    }).pipe(Effect.timeoutOrElse({
+      duration: Duration.seconds(15),
+      orElse: () => Effect.fail(acpTimeoutError(acp, "request:" + method)),
+    }))
 
   const waitForNotification = <T>(method: string, predicate: (params: T) => boolean, timeoutMs = 15_000) =>
     Effect.gen(function* () {
       while (true) {
-        const received = yield* acp.receive.pipe(Effect.timeout(Duration.millis(timeoutMs)))
+const received = yield* acp.receive
         if (!isJsonRpcNotification<T>(received)) continue
-        if (received.method === method && predicate(received.params as T)) return received
+if (received.method === method && predicate(received.params as T)) return received
       }
-    })
+    }).pipe(Effect.timeoutOrElse({
+      duration: Duration.millis(timeoutMs),
+      orElse: () => Effect.fail(acpTimeoutError(acp, "notification:" + method)),
+    }))
 
   return {
     request,

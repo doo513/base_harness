@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { Database } from "@base-harness/core/database/database"
@@ -52,8 +53,7 @@ const PathCommand = effectCmd({
 })
 
 export const DbCommand = effectCmd({
-  command: "db",
-  describe: "database tools",
+  ...EntryCommand.db,
   instance: false,
   builder: (yargs: Argv) => {
     return yargs.command(QueryCommand).command(PathCommand).demandCommand()

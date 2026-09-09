@@ -14,7 +14,10 @@ export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
 ) {
   const afs = yield* FSUtil.Service
   return (yield* afs.up({
-    targets: [`${name}.jsonc`],
+    // up() walks nearest-first and the result is reversed below. Search JSONC
+    // first so it is applied after JSON within each directory. Only TUI accepts
+    // both formats; server project configuration remains JSONC-only.
+    targets: name === "tui" ? ["tui.jsonc", "tui.json"] : [`${name}.jsonc`],
     start: directory,
     stop: worktree,
   })).toReversed()

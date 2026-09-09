@@ -5,7 +5,7 @@ import path from "path"
 import type { Agent } from "../agent/agent"
 import { FSUtil } from "@base-harness/core/fs-util"
 import { evaluate } from "@/permission/evaluate"
-import { Config } from "@/config/config"
+import { Service as ConfigService } from "@/config/service"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
 
@@ -73,7 +73,7 @@ const layer = Layer.effect(
     })
 
     const limits = Effect.fn("Truncate.limits")(function* () {
-      const configSvc = yield* Effect.serviceOption(Config.Service)
+      const configSvc = yield* Effect.serviceOption(ConfigService)
       if (Option.isNone(configSvc)) return { maxLines: MAX_LINES, maxBytes: MAX_BYTES }
       const cfg = yield* configSvc.value.get().pipe(Effect.catch(() => Effect.succeed(undefined)))
       return {

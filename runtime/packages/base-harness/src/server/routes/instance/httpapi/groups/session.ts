@@ -20,7 +20,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, SessionBusyError } from "../errors"
+import { ApiNotFoundError, InvalidRequestError, PermissionNotFoundError, SessionBusyError } from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@base-harness/core/provider"
@@ -80,6 +80,10 @@ export const HarnessVerifyPayload = Schema.Struct({
 
 export const HarnessControlPayload = Schema.Union([
   Schema.Struct({
+    type: Schema.Literal("execution.discover"),
+    adapterID: Schema.String,
+  }),
+  Schema.Struct({
     type: Schema.Literal("domain.set"),
     domain: Schema.Literals(["develop", "general"]),
   }),
@@ -87,6 +91,17 @@ export const HarnessControlPayload = Schema.Union([
     type: Schema.Literal("skill.set"),
     skill: Schema.Literal("hackathon"),
     enabled: Schema.Boolean,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("execution.select"),
+    selection: Schema.optional(
+      Schema.Struct({
+        adapterID: Schema.String,
+        modelID: Schema.optional(Schema.String),
+        options: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+        capabilityRevision: Schema.optional(Schema.String),
+      }),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("planning.plan_once"),
@@ -114,6 +129,7 @@ export const SessionPaths = {
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
+  harnessPlan: `${root}/harness/plan/:planID`,
   harness: `${root}/:sessionID/harness`,
   harnessVerify: `${root}/:sessionID/harness/verify`,
   harnessCancel: `${root}/:sessionID/harness/cancel`,
@@ -435,6 +451,20 @@ export const SessionApi = HttpApi.make("session")
             deprecated: true,
           }),
         ),
+        HttpApiEndpoint.get("harnessPlan", SessionPaths.harnessPlan, {
+          params: { planID: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Struct({
+            sessionID: Schema.String, workspace: Schema.String, planId: Schema.String, revision: Schema.Number,
+          }), "Reviewed plan execution location"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.harnessPlan",
+            summary: "Resolve a reviewed plan",
+            description: "Resolve an unconsumed, integrity-checked plan to its original root session and workspace.",
+          }),
+        ),
         HttpApiEndpoint.get("harness", SessionPaths.harness, {
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
@@ -477,12 +507,12 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: HarnessControlPayload,
           success: described(Schema.Unknown, "Kernel harness status"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, InvalidRequestError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.harnessControl",
             summary: "Control harness kernel",
-            description: "Apply a typed domain, skill, planning, discard, or execute control.",
+            description: "Apply a typed domain, skill, execution, planning, discard, or execute control.",
           }),
         ),
         HttpApiEndpoint.delete("deleteMessage", SessionPaths.deleteMessage, {

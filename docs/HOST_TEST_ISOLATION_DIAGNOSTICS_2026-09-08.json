@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-08",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "baseline": {
+    "log": ".tools/validation/host-suite-first-failures-1788845646016.log",
+    "testsRun": 456,
+    "files": 37,
+    "bailAfterFailures": 5,
+    "exitCode": 1,
+    "seconds": 119.95
+  },
+  "targeted": {
+    "log": ".tools/validation/host-isolation-targeted-1788846490986.log",
+    "passed": 25,
+    "failed": 20,
+    "assertions": 107,
+    "files": 4,
+    "seconds": 24.47,
+    "typecheckExitCode": 0
+  },
+  "incident": {
+    "kind": "test_state_isolation",
+    "observed": "Windows Host tests reached actual LOCALAPPDATA/base-harness configuration path",
+    "risk": "Test fixtures write and remove configuration files there",
+    "priorUserContentsKnown": false,
+    "recoveryPerformed": false
+  },
+  "remaining": "ConfigPaths.files discovers only .jsonc, while TUI reads and migration creates tui.json.",
+  "failures": "(fail) resolves attention config defaults and overrides [506.85ms]\r\n(fail) migrates tui-specific keys from base-harness.jsonc when tui.json does not exist [491.42ms]\r\n(fail) migrates project legacy tui keys even when global tui.json already exists [493.67ms]\r\n(fail) drops unknown legacy tui keys during migration [518.32ms]\r\n(fail) skips migration when tui.json already exists [487.56ms]\r\n(fail) continues loading tui config when legacy source cannot be stripped [519.37ms]\r\n(fail) migrates legacy tui keys across multiple base-harness.jsonc levels [559.57ms]\r\n(fail) flattens nested tui key inside tui.json [551.62ms]\r\n(fail) top-level keys in tui.json take precedence over nested tui key [461.39ms]\r\n(fail) project config takes precedence over BASE_HARNESS_TUI_CONFIG (matches BASE_HARNESS_CONFIG) [477.99ms]\r\n(fail) merges keybind overrides across precedence layers [544.22ms]\r\n(fail) resolves keybind lookup from canonical keybinds [492.57ms]\r\n(fail) keybinds accept OpenTUI binding specs [474.21ms]\r\n(fail) keeps explicit input undo overrides on Windows [500.08ms]\r\n(fail) keeps explicit configured keybind input undo on Windows [540.92ms]\r\n(fail) applies env and file substitutions in tui.json [472.73ms]\r\n(fail) supports tuple plugin specs with options in tui.json [505.92ms]\r\n(fail) deduplicates tuple plugin specs by name with higher precedence winning [489.98ms]\r\n(fail) tracks global and local plugin metadata in merged tui config [473.32ms]\r\n(fail) merges plugin_enabled flags across config layers [534.00ms]\r\n 25 pass\r\n 20 fail\r\nRan 45 tests across 4 files. [24.47s]\r\n"
+}

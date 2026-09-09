@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@base-harness/core": "workspace:*",
-    "@base-harness/verification": "workspace:*"
+    "@base-harness/verification": "workspace:*",
+    "@base-harness/workspace": "workspace:*",
+    "@base-harness/security": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

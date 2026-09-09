@@ -7,6 +7,7 @@ import {
   formatCurrentModelId,
   formatVariantName,
   parseModelSelection,
+  supportedReasoningVariants,
   type ConfigOptionProvider,
 } from "@/acp/config-option"
 
@@ -18,10 +19,11 @@ const providers: ConfigOptionProvider[] = [
       "claude/sonnet-4": {
         id: "claude/sonnet-4",
         name: "Claude Sonnet 4",
+        capabilities: { reasoning: true, reasoningEfforts: { default: "provider_default", supported: ["high", "very-high"] } },
         variants: {
           default: {},
-          high: {},
-          "very-high": {},
+          high: { reasoningEffort: "high" },
+          "very-high": { reasoningEffort: "very-high" },
         },
       },
       "claude-haiku": {
@@ -37,9 +39,10 @@ const providers: ConfigOptionProvider[] = [
       "gpt-5": {
         id: "gpt-5",
         name: "GPT-5",
+        capabilities: { reasoning: true, reasoningEfforts: { default: "provider_default", supported: ["minimal", "low"] } },
         variants: {
-          minimal: {},
-          low: {},
+          minimal: { reasoningEffort: "minimal" },
+          low: { reasoningEffort: "low" },
         },
       },
     },
@@ -80,7 +83,7 @@ describe("acp config options", () => {
     if (option.type !== "select") throw new Error("expected select option")
     expect(option.options).toContainEqual({
       value: "anthropic/claude/sonnet-4/high",
-      name: "Anthropic/Claude Sonnet 4 (High)",
+      name: "Anthropic/Claude Sonnet 4 (high)",
     })
     expect(option.options).not.toContainEqual({
       value: "anthropic/claude/sonnet-4/default",
@@ -88,25 +91,25 @@ describe("acp config options", () => {
     })
   })
 
-  test("builds effort option from variants and falls back to default when current variant is invalid", () => {
-    expect(buildEffortSelectOption({ variants: ["low", "default", "high"], currentVariant: "missing" })).toEqual({
+  test("unselected effort preserves the provider default", () => {
+    expect(buildEffortSelectOption({ variants: ["low", "high"] })).toEqual({
       id: "effort",
       name: "Effort",
       description: "Available effort levels for this model",
       category: "thought_level",
       type: "select",
-      currentValue: "default",
+      currentValue: "provider_default",
       options: [
-        { value: "low", name: "Low" },
-        { value: "default", name: "Default" },
-        { value: "high", name: "High" },
+        { value: "provider_default", name: "Provider default" },
+        { value: "low", name: "low" },
+        { value: "high", name: "high" },
       ],
     })
   })
 
-  test("effort fallback uses the first variant when default is absent", () => {
+  test("effort fallback never chooses the first native level", () => {
     expect(buildEffortSelectOption({ variants: ["minimal", "low"], currentVariant: "missing" })?.currentValue).toBe(
-      "minimal",
+      "provider_default",
     )
   })
 
@@ -220,10 +223,36 @@ describe("acp config options", () => {
         variants: ["default", "high"],
         includeVariant: true,
       }),
-    ).toBe("anthropic/claude/sonnet-4/default")
+    ).toBe("anthropic/claude/sonnet-4")
   })
 
   test("formats variant names for display", () => {
-    expect(formatVariantName("very_high-effort")).toBe("Very High Effort")
+    expect(formatVariantName("very_high-effort")).toBe("very_high-effort")
+  })
+  test("uses declared native names from a redacted Host catalog without inferring labels", () => {
+    const model = {
+      id: "fixture", name: "Fixture",
+      capabilities: { reasoning: true, reasoningEfforts: { default: "provider_default" as const, supported: ["ServiceExact", "missing"] } },
+      variants: {
+        ServiceExact: {},
+        high: {},
+        budget: {},
+        unreported: {},
+      },
+    }
+    expect(Object.keys(supportedReasoningVariants(model))).toEqual(["ServiceExact"])
+    expect(supportedReasoningVariants({ ...model, capabilities: undefined })).toEqual({})
+    expect(supportedReasoningVariants({ ...model, capabilities: { ...model.capabilities, reasoning: false } })).toEqual({})
+    const options = buildConfigOptions({
+      providers: [{ id: "test", name: "Test", models: { fixture: model } }],
+      currentModel: { providerID: "test", modelID: "fixture" },
+    })
+    const effort = options.find((option) => option.id === "effort")
+    expect(effort?.currentValue).toBe("provider_default")
+    if (effort?.type !== "select") throw new Error("expected effort selector")
+    expect(effort.options).toEqual([
+      { value: "provider_default", name: "Provider default" },
+      { value: "ServiceExact", name: "ServiceExact" },
+    ])
   })
 })

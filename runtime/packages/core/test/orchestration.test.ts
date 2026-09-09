@@ -55,6 +55,9 @@ async function fixture() {
 test("worker output remains isolated until matching verifier attestation commits it", async () => {
   const { target, candidate } = await fixture()
   expect(await readFile(target, "utf8")).toBe("before")
+  const checkedWorkspace = await Orchestration.materializeCandidate(candidate.candidateId)
+  expect(await readFile(join(checkedWorkspace, "result.txt"), "utf8")).toBe("after")
+  expect(await readFile(target, "utf8")).toBe("before")
   const result = await Orchestration.commitCandidate(candidate.candidateId, {
     candidateId: candidate.candidateId,
     candidateRevision: candidate.revision,
@@ -66,6 +69,7 @@ test("worker output remains isolated until matching verifier attestation commits
 
 test("mismatched attestation cannot commit a candidate", async () => {
   const { target, candidate } = await fixture()
+  await Orchestration.materializeCandidate(candidate.candidateId)
   await expect(
     Orchestration.commitCandidate(candidate.candidateId, {
       candidateId: candidate.candidateId,
@@ -78,6 +82,7 @@ test("mismatched attestation cannot commit a candidate", async () => {
 
 test("base hash conflict blocks commit without overwriting external changes", async () => {
   const { target, candidate } = await fixture()
+  await Orchestration.materializeCandidate(candidate.candidateId)
   await writeFile(target, "external", "utf8")
   await expect(
     Orchestration.commitCandidate(candidate.candidateId, {
@@ -87,4 +92,27 @@ test("base hash conflict blocks commit without overwriting external changes", as
     }),
   ).rejects.toMatchObject({ code: "WORKSPACE_CONFLICT" })
   expect(await readFile(target, "utf8")).toBe("external")
+})
+
+// Matching fields are a fixture attestation, not proof of a real verifier run.
+test("matching attestation fields cannot bypass the required verification workspace", async () => {
+  const { target, candidate } = await fixture()
+  await expect(Orchestration.commitCandidate(candidate.candidateId, {
+    candidateId: candidate.candidateId,
+    candidateRevision: candidate.revision,
+    patchHash: candidate.patchHash,
+  })).rejects.toMatchObject({ code: "PHASE_VIOLATION" })
+  expect(await readFile(target, "utf8")).toBe("before")
+})
+
+test("changed verification workspace bytes cannot be committed with a stale attestation", async () => {
+  const { target, candidate } = await fixture()
+  const checkedWorkspace = await Orchestration.materializeCandidate(candidate.candidateId)
+  await writeFile(join(checkedWorkspace, "result.txt"), "changed after verification", "utf8")
+  await expect(Orchestration.commitCandidate(candidate.candidateId, {
+    candidateId: candidate.candidateId,
+    candidateRevision: candidate.revision,
+    patchHash: candidate.patchHash,
+  })).rejects.toMatchObject({ code: "WORKSPACE_CONFLICT" })
+  expect(await readFile(target, "utf8")).toBe("before")
 })

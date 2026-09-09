@@ -92,6 +92,7 @@ const provider: Provider.Info = {
       capabilities: {
         temperature: true,
         reasoning: true,
+        reasoningEfforts: { default: "provider_default", supported: ["high"] },
         attachment: false,
         toolcall: true,
         input: { text: true, audio: false, image: false, video: false, pdf: false },
@@ -162,6 +163,7 @@ const provider: Provider.Info = {
       capabilities: {
         temperature: true,
         reasoning: true,
+        reasoningEfforts: { default: "provider_default", supported: ["low","medium"] },
         attachment: false,
         toolcall: true,
         input: { text: true, audio: false, image: false, video: false, pdf: false },
@@ -480,11 +482,11 @@ describe("ACP service sessions", () => {
       service.resumeSession({ cwd: "/workspace", sessionId: "ses_resume", mcpServers: [] }),
     )
     const updated = await Effect.runPromise(
-      service.setSessionConfigOption({ sessionId: "ses_resume", configId: "effort", value: "default" }),
+      service.setSessionConfigOption({ sessionId: "ses_resume", configId: "effort", value: "provider_default" }),
     )
 
     expect(select(resumed, "effort")?.currentValue).toBe("high")
-    expect(select(updated, "effort")?.currentValue).toBe("default")
+    expect(select(updated, "effort")?.currentValue).toBe("provider_default")
     expect(
       updates
         .map((item) => item.update)
@@ -783,8 +785,8 @@ describe("ACP service sessions", () => {
     )
 
     expect(select(updated, "model")?.currentValue).toBe("test/second-model")
-    expect(select(updated, "effort")?.currentValue).toBe("low")
-    expect(flattenSelectOptions(select(updated, "effort")).map((option) => option.value)).toEqual(["low", "medium"])
+    expect(select(updated, "effort")?.currentValue).toBe("provider_default")
+    expect(flattenSelectOptions(select(updated, "effort")).map((option) => option.value)).toEqual(["provider_default", "low", "medium"])
   })
 
   it("switches effort and returns the updated effort current value", async () => {
@@ -1023,6 +1025,19 @@ describe("ACP service sessions", () => {
     })
   })
 
+  it("clearing effort omits the native parameter and model switching does not translate it", async () => {
+    const { service, prompts } = makeService()
+    const session = await Effect.runPromise(service.newSession({ cwd: "/workspace", mcpServers: [] }))
+    await Effect.runPromise(service.setSessionConfigOption({ sessionId: session.sessionId, configId: "effort", value: "high" }))
+    await Effect.runPromise(service.setSessionConfigOption({ sessionId: session.sessionId, configId: "effort", value: "provider_default" }))
+    await Effect.runPromise(service.prompt({ sessionId: session.sessionId, prompt: [{ type: "text", text: "hello" }] }))
+    expect(prompts[0]).not.toHaveProperty("variant")
+    await Effect.runPromise(service.setSessionConfigOption({ sessionId: session.sessionId, configId: "effort", value: "high" }))
+    await Effect.runPromise(service.setSessionModel({ sessionId: session.sessionId, modelId: "test/second-model" }))
+    await Effect.runPromise(service.prompt({ sessionId: session.sessionId, prompt: [{ type: "text", text: "hello again" }] }))
+    expect(prompts[1]).not.toHaveProperty("variant")
+  })
+
   it("normal text prompt sends model variant mode and converted parts", async () => {
     const { service, prompts, usageUpdates } = makeService()
     const session = await Effect.runPromise(service.newSession({ cwd: "/workspace", mcpServers: [] }))
@@ -1207,7 +1222,6 @@ describe("ACP service sessions", () => {
     expect(prompts).toContainEqual({
       sessionID: session.sessionId,
       model: { providerID, modelID },
-      variant: "default",
       parts: [
         { type: "text", text: "assistant context", synthetic: true },
         { type: "text", text: "user context", ignored: true },
@@ -1269,7 +1283,6 @@ describe("ACP service sessions", () => {
         command: "init",
         arguments: "now",
         model: "test/test-model",
-        variant: "default",
         agent: "build",
         directory: "/workspace",
       },

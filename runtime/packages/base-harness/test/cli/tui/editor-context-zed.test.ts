@@ -1,10 +1,18 @@
 import { Database } from "bun:sqlite"
-import { mkdir, symlink } from "node:fs/promises"
+import { lstat, mkdir, symlink } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { isZedTerminal, offsetToPosition, resolveZedDbPath, resolveZedSelection } from "@base-harness/tui/editor-zed"
 import { tmpdir } from "../../fixture/fixture"
+import { probeSymlinkCapabilities, requireSymlinkCapabilities } from "../../lib/symlink-capability"
+
+const symlinks = await probeSymlinkCapabilities()
+requireSymlinkCapabilities(symlinks, process.env.BASE_HARNESS_REQUIRE_SYMLINK_TESTS === "1")
+const fileSymlinkTest = symlinks.file.supported ? test : test.skip
+if (!symlinks.file.supported) {
+  console.warn("zed: native symlink loop case is unsupported, not validated", symlinks.file)
+}
 
 const originalZedTerm = process.env.ZED_TERM
 const originalTermProgram = process.env.TERM_PROGRAM
@@ -78,14 +86,31 @@ test("offsetToPosition converts Zed offsets to 1-based editor positions", () => 
   })
 })
 
-test("resolveZedDbPath skips candidates that cannot be stated", async () => {
+fileSymlinkTest("resolveZedDbPath skips candidates that cannot be stated", async () => {
   await using tmp = await tmpdir()
   const loop = path.join(tmp.path, "loop")
-  await symlink(loop, loop)
+  await symlink(loop, loop, "file")
+  expect((await lstat(loop)).isSymbolicLink()).toBe(true)
   const home = spyOn(os, "homedir").mockImplementation(() => tmp.path)
   const previous = process.env.BASE_HARNESS_ZED_DB
   process.env.BASE_HARNESS_ZED_DB = loop
 
+  try {
+    expect(resolveZedDbPath()).toBeUndefined()
+  } finally {
+    if (previous === undefined) delete process.env.BASE_HARNESS_ZED_DB
+    else process.env.BASE_HARNESS_ZED_DB = previous
+    home.mockRestore()
+  }
+})
+
+test("resolveZedDbPath skips a database path beneath a regular file", async () => {
+  await using tmp = await tmpdir()
+  const file = path.join(tmp.path, "not-a-directory")
+  await Bun.write(file, "fixture")
+  const home = spyOn(os, "homedir").mockImplementation(() => tmp.path)
+  const previous = process.env.BASE_HARNESS_ZED_DB
+  process.env.BASE_HARNESS_ZED_DB = path.join(file, "zed.sqlite")
   try {
     expect(resolveZedDbPath()).toBeUndefined()
   } finally {

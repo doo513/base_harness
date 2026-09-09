@@ -1,3 +1,4 @@
+import { EntryCommand } from "../entry-command-metadata"
 import { cmd } from "./cmd"
 import { ConfigV1 } from "@base-harness/core/v1/config/config"
 import { effectCmd } from "../effect-cmd"
@@ -93,8 +94,7 @@ function authState() {
 }
 
 export const McpCommand = cmd({
-  command: "mcp",
-  describe: "manage MCP (Model Context Protocol) servers",
+  ...EntryCommand.mcp,
   builder: (yargs) =>
     yargs
       .command(McpAddCommand)

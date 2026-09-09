@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "engineering-diagnostic-v1",
+  "diagnosticOnly": true,
+  "notHarnessEvidence": true,
+  "notIndependentUserValidation": true,
+  "date": "2026-09-08",
+  "promotionReady": false,
+  "implementationApplied": true,
+  "changes": {
+    "statusScope": "verification_observation",
+    "historicalCaseStatusSeparate": true,
+    "immutableHistoryRetained": true,
+    "currentCounterevidenceRejects": true,
+    "disputedHistoryCannotSupplyIndependence": true,
+    "claimFamilyAssociationKey": [
+      "familyId",
+      "claimId"
+    ],
+    "protocolVersion": 4
+  },
+  "gates": {
+    "python": {
+      "passed": 64,
+      "failed": 1
+    },
+    "typechecks": {
+      "verification": 0,
+      "coordinator": 0,
+      "host": 0
+    },
+    "realRepairDiagnostic": 0,
+    "combined": 1,
+    "fullSuiteRun": false
+  },
+  "pendingTestFix": {
+    "path": "tests/test_verified_sidecar.py",
+    "test": "test_disputed_history_cannot_supply_missing_independence",
+    "line": 907,
+    "cause": "The execution verifier fixture omits freshnessSeconds, so existing policy correctly excludes it from historical reuse before the disputed-case assertion is reached.",
+    "proposedFix": "Set a positive freshness_seconds in this test's verifier fixture and rerun it.",
+    "authorization": "asked_user_pending",
+    "productionBugProven": false
+  },
+  "runId": "run-37861e3d-0050-4bd8-b781-9b9ed29251b6",
+  "sessionID": "ses_f814cef63ffe8xT1r7M1mWpni9",
+  "checks": [
+    {
+      "route": "/provider",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "route": "/config/providers",
+      "credentialsOmitted": true,
+      "privateOptionsOmitted": true,
+      "exactEfforts": [
+        "high",
+        "max"
+      ]
+    },
+    {
+      "scope": "worker_catalog",
+      "workUnits": 2,
+      "forbiddenToolsAdvertised": false,
+      "structuredEditorsAvailable": true
+    },
+    {
+      "scope": "ready_family_consistency",
+      "selectedFamiliesActive": true,
+      "historicalDisputePreserved": true,
+      "readyArtifact": "C:\\Users\\doo33\\AppData\\Local\\Temp\\base-harness-real-host-vowCFX\\state\\base-harness\\runs\\afed4115d52c8628-aca81fe2\\artifacts\\f8\\f8d148c40a732f8eb95832c37f1ebbd01709c8616dd6af0ed05ca89a4c9c10c5.json"
+    },
+    {
+      "scope": "worker_local_repair",
+      "workUnitId": "unit-0",
+      "scopeId": "ses_f814ca67fffeHaUSR2BlEiFSq6",
+      "repairCount": 1,
+      "sameSessionWriteCount": 2,
+      "unaffectedWorkerWriteCount": 1,
+      "baseWorkspaceAbsentBeforeRepair": true,
+      "model": "fixture-reasoner",
+      "exactEffort": "high",
+      "replanned": false
+    },
+    {
+      "scope": "private_runtime",
+      "authenticated": true,
+      "exactEffort": "high",
+      "fileMatches": true,
+      "currentRootReady": true
+    }
+  ],
+  "workers": [
+    {
+      "workUnitId": "unit-0",
+      "title": "Write result-0.txt",
+      "state": "completed",
+      "repairCount": 1,
+      "scopeId": "ses_f814ca67fffeHaUSR2BlEiFSq6",
+      "failureFingerprint": "0bfb705233aa11772aea939fb06657ad638ecebb6ecf40012f779a7da6f10ef5"
+    },
+    {
+      "workUnitId": "unit-1",
+      "title": "Write result-1.txt",
+      "state": "completed",
+      "repairCount": 0,
+      "scopeId": "ses_f814ca67affezyi01Mr2wflFC3"
+    }
+  ],
+  "lifecycle": {
+    "clientExitCode": 0,
+    "hostExitCode": 143,
+    "hostTerminationIntentional": true
+  },
+  "gitUsed": false,
+  "netMonitorTouched": false
+}

@@ -1,3 +1,6 @@
+import { providerFetchOptions } from "./fetch-options"
+import { projectProviderPublicInfo } from "./public-info"
+import { traceStartup } from "@/util/startup-trace"
 import { LayerNode } from "@base-harness/core/effect/layer-node"
 import os from "os"
 import { ConfigV1 } from "@base-harness/core/v1/config/config"
@@ -31,6 +34,7 @@ import { ModelV2 } from "@base-harness/core/model"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
+import { finalizeReasoningCapabilities } from "./reasoning-capabilities"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 300_000
 
@@ -1119,20 +1123,30 @@ export const ConfigProvidersResult = Schema.Struct({
 })
 export type ConfigProvidersResult = Types.DeepMutable<Schema.Schema.Type<typeof ConfigProvidersResult>>
 
-export function toPublicInfo(provider: Info): Info {
-  return JSON.parse(
-    JSON.stringify(
-      {
-        ...provider,
-        models: Object.fromEntries(Object.entries(provider.models).filter(([, model]) => Schema.is(Model)(model))),
-      },
-      (_, value) => {
-        if (typeof value === "function" || typeof value === "symbol" || value === undefined) return undefined
-        if (typeof value === "bigint") return value.toString()
-        return value
-      },
+// Installed plugins are trusted in-process runtime extensions. Their model/auth
+// hooks need executable URLs and native option payloads, not the public DTO.
+function toPluginInfo(provider: Info): Info {
+  return {
+    ...provider,
+    models: Object.fromEntries(
+      Object.entries(provider.models).filter(([, model]) => Schema.is(Model)(model)).map(([id, model]) => [
+        id,
+        {
+          ...model,
+          api: { ...model.api },
+          options: { ...model.options },
+          headers: { ...model.headers },
+          ...(model.variants === undefined ? {} : {
+            variants: mapValues(model.variants, (options) => ({ ...options })),
+          }),
+        },
+      ]),
     ),
-  )
+  }
+}
+
+export function toPublicInfo(provider: Info): Info {
+  return projectProviderPublicInfo(toPluginInfo(provider))
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
@@ -1405,6 +1419,7 @@ function modelSuggestions(provider: Info | undefined, modelID: ModelV2.ID, enabl
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    traceStartup("provider.services_start")
     const fs = yield* FSUtil.Service
     const config = yield* Config.Service
     const auth = yield* Auth.Service
@@ -1412,14 +1427,21 @@ const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
+    traceStartup("provider.services_ready")
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
+        traceStartup("provider.init_start")
         const bridge = yield* EffectBridge.make()
+        traceStartup("provider.bridge_ready")
         const cfg = yield* config.get()
+        traceStartup("provider.config_ready")
         const modelsDev = yield* modelsDevSvc.get()
+        traceStartup("provider.catalog_ready")
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
-        const database = mapValues(catalog, toPublicInfo)
+        // Keep executable catalog data private; redact only at public response boundaries.
+        const database = mapValues(catalog, toPluginInfo)
+        traceStartup("provider.catalog_mapped")
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1455,6 +1477,7 @@ const layer = Layer.effect(
 
         // load plugins first so config() hook runs before reading cfg.provider
         const plugins = yield* plugin.list()
+        traceStartup("provider.plugins_ready")
 
         // now read config providers - includes any modifications from plugin config() hook
         const configProviders = Object.entries(cfg.provider ?? {})
@@ -1473,14 +1496,14 @@ const layer = Layer.effect(
           if (!p || !models) continue
 
           const providerID = ProviderV2.ID.make(p.id)
-          if (disabled.has(providerID)) continue
+          if (!isProviderAllowed(providerID)) continue
 
           const provider = database[providerID]
           if (!provider) continue
           const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
 
           provider.models = yield* Effect.promise(async () => {
-            const next = await models(toPublicInfo(provider), { auth: pluginAuth })
+            const next = await models(toPluginInfo(provider), { auth: pluginAuth })
             return Object.fromEntries(
               Object.entries(next).map(([id, model]) => [
                 id,
@@ -1493,6 +1516,8 @@ const layer = Layer.effect(
             )
           })
         }
+
+        traceStartup("provider.plugin_models_ready")
 
         // extend database from config
         for (const [providerID, provider] of configProviders) {
@@ -1536,6 +1561,10 @@ const layer = Layer.effect(
               capabilities: {
                 temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
                 reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
+                reasoningEfforts:
+                  existingModel?.api.npm === apiNpm && existingModel.api.id === apiID
+                    ? existingModel.capabilities.reasoningEfforts
+                    : undefined,
                 attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
                 toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
                 input: {
@@ -1590,16 +1619,19 @@ const layer = Layer.effect(
               pickBy(merged, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),
             )
+            finalizeReasoningCapabilities(parsedModel, model.variants)
             parsed.models[modelID] = parsedModel
           }
           database[providerID] = parsed
         }
 
+        traceStartup("provider.config_models_ready")
+
         // load env
         const envs = yield* env.all()
         for (const [id, provider] of Object.entries(database)) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!isProviderAllowed(providerID)) continue
           const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
           if (!apiKey) continue
           mergeProvider(providerID, {
@@ -1608,11 +1640,13 @@ const layer = Layer.effect(
           })
         }
 
+        traceStartup("provider.env_ready")
+
         // load apikeys
         const auths = yield* auth.all().pipe(Effect.orDie)
         for (const [id, provider] of Object.entries(auths)) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!isProviderAllowed(providerID)) continue
           if (provider.type === "api") {
             mergeProvider(providerID, {
               source: "api",
@@ -1621,11 +1655,13 @@ const layer = Layer.effect(
           }
         }
 
+        traceStartup("provider.credentials_ready")
+
         // plugin auth loader - database now has entries for config providers
         for (const plugin of plugins) {
           if (!plugin.auth) continue
           const providerID = ProviderV2.ID.make(plugin.auth.provider)
-          if (disabled.has(providerID)) continue
+          if (!isProviderAllowed(providerID)) continue
 
           const stored = yield* auth.get(providerID).pipe(Effect.orDie)
           if (!stored) continue
@@ -1634,7 +1670,7 @@ const layer = Layer.effect(
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
-              toPublicInfo(database[plugin.auth!.provider]),
+              toPluginInfo(database[plugin.auth!.provider]),
             ),
           )
           const opts = options ?? {}
@@ -1642,9 +1678,11 @@ const layer = Layer.effect(
           mergeProvider(providerID, patch)
         }
 
+        traceStartup("provider.plugin_auth_ready")
+
         for (const [id, fn] of Object.entries(custom(dep))) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!isProviderAllowed(providerID)) continue
           const data = database[providerID]
           if (!data) {
             continue
@@ -1660,9 +1698,12 @@ const layer = Layer.effect(
           }
         }
 
+        traceStartup("provider.custom_loaders_ready")
+
         // load config - re-apply with updated data
         for (const [id, provider] of configProviders) {
           const providerID = ProviderV2.ID.make(id)
+          if (!isProviderAllowed(providerID)) continue
           const partial: Partial<Info> = { source: "config" }
           if (provider.env) partial.env = provider.env
           if (provider.name) partial.name = provider.name
@@ -1726,6 +1767,7 @@ const layer = Layer.effect(
                 (v) => omit(v, ["disabled"]),
               )
             }
+            finalizeReasoningCapabilities(model, configVariants)
           }
 
           if (Object.keys(provider.models).length === 0) {
@@ -1734,6 +1776,7 @@ const layer = Layer.effect(
           }
         }
 
+        traceStartup("provider.init_ready")
         return {
           models: languages,
           providers,
@@ -1819,7 +1862,7 @@ const layer = Layer.effect(
 
         options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
           const fetchFn = customFetch ?? fetch
-          const opts = init ?? {}
+          const opts = { ...init }
           const chunkAbortCtl = typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
           const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
           const headerTimeoutCtl = typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
@@ -1834,11 +1877,7 @@ const layer = Layer.effect(
           const combined = signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
           if (combined) opts.signal = combined
 
-          const res = await fetchFn(input, {
-            ...opts,
-            // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
-            timeout: false,
-          }).finally(() => headerTimeoutCtl?.clear())
+          const res = await fetchFn(input, providerFetchOptions(opts)).finally(() => headerTimeoutCtl?.clear())
 
           if (!chunkAbortCtl) return res
           return wrapSSE(res, chunkTimeout, chunkAbortCtl)
@@ -1968,7 +2007,7 @@ const layer = Layer.effect(
 
       const experimental = yield* plugin.trigger<"experimental.provider.small_model">(
         "experimental.provider.small_model",
-        { provider: toPublicInfo(provider) },
+        { provider: toPluginInfo(provider) },
         { model: undefined },
       )
       if (experimental.model) {
