@@ -15,6 +15,7 @@ export interface HeadlessControlOptions {
 }
 
 export interface ExecutePlanOptions extends HeadlessControlOptions {
+  session?: string
   model?: string
   variant?: string
   agent?: string
