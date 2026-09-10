@@ -6,7 +6,7 @@ venv/
 dist/
 build/
 *.egg-info/
-run/
+/run/
 runs/
 .env
 .DS_Store

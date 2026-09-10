@@ -35,6 +35,9 @@ jobs:
       - name: Verify TypeScript protocol package
         working-directory: runtime/packages/verification
         run: bun test
+      - name: Verify headless harness output helpers
+        working-directory: runtime
+        run: bun test packages/base-harness/test/cli/run-harness-output.test.ts
       - name: Typecheck execution core
         working-directory: runtime
         run: bun run typecheck
