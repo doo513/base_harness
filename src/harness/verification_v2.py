@@ -21,8 +21,11 @@ DEFAULT_MAX_SAME_FAILURE_REPAIRS = 2
 FILE_PREDICATES = {"exists", "content_contains", "content_equals", "sha256"}
 COMMAND_PREDICATES = {"command_exit", "output_contains"}
 MAX_CAPTURE_CHARS = 32_000
+MAX_LIST_ITEMS = 200
 MAX_ARTIFACT_BYTES = 10 * 1024 * 1024
 MAX_RUN_ARTIFACT_BYTES = 100 * 1024 * 1024
+TRUNCATED_MARKER = "\n[TRUNCATED]"
+TRUNCATED_ITEM_MARKER = "[TRUNCATED]"
 STRENGTH = {"structural": 1, "execution": 2, "behavioral": 3, "external_oracle": 4}
 RISKS = {"low", "medium", "high", "critical"}
 CLAIM_KINDS = {"artifact", "execution", "behavior", "configuration", "negative", "external"}
@@ -105,18 +108,33 @@ def atomic_json(path: Path, value: Any) -> None:
     os.replace(temporary, path)
 
 
+def _truncate_for_capture(value: str) -> str:
+    return value if len(value) <= MAX_CAPTURE_CHARS else value[:MAX_CAPTURE_CHARS] + TRUNCATED_MARKER
+
+
+def _redact_string(value: str) -> str:
+    return _truncate_for_capture(SECRET_VALUE.sub("[REDACTED]", value))
+
+
 def redact(value: Any, key: str = "") -> Any:
     if SECRET_KEY.search(key):
         return "[REDACTED]"
     if isinstance(value, str):
-        return SECRET_VALUE.sub("[REDACTED]", value)
+        return _redact_string(value)
     if isinstance(value, dict):
         return {str(item_key): redact(item, str(item_key)) for item_key, item in value.items()}
     if isinstance(value, list):
-        return [redact(item) for item in value[:200]]
-    if isinstance(value, str) and len(value) > MAX_CAPTURE_CHARS:
-        return value[:MAX_CAPTURE_CHARS] + "\n[TRUNCATED]"
+        items = [redact(item) for item in value[:MAX_LIST_ITEMS]]
+        if len(value) > MAX_LIST_ITEMS:
+            items.append(TRUNCATED_ITEM_MARKER)
+        return items
     return value
+
+
+def _verifier_capture(value: Any) -> str:
+    if value is None:
+        return ""
+    return _redact_string(str(value))
 
 
 def strip_jsonc(source: str) -> str:
@@ -1289,8 +1307,8 @@ class VerificationEngine:
                 "command": list(spec.command or ()),
                 "cwd": str(spec.cwd),
                 "exitCode": completed.returncode,
-                "stdout": completed.stdout[-MAX_CAPTURE_CHARS:],
-                "stderr": completed.stderr[-MAX_CAPTURE_CHARS:],
+                "stdout": _verifier_capture(completed.stdout),
+                "stderr": _verifier_capture(completed.stderr),
                 "durationMs": round((time.monotonic() - started) * 1000),
                 "attestation": spec.attestation(),
             }
@@ -1301,8 +1319,8 @@ class VerificationEngine:
                 "command": list(spec.command or ()),
                 "cwd": str(spec.cwd),
                 "timeoutSeconds": spec.timeout_seconds,
-                "stdout": str(error.stdout or "")[-MAX_CAPTURE_CHARS:],
-                "stderr": str(error.stderr or "")[-MAX_CAPTURE_CHARS:],
+                "stdout": _verifier_capture(error.stdout),
+                "stderr": _verifier_capture(error.stderr),
                 "durationMs": round((time.monotonic() - started) * 1000),
                 "attestation": spec.attestation(),
             }

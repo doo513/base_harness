@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Any, TextIO
 
-from .verification_v2 import PROTOCOL_VERSION, ProtocolError, ProtocolVersionError, VerificationEngine
+from .verification_v2 import PROTOCOL_VERSION, ProtocolError, ProtocolVersionError, VerificationEngine, redact
 
 
 VerifiedSidecar = VerificationEngine
@@ -54,7 +54,7 @@ def serve(
                     "outcome": "failure",
                     "state": "failure",
                     "failureKind": failure_kind,
-                    "message": str(error),
+                    "message": redact(str(error)),
                 },
                 "failure",
             )
@@ -65,7 +65,7 @@ def serve(
                     "outcome": "failure",
                     "state": "failure",
                     "failureKind": "harness_verifier_error",
-                    "message": str(error),
+                    "message": redact(str(error)),
                 },
                 "failure",
             )

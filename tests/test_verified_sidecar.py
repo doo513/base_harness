@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from harness.verified_sidecar import PROTOCOL_VERSION, VerifiedSidecar, serve
-from harness.verification_v2 import ProtocolError
+from harness.verification_v2 import MAX_CAPTURE_CHARS, ProtocolError, redact
 
 
 def message(
@@ -684,6 +684,55 @@ def test_sidecar_redacts_secret_like_values_before_persistence(tmp_path: Path) -
     )
     assert token not in persisted
     assert "abcdefghijklmnopqrstuvwxyz" not in persisted
+
+
+def test_redact_truncates_large_strings_and_lists() -> None:
+    long_text = "x" * (MAX_CAPTURE_CHARS + 500)
+    redacted = redact(long_text)
+    assert redacted.startswith("x")
+    assert redacted.endswith("\n[TRUNCATED]")
+    assert len(redacted) == MAX_CAPTURE_CHARS + len("\n[TRUNCATED]")
+    redacted_list = redact(list(range(205)))
+    assert redacted_list[200:] == ["[TRUNCATED]"]
+
+
+def test_verifier_output_is_truncated_and_redacted_for_large_secret_output(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    token = "sk-abcdefghijklmnopqrstuvwxyz12345"
+    write_config(
+        workspace,
+        [
+            {
+                "id": "long-output",
+                "command": [
+                    sys.executable,
+                    "-c",
+                    f"print('Bearer {token}')\nprint('x' * ({MAX_CAPTURE_CHARS} + 100))",
+                ],
+                "claimKinds": ["execution"],
+                "strength": "execution",
+                "contradictionSeverity": "soft",
+            }
+        ],
+    )
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    src = source()
+    propose_and_act(
+        sidecar,
+        workspace,
+        contract(src, verifier_ids=["long-output"]),
+        value=src,
+    )
+    result = sidecar.handle(message("verify.request", {"reason": "manual"}))
+
+    evidence = json.loads(
+        Path(result["evidenceRefs"][0]["path"]).read_text(encoding="utf-8")
+    )["payload"]["result"]
+    assert "[REDACTED]" in evidence["stdout"]
+    assert "\n[TRUNCATED]" in evidence["stdout"]
+    assert token not in evidence["stdout"]
+    assert token not in evidence["stderr"]
 
 
 def test_unknown_failure_suspends_only_its_scope_and_independent_scope_continues(tmp_path: Path) -> None:
