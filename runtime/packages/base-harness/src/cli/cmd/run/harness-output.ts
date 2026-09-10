@@ -39,6 +39,7 @@ export interface HarnessOutputStatus {
 }
 
 const TERMINAL_PHASES = new Set(["ready", "blocked", "interrupted", "failure"])
+const FAILURE_PHASES = new Set(["blocked", "interrupted", "failure"])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -112,6 +113,9 @@ export function harnessSettled(status: HarnessOutputStatus, planOnly: boolean): 
 }
 
 export function harnessExitCode(status: HarnessOutputStatus, planOnly: boolean): 0 | 1 {
+  // Current terminal failure state always wins over stale planning metadata.
+  if (FAILURE_PHASES.has(status.phase)) return 1
+
   if (planOnly) {
     return status.planningState === "plan_ready" || status.phase === "plan_ready" ? 0 : 1
   }
