@@ -20,7 +20,6 @@ import {
   ANTIGRAVITY_ADAPTER_ID,
   ANTIGRAVITY_REASONING_OPTION,
 } from "@base-harness/core/antigravity-protocol"
-import { AntigravityCli } from "@/harness/execution/antigravity-cli"
 import { resolveModelInfo, resolveRunTuiConfig, resolveSessionInfo } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
@@ -391,6 +390,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   type MiniHarnessControl =
     | { type: "domain.set"; domain: "develop" | "general" }
     | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+    | { type: "execution.discover"; adapterID: string }
     | {
         type: "execution.select"
         selection?: {
@@ -420,6 +420,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     { name: "execute", description: "Execute the reviewed plan", source: "command" as const },
     { name: "harness", description: "Show Kernel and verification status", source: "command" as const },
     { name: "antigravity", description: "List or select an Antigravity execution model", source: "command" as const },
+    { name: "codex", description: "List or select a Codex app-server model", source: "command" as const },
   ]
 
   const unwrapHarnessResponse = (response: unknown): unknown => {
@@ -452,12 +453,26 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }),
     )
   }
+  const discoverExecution = async (adapterID: string) =>
+    unwrapHarnessResponse(
+      await harnessClient.harnessControl({
+        sessionID: state.sessionID,
+        directory: ctx.directory,
+        body: { type: "execution.discover", adapterID },
+      }),
+    ) as {
+      adapterID: string
+      models: string[]
+      reasoningEfforts: string[]
+      reasoningOption?: string
+      revision: string
+    }
   selectExecution = async (selection) => {
     await controlHarness({ type: "execution.select", selection })
     selectedExecution = selection
     const effort = selection.options?.[ANTIGRAVITY_REASONING_OPTION]
     appendHarnessStatus(
-      "Antigravity execution selected: " + selection.modelID + (effort ? " (" + effort + ")" : ""),
+      "Execution backend selected: " + selection.adapterID + " / " + selection.modelID + (effort ? " (" + effort + ")" : ""),
     )
   }
 
@@ -507,15 +522,16 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       return true
     }
 
-    if (name === "antigravity") {
+    if (name === "antigravity" || name === "codex") {
+      const adapterID = name === "antigravity" ? ANTIGRAVITY_ADAPTER_ID : "codex-app-server"
       if (args[0]?.toLowerCase() === "off") {
         await controlHarness({ type: "execution.select" })
         selectedExecution = undefined
-        appendHarnessStatus("Antigravity execution adapter disabled")
+        appendHarnessStatus("External execution adapter disabled")
         return true
       }
 
-      const capabilities = await AntigravityCli.capabilities()
+      const capabilities = await discoverExecution(adapterID)
       const modelID = args[0]
       const effort = args[1]
       if (!modelID) {
@@ -526,7 +542,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
             adapterID: ANTIGRAVITY_ADAPTER_ID,
             models: capabilities.models,
             reasoningEfforts: capabilities.reasoningEfforts,
-            reasoningOption: ANTIGRAVITY_REASONING_OPTION,
+            reasoningOption: capabilities.reasoningOption ?? ANTIGRAVITY_REASONING_OPTION,
             capabilityRevision: capabilities.revision,
             currentModel: selectedExecution?.modelID,
             currentEffort: selectedExecution?.options?.[ANTIGRAVITY_REASONING_OPTION],
@@ -535,13 +551,13 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         return true
       }
       if (!capabilities.models.includes(modelID)) {
-        throw new Error(`Antigravity model is not advertised by the CLI: ${modelID}`)
+        throw new Error(`Execution model is not advertised by ${adapterID}: ${modelID}`)
       }
       if (effort && !capabilities.reasoningEfforts.includes(effort)) {
-        throw new Error(`Antigravity reasoning effort is not advertised by the CLI: ${effort}`)
+        throw new Error(`Reasoning effort is not advertised by ${adapterID}: ${effort}`)
       }
       await selectExecution!({
-        adapterID: ANTIGRAVITY_ADAPTER_ID,
+        adapterID,
         modelID,
         options: effort ? { [ANTIGRAVITY_REASONING_OPTION]: effort } : undefined,
         capabilityRevision: capabilities.revision,

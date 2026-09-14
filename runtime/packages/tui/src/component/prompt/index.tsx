@@ -57,7 +57,7 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
-import { flushPendingHarnessControls } from "../../harness/pending-control"
+import { flushPendingHarnessControls, pendingHarnessSelection } from "../../harness/pending-control"
 import { resolveLocalSlash } from "../../prompt/local-slash"
 import { harnessActorLabel } from "../../harness/identity-presentation"
 
@@ -328,7 +328,13 @@ export function Prompt(props: PromptProps) {
       if (msg.agent && isPrimaryAgent) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
-        if (msg.model) {
+        // External execution backends are owned by the Host Coordinator, not
+        // the Provider catalog exposed to the TUI. Persisting their synthetic
+        // model id through local.model.set() makes the TUI reject a valid
+        // backend selection as "not valid". Keep the normal model selector
+        // unchanged and let the harness status/footer represent the external
+        // execution instead.
+        if (msg.model && !msg.model.providerID.startsWith("external/")) {
           local.model.set(msg.model)
           local.model.variant.set(msg.model.variant)
         }
@@ -1039,10 +1045,43 @@ export function Prompt(props: PromptProps) {
 
       sessionID = res.data.id
       try {
+        if (args.executionBackend) {
+          await sdk.client.session.harnessControl({
+            sessionID,
+            directory,
+            body: {
+              type: "execution.select",
+              selection: {
+                adapterID: args.executionBackend,
+                modelID: args.executionModel,
+                options: args.executionEffort ? { reasoning_effort: args.executionEffort } : undefined,
+              },
+            },
+          })
+        }
         await flushPendingHarnessControls((body) =>
           sdk.client.session.harnessControl({
             sessionID: sessionID!,
             directory,
+            body,
+          }),
+        )
+      } catch (error) {
+        if (finishMoveProgress) move.finishSubmit()
+        toast.show({
+          message: `Harness setup failed before execution: ${errorMessage(error)}`,
+          variant: "error",
+        })
+        return true
+      }
+    }
+
+    if (sessionID != null && pendingHarnessSelection().count > 0) {
+      try {
+        await flushPendingHarnessControls((body) =>
+          sdk.client.session.harnessControl({
+            sessionID: sessionID!,
+            directory: location()?.directory ?? paths.cwd,
             body,
           }),
         )

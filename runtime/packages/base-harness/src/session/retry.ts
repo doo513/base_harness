@@ -201,14 +201,29 @@ function num(value: unknown) {
 }
 
 function parseJSON(value: unknown) {
-  return iife(() => {
-    try {
-      if (typeof value !== "string") return undefined
-      return JSON.parse(value)
-    } catch {
-      return undefined
-    }
-  })
+	return iife(() => {
+		try {
+			if (typeof value !== "string") return undefined
+			return JSON.parse(value)
+		} catch {
+			return undefined
+		}
+	})
+}
+
+function isQuotaExhausted(error: Err) {
+	if (!SessionV1.APIError.isInstance(error) || error.data.statusCode !== 429) return false
+	const body = parseJSON(error.data.responseBody)
+	const providerError = isRecord(body?.error) ? body.error : undefined
+	const details = providerError?.details
+	return (
+		providerError?.status === "RESOURCE_EXHAUSTED" ||
+		(Array.isArray(details) &&
+			details.some(
+				(detail) =>
+					isRecord(detail) && detail["@type"] === "type.googleapis.com/google.rpc.QuotaFailure",
+			))
+	)
 }
 
 export function policy(opts: {
@@ -221,7 +236,7 @@ export function policy(opts: {
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
-      const maximum = retryClassification(error) === "heuristic" ? 1 : RETRY_MAX_RETRIES
+		const maximum = isQuotaExhausted(error) ? 0 : retryClassification(error) === "heuristic" ? 1 : RETRY_MAX_RETRIES
       if (meta.attempt > maximum) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)

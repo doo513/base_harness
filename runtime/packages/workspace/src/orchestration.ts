@@ -1044,6 +1044,10 @@ async function materializeCandidateLocked(candidateId: string): Promise<string> 
     throw new OrchestrationError("OWNERSHIP_VIOLATION", "Candidate workspace escaped the run state directory")
   }
   await fs.rm(destination, { recursive: true, force: true })
+  // Bun's Windows fs.cp can race while creating a missing directory and
+  // report EEXIST even though the destination is otherwise usable. Create it
+  // idempotently first, then copy the source directory contents into it.
+  await fs.mkdir(destination, { recursive: true })
   const workspace = path.resolve(candidate.root.workspace)
   const stateDirectory = path.resolve(candidate.root.stateDirectory)
   await fs.cp(workspace, destination, {

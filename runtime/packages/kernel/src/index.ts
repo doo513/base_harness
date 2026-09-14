@@ -8,6 +8,9 @@ export interface ExecutionSelection {
   modelID?: string
   options?: Record<string, string>
   capabilityRevision?: string
+  kind?: "model_api" | "agent_runtime"
+  backendId?: string
+  connectionId?: string
 }
 export type PlanningState =
   | "idle"
@@ -176,6 +179,16 @@ export interface PlanningSignals {
   hasExternalClaim: boolean
   applicabilityResolved: boolean
   requiredEvidenceFamilyCount: number
+  /** Supplied by the selected DomainProfile; Kernel does not know domain names. */
+  domainRequiresPlan?: boolean
+}
+
+export interface DomainPolicyInput {
+  /** Operation names are intentionally opaque to Kernel domain implementations. */
+  allowedOperations?: readonly ToolOperation[]
+  /** Domain-owned allowlist for delegated agent roles. */
+  allowedSubagentTypes?: readonly string[]
+  requiresPlan?: boolean
 }
 
 export type HarnessControl =
@@ -230,7 +243,6 @@ export function applyControl(state: KernelSessionState, control: HarnessControl)
     return {
       ...state,
       domain: control.domain,
-      skills: [],
     }
   }
   if (control.type === "skill.set") {
@@ -239,7 +251,6 @@ export function applyControl(state: KernelSessionState, control: HarnessControl)
     else skills.delete(control.skill)
     return {
       ...state,
-      domain: control.enabled ? "develop" : state.domain,
       skills: [...skills],
     }
   }
@@ -251,6 +262,7 @@ export function applyControl(state: KernelSessionState, control: HarnessControl)
         ? {
             ...control.selection,
             options: control.selection.options ? { ...control.selection.options } : undefined,
+            kind: control.selection.kind ?? "agent_runtime",
           }
         : undefined,
     }
@@ -275,7 +287,7 @@ export function decidePlanning(
   signals: PlanningSignals,
 ): PlanningDecision {
   if (state.planningPreference === "plan_once") return "planned"
-  if (state.skills.includes("hackathon")) return "planned"
+  if (signals.domainRequiresPlan) return "planned"
   if (signals.risk === "high" || signals.risk === "critical") return "planned"
   if (signals.requiredClaimCount > 1 || signals.requiredCriterionCount > 1) return "planned"
   if (signals.targetCount > 1 || signals.hasExternalClaim) return "planned"
@@ -458,6 +470,7 @@ export function allowsOperation(
   state: KernelSessionState,
   operation: ToolOperation,
   subagentType?: string,
+  domainPolicy?: DomainPolicyInput,
 ): boolean {
   if (
     state.planningState === "contract_building" ||
@@ -472,10 +485,13 @@ export function allowsOperation(
     if (operation === "delegate") return subagentType === "explore" || subagentType === "meta-review"
     return operation === "read" || operation === "search" || operation === "question" || operation === "control"
   }
-  if (state.domain === "general") {
-    if (operation === "delegate") return subagentType === "explore" || subagentType === "meta-review"
-    return operation === "read" || operation === "search" || operation === "question" || operation === "control"
-  }
+  if (domainPolicy?.allowedOperations && !domainPolicy.allowedOperations.includes(operation)) return false
+  if (
+    operation === "delegate" &&
+    domainPolicy?.allowedSubagentTypes &&
+    (!subagentType || !domainPolicy.allowedSubagentTypes.includes(subagentType))
+  ) return false
+  void subagentType
   return true
 }
 

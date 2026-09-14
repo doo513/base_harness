@@ -11,7 +11,12 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:  # Python 3.10 compatibility for the bundled/local sidecar.
+    from datetime import datetime, timezone
+
+    UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 
@@ -311,6 +316,7 @@ class RunState:
     event_hash: str = "0" * 64
     event_sequence: int = 0
     artifact_bytes: int = 0
+    domain_policy: dict[str, Any] | None = None
 
 
 class EvidenceMemory:
@@ -562,6 +568,89 @@ class VerificationEngine:
         normalized["profile"] = profile
         normalized["trigger"] = trigger
         return normalized
+
+    @staticmethod
+    def _validate_domain_policy(raw: Any) -> dict[str, Any] | None:
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise ProtocolError("domainPolicy must be an object")
+        domain_id = as_nonempty_string(raw.get("domainId"), "domainPolicy.domainId")
+        domain_revision = as_nonempty_string(raw.get("domainRevision"), "domainPolicy.domainRevision")
+        skill_revisions = as_string_list(raw.get("skillRevisions", []), "domainPolicy.skillRevisions", allow_empty=True)
+        allowed_operations = as_string_list(raw.get("allowedOperations"), "domainPolicy.allowedOperations")
+        allowed_subagent_types = as_string_list(
+            raw.get("allowedSubagentTypes", []), "domainPolicy.allowedSubagentTypes", allow_empty=True
+        )
+        verification = raw.get("verification")
+        if not isinstance(verification, dict):
+            raise ProtocolError("domainPolicy.verification must be an object")
+        default_strength = as_nonempty_string(verification.get("defaultStrength"), "domainPolicy.defaultStrength")
+        if default_strength not in STRENGTH:
+            raise ProtocolError("domainPolicy.defaultStrength is invalid")
+        criterion_templates = as_string_list(verification.get("criterionTemplates"), "domainPolicy.criterionTemplates")
+        measurement = raw.get("measurement")
+        if not isinstance(measurement, dict):
+            raise ProtocolError("domainPolicy.measurement must be an object")
+        summary_version = as_nonempty_string(measurement.get("summarySchemaVersion"), "domainPolicy.summarySchemaVersion")
+        required_fields = as_string_list(measurement.get("requiredFields"), "domainPolicy.requiredFields")
+        requires_plan = raw.get("requiresPlan")
+        demo_first = raw.get("demoFirst")
+        if not isinstance(requires_plan, bool) or not isinstance(demo_first, bool):
+            raise ProtocolError("domainPolicy planning flags must be booleans")
+        return {
+            "domainId": domain_id,
+            "domainRevision": domain_revision,
+            "skillRevisions": skill_revisions,
+            "allowedOperations": allowed_operations,
+            "allowedSubagentTypes": allowed_subagent_types,
+            "requiresPlan": requires_plan,
+            "demoFirst": demo_first,
+            "verification": {
+                "defaultStrength": default_strength,
+                "criterionTemplates": criterion_templates,
+            },
+            "measurement": {
+                "summarySchemaVersion": summary_version,
+                "requiredFields": required_fields,
+            },
+        }
+
+    @staticmethod
+    def _validate_evidence_summary(
+        run: RunState,
+        action: dict[str, Any],
+        metadata: Any,
+    ) -> dict[str, Any] | None:
+        if not isinstance(metadata, dict) or "evidenceSummary" not in metadata:
+            return None
+        summary = metadata["evidenceSummary"]
+        if not isinstance(summary, dict):
+            raise ProtocolError("metadata.evidenceSummary must be an object")
+        if summary.get("schemaVersion") != "evidence-summary-v1":
+            raise ProtocolError("evidenceSummary schemaVersion is invalid")
+        if summary.get("actionId") != action["actionId"]:
+            raise ProtocolError("evidenceSummary actionId does not match action.close")
+        criterion_id = as_nonempty_string(summary.get("criterionId"), "evidenceSummary.criterionId")
+        claim_ids = set(action["claimIds"])
+        known_criteria = {
+            criterion_id
+            for claim in (run.goal_contract or {}).get("claims", [])
+            if isinstance(claim, dict) and claim.get("claimId") in claim_ids
+            for criterion_id in claim.get("criterionIds", [])
+        }
+        if criterion_id not in known_criteria:
+            raise ProtocolError("evidenceSummary criterion is not bound to the action claims")
+        if summary.get("status") not in {"passed", "failed", "partial", "not_run"}:
+            raise ProtocolError("evidenceSummary status is invalid")
+        if not isinstance(summary.get("observed"), dict):
+            raise ProtocolError("evidenceSummary observed must be an object")
+        if run.domain_policy is not None:
+            required = set(run.domain_policy["measurement"]["requiredFields"])
+            missing = sorted(field for field in required if field not in summary)
+            if missing:
+                raise ProtocolError("evidenceSummary is missing domain-required fields: " + ", ".join(missing))
+        return redact(summary)
 
     def _assurance_metadata(self, run: RunState) -> dict[str, Any]:
         rank = {"fast": 0, "adaptive": 1, "strict": 2}
@@ -906,6 +995,11 @@ class VerificationEngine:
                 raise ProtocolError("duplicate criterionId: " + criterion_id)
             criterion_ids.add(criterion_id)
             as_nonempty_string(criterion.get("statement"), "criterion.statement")
+            if run.domain_policy is not None:
+                template = criterion.get("verificationTemplate")
+                allowed_templates = run.domain_policy["verification"]["criterionTemplates"]
+                if template not in allowed_templates:
+                    raise ProtocolError("criterion verificationTemplate is not allowed by the selected domain")
             if criterion.get("risk") not in RISKS:
                 raise ProtocolError("criterion.risk is invalid")
             linked = as_string_list(criterion.get("claimIds"), "criterion.claimIds")
@@ -972,6 +1066,7 @@ class VerificationEngine:
                 "readyRef": run.ready_ref,
                 "runtimeFailure": run.runtime_failure,
                 "repairCounts": run.repair_counts,
+                "domainPolicy": run.domain_policy,
                 "assurance": self._assurance_metadata(run),
                 "eventHead": run.event_hash,
                 "updatedAt": utc_now(),
@@ -997,6 +1092,7 @@ class VerificationEngine:
             "scopeKind": run.scopes.get(scope_id).kind if scope_id in run.scopes else None,
             "assignedClaimIds": run.scopes.get(scope_id).assigned_claim_ids if scope_id in run.scopes else [],
             "contractStatus": run.contract_status,
+            "domainPolicy": run.domain_policy,
             "goalContract": run.goal_contract,
             "criterionResults": run.criterion_results,
             "claimResults": run.claim_results,
@@ -1711,6 +1807,7 @@ class VerificationEngine:
             run_dir = self.state_root / "runs" / token
             run_dir.mkdir(parents=True, exist_ok=False)
             config = load_config(workspace)
+            domain_policy = self._validate_domain_policy(payload.get("domainPolicy"))
             configured_profile = payload.get("configuredProfile")
             if configured_profile in {"fast", "adaptive", "strict"}:
                 verification_config = config.setdefault("verification", {})
@@ -1724,6 +1821,7 @@ class VerificationEngine:
                 config=config,
                 sources=sources,
                 scopes={scope_id: ScopeState(scope_id, None, "root")},
+                domain_policy=domain_policy,
             )
             self.runs[run_id] = run
             self._event(run, "run.opened", {"sources": list(sources.values())})
@@ -1948,21 +2046,26 @@ class VerificationEngine:
             if scope is None:
                 raise ProtocolError("scope is not open")
             action_id = as_nonempty_string(payload.get("actionId"), "actionId")
-            action = scope.pending.pop(action_id, None)
+            action = scope.pending.get(action_id)
             if action is None:
                 raise ProtocolError("action.close requires a matching action.open")
             status = payload.get("status")
             if status not in {"completed", "error"}:
                 raise ProtocolError("action status must be completed or error")
+            metadata = redact(payload.get("metadata", {}))
+            evidence_summary = self._validate_evidence_summary(run, action, metadata)
+            scope.pending.pop(action_id, None)
             action.update(
                 {
                     "status": status,
                     "output": redact(payload.get("output")),
                     "error": redact(payload.get("error")),
-                    "metadata": redact(payload.get("metadata", {})),
+                    "metadata": metadata,
                     "completedAt": payload.get("completedAt", utc_now()),
                 }
             )
+            if evidence_summary is not None:
+                action["evidenceSummary"] = evidence_summary
             action["semanticFingerprint"] = canonical_hash(
                 {
                     "tool": action["tool"],

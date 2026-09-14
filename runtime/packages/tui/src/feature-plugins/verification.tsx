@@ -349,6 +349,9 @@ function VerificationPanel(props: {
       <Show when={props.status.failureKind}>
         <text fg="#e06c75">FailureKind {props.status.failureKind}</text>
       </Show>
+      <Show when={props.status.message}>
+        <text fg="#e06c75">Message {clip(props.status.message ?? "", 96)}</text>
+      </Show>
       <Show when={props.status.missingEvidence.length > 0}>
         <text>{props.status.missingEvidence.join(" | ")}</text>
       </Show>

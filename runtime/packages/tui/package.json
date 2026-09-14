@@ -45,10 +45,12 @@
     "./ui/spinner": "./src/ui/spinner.ts",
     "./ui/toast": "./src/ui/toast.tsx",
     "./component/spinner": "./src/component/spinner.tsx",
-    "./component/register-spinner": "./src/component/register-spinner.ts"
+    "./component/register-spinner": "./src/component/register-spinner.ts",
+    "./harness/pending-control": "./src/harness/pending-control.ts"
   },
   "dependencies": {
     "@base-harness/core": "workspace:*",
+    "@base-harness/domain": "workspace:*",
     "@base-harness/plugin": "workspace:*",
     "@base-harness/sdk": "workspace:*",
     "@base-harness/ui": "workspace:*",

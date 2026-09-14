@@ -20,8 +20,11 @@ function shellQuote(value: string): string {
 }
 
 export function antigravityCommand(args: string[], options: AntigravityCommandOptions = {}): string[] {
-  if (process.platform !== "win32") return ["agy", ...args]
-  const command = ["exec", "agy", ...args].map(shellQuote).join(" ")
+  const binary = (process.env.BASE_HARNESS_AGY_BINARY ?? "agy").trim()
+  if (process.platform !== "win32" || process.env.BASE_HARNESS_AGY_USE_WSL === "0") {
+    return [binary, ...args]
+  }
+  const command = ["exec", binary, ...args].map(shellQuote).join(" ")
   return [
     "wsl.exe",
     ...(options.distro ? ["-d", options.distro] : []),

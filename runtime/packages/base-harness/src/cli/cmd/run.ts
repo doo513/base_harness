@@ -141,9 +141,11 @@ function createRunCommand(standalone: boolean) {
   // For --dir without --attach, load instance for the resolved target dir.
   // The handler also chdirs (preserving the legacy order: chdir → file resolution).
   directory: (args) => (args.dir && !args.attach ? path.resolve(process.cwd(), args.dir) : process.cwd()),
-  builder: (yargs: Argv) =>
-    yargs
-      .positional("planId", { type: "string", describe: "reviewed plan ID" })
+  builder: (yargs: Argv) => {
+    if (standalone) {
+      yargs.positional("planId", { type: "string", describe: "reviewed plan ID" })
+    }
+    return yargs
       .positional("message", {
         describe: "message to send",
         type: "string",
@@ -242,6 +244,18 @@ function createRunCommand(standalone: boolean) {
         type: "string",
         describe: "model variant (provider-specific reasoning effort, e.g., high, max, minimal)",
       })
+      .option("execution-backend", {
+        type: "string",
+        describe: "external execution backend ID discovered by the Host",
+      })
+      .option("execution-model", {
+        type: "string",
+        describe: "exact model ID reported by the selected execution backend",
+      })
+      .option("execution-effort", {
+        type: "string",
+        describe: "exact reasoning effort reported for the selected external model",
+      })
       .option("thinking", {
         type: "boolean",
         describe: "show thinking blocks",
@@ -288,7 +302,8 @@ function createRunCommand(standalone: boolean) {
         default: false,
         hidden: true,
         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
-      }),
+      })
+  },
   handler: Effect.fn("Cli.run")(function* (args) {
     const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
@@ -444,7 +459,9 @@ function createRunCommand(standalone: boolean) {
         }
       }
 
-      const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
+      const piped = !process.stdin.isTTY && !message.trim() && !args.command && !args["execute-plan"] && !interactive
+        ? await Bun.stdin.text()
+        : undefined
       message = resolveRunInput(message, piped) ?? ""
       const initialInput = resolveRunInput(rawMessage, piped)
 
@@ -890,11 +907,29 @@ function createRunCommand(standalone: boolean) {
         const control = async (body: import("./run/harness-output").HeadlessControl) =>
           unwrapHarnessStatus(await kernelClient.harnessControl({ sessionID, directory: cwd, body }))
 
+        const reportRequestFailure = async (error: unknown) => {
+          if (!emit("error", { error })) UI.error(formatRunError(error))
+          // A synchronous prompt/command error may arrive before the SSE
+          // subscriber sees Session.Event.Error. Read the authoritative Host
+          // snapshot so headless callers receive the classified failure too.
+          try {
+            const status = unwrapHarnessStatus(await kernelClient.harness({ sessionID, directory: cwd }))
+            emit("harness_result", { status })
+          } catch {
+            // Preserve the original request error when the status endpoint is
+            // unavailable; the server remains the source of truth for state.
+          }
+          process.exitCode = 1
+        }
+
         // Resume the Host's selection unless the user explicitly changes it.
         const agent = await pickAgent(client)
         for (const body of headlessControls({
           domain: args.domain, hackathon: args.hackathon, plan: args.plan,
           executePlan: args["execute-plan"],
+          executionBackend: args["execution-backend"],
+          executionModel: args["execution-model"],
+          executionEffort: args["execution-effort"],
         })) {
           await control(body)
         }
@@ -951,8 +986,7 @@ function createRunCommand(standalone: boolean) {
                 arguments: message, variant: args.variant,
               })
               if (result.error) {
-                if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-                process.exitCode = 1
+                await reportRequestFailure(result.error)
                 return
               }
               await finish()
@@ -963,8 +997,7 @@ function createRunCommand(standalone: boolean) {
               parts: [...files, { type: "text", text: message }],
             })
             if (result.error) {
-              if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-              process.exitCode = 1
+              await reportRequestFailure(result.error)
               return
             }
             await finish()
@@ -1080,6 +1113,9 @@ type MiniCommandInput = {
   model?: string
   agent?: string
   prompt?: string
+  executionBackend?: string
+  executionModel?: string
+  executionEffort?: string
   replay?: boolean
   replayLimit?: number
   demo?: boolean
@@ -1111,10 +1147,16 @@ export async function runMini(input: MiniCommandInput) {
     password: input.password,
     username: input.username,
     dir: input.directory,
-    port: undefined,
-    variant: undefined,
-    thinking: undefined,
-    mini: true,
+     port: undefined,
+     variant: undefined,
+     thinking: undefined,
+     "execution-backend": input.executionBackend,
+     "execution-model": input.executionModel,
+     "execution-effort": input.executionEffort,
+     executionBackend: input.executionBackend,
+     executionModel: input.executionModel,
+     executionEffort: input.executionEffort,
+     mini: true,
     interactive: false,
     replay: input.replay ?? true,
     "replay-limit": input.replayLimit,

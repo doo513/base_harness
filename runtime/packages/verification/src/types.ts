@@ -58,6 +58,7 @@ export interface Applicability {
 export interface CriterionContract {
   criterionId: string
   statement: string
+  verificationTemplate?: string
   sourceRefs: SourceReference[]
   claimIds: string[]
   required: boolean
@@ -105,6 +106,7 @@ export interface GoalContractProposal {
   criteria: Array<{
     criterionId: string
     statement: string
+    verificationTemplate?: string
     claimIds: string[]
     required: boolean
     risk: Risk
@@ -204,6 +206,25 @@ export interface VerificationStatus {
   escalationReasons?: string[]
   readyEligible?: boolean
   scopeAttestation?: ScopeAttestation | null
+  domainPolicy?: DomainPolicySnapshot
+}
+
+export interface DomainPolicySnapshot {
+  domainId: string
+  domainRevision: string
+  skillRevisions: string[]
+  allowedOperations: string[]
+  allowedSubagentTypes: string[]
+  requiresPlan: boolean
+  demoFirst: boolean
+  verification: {
+    defaultStrength: VerificationStrength
+    criterionTemplates: string[]
+  }
+  measurement: {
+    summarySchemaVersion: string
+    requiredFields: string[]
+  }
 }
 
 export interface ProtocolEnvelope<T = Record<string, unknown>> {
@@ -224,6 +245,7 @@ export interface OpenRunInput {
   configuredProfile?: VerificationProfile
   effectiveProfile?: VerificationProfile
   escalationReasons?: string[]
+  domainPolicy?: DomainPolicySnapshot
 }
 
 export interface ActionOpenInput {

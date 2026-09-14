@@ -102,6 +102,8 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 import { Coordinator, Orchestration } from "../harness/coordinator-service"
 import { captureExecutionContext } from "../harness/execution-context"
 import { requireExecutionModel } from "../harness/model-selection"
+import { executeExternalGoal } from "../harness/external-execution"
+import { ExecutionBackends, normalizeBackendSelection } from "../harness/execution/backend-router"
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -130,9 +132,22 @@ export const executeReviewedPlan = Effect.fn("SessionPrompt.executeReviewedPlan"
   if (session.parentID) return yield* Effect.die(new Error("PLAN_ROOT_SESSION_REQUIRED"))
   const descriptor = yield* Effect.promise(() => Coordinator.preparePlanExecution(input.sessionID, instance.directory, input.planId))
   const selected = descriptor.selection
-  const model = requireExecutionModel(selected)
-  const available = yield* provider.getModel(model.providerID, model.modelID).pipe(Effect.orDie)
-  if (selected.variant !== undefined && !Object.hasOwn(available.variants ?? {}, selected.variant)) {
+  const execution = normalizeBackendSelection(selected?.execution)
+  const selectedProviderID = selected?.providerID
+  if (selectedProviderID?.startsWith("external/") && !execution) {
+    return yield* Effect.die(new Error("EXTERNAL_EXECUTION_SELECTION_MISSING"))
+  }
+  if (execution && selectedProviderID && selectedProviderID !== `external/${execution.backendId}`) {
+    return yield* Effect.die(new Error("EXTERNAL_EXECUTION_MODEL_MISMATCH"))
+  }
+  const model = execution
+    ? {
+        providerID: (`external/${execution.backendId}` as unknown) as ProviderV2.ID,
+        modelID: execution.modelId as ModelV2.ID,
+      }
+    : requireExecutionModel(selected)
+  const available = execution ? undefined : yield* provider.getModel(model.providerID, model.modelID).pipe(Effect.orDie)
+  if (!execution && selected.variant !== undefined && !Object.hasOwn(available?.variants ?? {}, selected.variant)) {
     return yield* Effect.die(new Error("PLAN_REASONING_SELECTION_UNAVAILABLE"))
   }
   const original = yield* MessageV2.get({
@@ -157,7 +172,12 @@ export const executeReviewedPlan = Effect.fn("SessionPrompt.executeReviewedPlan"
   const context = yield* captureExecutionContext(input.sessionID, {
     sessionID: input.sessionID, messageID: MessageID.make(selected.messageID), agent: selected.agent,
     abort: new AbortController().signal, messages: [],
-    extra: { promptOps, modelSelection: model, variant: selected.variant },
+    extra: {
+      promptOps,
+      modelSelection: model,
+      variant: selected.variant,
+      executionSelection: selected.execution,
+    },
     metadata: () => Effect.void,
     ask: () => Effect.die(new Error("PLAN_EXECUTION_DISPATCH_ONLY")),
   } satisfies Tool.Context)
@@ -651,6 +671,9 @@ const layer = Layer.effect(
       modelID: ModelV2.ID,
       sessionID: SessionID,
     ) {
+      if (providerID.startsWith("external/")) {
+        return yield* Effect.die(new Error("EXTERNAL_MODEL_ROUTE_REQUIRED"))
+      }
       const exit = yield* provider.getModel(providerID, modelID).pipe(Effect.exit)
       if (Exit.isSuccess(exit)) return exit.value
       const err = Cause.squash(exit.cause)
@@ -699,9 +722,10 @@ const layer = Layer.effect(
       }
 
       const model = input.model ?? ag.model ?? (yield* currentModel(input.sessionID))
-      const same = ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
+      const same = !model.providerID.startsWith("external/")
+        && ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
       const full =
-        !input.variant && ag.variant && same
+        !input.variant && ag.variant && same && !model.providerID.startsWith("external/")
           ? yield* provider
               .getModel(model.providerID, model.modelID)
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
@@ -1112,13 +1136,43 @@ const layer = Layer.effect(
         .flatMap((part) => (part.type === "text" && "text" in part ? [part.text] : []))
         .join("\n")
         .trim()
+      let executionContext: unknown
       if (goal) {
         const cfg = yield* config.get()
         const instance = yield* InstanceState.context
-        const selectedModel = input.model ?? (yield* currentModel(input.sessionID))
         const kernelStatus = !session.parentID
           ? yield* Effect.promise(() => Coordinator.readStatus(input.sessionID, instance.directory))
           : undefined
+        const externalSelection = normalizeBackendSelection(
+          kernelStatus?.execution ?? ExecutionBackends.selectionFromEnvironment(),
+        )
+        const requestedExternalBackend = input.model?.providerID.startsWith("external/")
+          ? input.model.providerID.slice("external/".length)
+          : undefined
+        if (requestedExternalBackend && !externalSelection) {
+          return yield* Effect.die(new Error("EXTERNAL_EXECUTION_SELECTION_MISSING"))
+        }
+        if (requestedExternalBackend && externalSelection && requestedExternalBackend !== externalSelection.backendId) {
+          return yield* Effect.die(new Error("EXTERNAL_EXECUTION_MODEL_MISMATCH"))
+        }
+        const execution = externalSelection
+          ? {
+              adapterID: externalSelection.backendId,
+              modelID: externalSelection.modelId,
+              options: externalSelection.nativeOptions,
+              capabilityRevision: externalSelection.capabilityRevision,
+              kind: externalSelection.kind,
+              backendId: externalSelection.backendId,
+              connectionId: externalSelection.connectionId,
+            }
+          : undefined
+        const selectedModel = externalSelection
+          ? {
+              providerID: ProviderV2.ID.make(`external/${externalSelection.backendId}`),
+              modelID: ModelV2.ID.make(externalSelection.modelId),
+            }
+          : input.model ?? (yield* currentModel(input.sessionID))
+        const contextMessageID = input.messageID ?? MessageID.ascending()
         const planOnly = kernelStatus?.planOnly === true
         const directive = Orchestration.beginPrompt({
           sessionID: input.sessionID,
@@ -1136,12 +1190,22 @@ const layer = Layer.effect(
         })
         if (!session.parentID) {
           const rootPromptOps = yield* ops()
-          const executionContext = yield* captureExecutionContext(input.sessionID, {
+          const contextAgent = input.agent ?? (yield* agents.defaultInfo())?.name ?? "build"
+          executionContext = yield* captureExecutionContext(input.sessionID, {
+            sessionID: input.sessionID,
+            messageID: contextMessageID,
+            agent: contextAgent,
+            abort: new AbortController().signal,
+            messages: [],
             promptOps: rootPromptOps,
-            messageID: input.messageID,
-            agent: input.agent,
             model: selectedModel,
             variant: input.variant,
+            extra: {
+              promptOps: rootPromptOps,
+              modelSelection: selectedModel,
+              variant: input.variant,
+              executionSelection: execution,
+            },
           })
           yield* Effect.promise(() =>
             Coordinator.openRun({
@@ -1155,6 +1219,7 @@ const layer = Layer.effect(
               trigger: cfg.verification?.trigger,
               defaultDomain: cfg.kernel?.defaultDomain ?? "develop",
               context: executionContext,
+              execution,
             }),
           )
         }
@@ -1181,7 +1246,12 @@ const layer = Layer.effect(
               },
             ]
           : []
-        input = { ...input, parts: [...exploration, synthetic, ...input.parts] }
+          input = {
+            ...input,
+            messageID: contextMessageID,
+            ...(externalSelection ? { model: selectedModel } : {}),
+            parts: [...exploration, synthetic, ...input.parts],
+          }
       }
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1197,6 +1267,49 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+      if (!session.parentID) {
+        const instance = yield* InstanceState.context
+        const status = yield* Effect.promise(() => Coordinator.readStatus(input.sessionID, instance.directory))
+        if (goal && status.execution?.adapterID && status.execution.modelID) {
+          const result = yield* Effect.promise(() => executeExternalGoal({
+            sessionID: input.sessionID,
+            workspace: instance.directory,
+            goal,
+            context: executionContext,
+            execution: status.execution,
+            planOnly: status.planOnly === true,
+          }))
+          if (message.info.role !== "user") return message
+          const now = Date.now()
+          const info: SessionV1.Assistant = {
+            id: SessionV1.MessageID.ascending(),
+            parentID: message.info.id,
+            role: "assistant",
+            mode: input.agent ?? message.info.agent,
+            agent: input.agent ?? message.info.agent,
+            variant: message.info.model.variant,
+            path: { cwd: instance.directory, root: instance.directory },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: message.info.model.modelID,
+            providerID: message.info.model.providerID,
+            time: { created: now, completed: now },
+            sessionID: input.sessionID,
+            finish: "stop",
+          }
+          const text = result.output || result.status.message || `External backend finished with ${result.status.outcome ?? "no outcome"}.`
+          const part: SessionV1.TextPart = {
+            id: SessionV1.PartID.ascending(),
+            sessionID: input.sessionID,
+            messageID: info.id,
+            type: "text",
+            text,
+          }
+          yield* sessions.updateMessage(info)
+          yield* sessions.updatePart(part)
+          return { info, parts: [part] }
+        }
+      }
       return yield* loop({ sessionID: input.sessionID })
     })
 

@@ -39,7 +39,7 @@ import {
   UpdatePayload,
 } from "../groups/session"
 import { Coordinator } from "../../../../../harness/coordinator-service"
-import { AntigravityCli } from "../../../../../harness/execution/antigravity-cli"
+import { ExecutionBackends } from "../../../../../harness/execution/backend-router"
 import { InvalidRequestError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
@@ -278,8 +278,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* requireSession(ctx.params.sessionID)
       const control = ctx.payload
       if (control.type === "execution.discover") {
-        if (control.adapterID !== AntigravityCli.id) throw new Error("EXECUTION_ADAPTER_UNAVAILABLE")
-        return harnessResponse(yield* Effect.promise(() => AntigravityCli.capabilities()))
+        return harnessResponse(yield* Effect.promise(() => ExecutionBackends.discover(control.adapterID)))
       }
       if (control.type === "planning.execute") {
         // A reviewed plan may arrive before the planning stream has finished; never overlap both runs.
@@ -368,7 +367,38 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              // Synchronous prompt failures can be returned before the public
+              // event stream delivers Session.Event.Error. Forward the
+              // host-owned failure directly so Coordinator state cannot lose
+              // the provider/tool error during request teardown.
+              const error = Cause.squash(cause)
+              const record = error !== null && typeof error === "object"
+                ? error as { name?: unknown; code?: unknown; message?: unknown }
+                : undefined
+              const serialized = error instanceof NamedError
+                ? error.toObject()
+                : typeof record?.code === "string"
+                  ? {
+                      name: typeof record.name === "string" ? record.name : "ExternalExecutionError",
+                      code: record.code,
+                      data: { message: typeof record.message === "string" ? record.message.slice(0, 4000) : "External execution failed" },
+                    }
+                  : new NamedError.Unknown({
+                      message: Cause.pretty(cause).slice(0, 4000),
+                    }).toObject()
+              yield* Effect.promise(() =>
+                Coordinator.observeHostEvent("session.error", {
+                  sessionID: ctx.params.sessionID,
+                  error: serialized,
+                }),
+              ).pipe(Effect.ignore)
+              return yield* Effect.fail(new HttpApiError.BadRequest({}))
+            }),
+          ),
+        )
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })

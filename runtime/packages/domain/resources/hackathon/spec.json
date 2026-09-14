@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "skill-spec-v1",
+  "id": "hackathon",
+  "revision": "hackathon-1",
+  "description": "Demo-first execution skill layered on the develop domain.",
+  "defaultDomain": "develop",
+  "requiresPlan": true,
+  "demoFirst": true
+}

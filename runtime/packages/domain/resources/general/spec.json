@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "domain-spec-v1",
+  "id": "general",
+  "revision": "general-1",
+  "description": "Read-only research, lookup, and state inspection.",
+  "allowedOperations": ["read", "search", "question", "control", "delegate"],
+  "allowedSubagentTypes": ["explore"],
+  "planning": {
+    "requiresPlan": false,
+    "demoFirst": false
+  },
+  "verification": {
+    "defaultStrength": "structural",
+    "criterionTemplates": ["source_consistency", "observation"]
+  },
+  "measurement": {
+    "summarySchemaVersion": "evidence-summary-v1",
+    "requiredFields": ["actionId", "criterionId", "status", "observed", "detailRef"]
+  },
+  "compatibleSkills": []
+}

@@ -4,6 +4,9 @@ export interface Args {
   model?: string
   agent?: string
   prompt?: string
+  executionBackend?: string
+  executionModel?: string
+  executionEffort?: string
   continue?: boolean
   sessionID?: string
   fork?: boolean

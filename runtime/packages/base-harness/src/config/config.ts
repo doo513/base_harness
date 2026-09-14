@@ -239,11 +239,6 @@ const layer = Layer.effect(
       if (!("path" in options)) return data
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
-      if (!data.$schema) {
-        data.$schema = "https://base-harness.local/config.json"
-        const updated = text.replace(/^\s*\{/, '{\n  "$schema": "https://base-harness.local/config.json",')
-        yield* fs.writeFileString(options.path, updated).pipe(Effect.catch(() => Effect.void))
-      }
       return data
     })
 

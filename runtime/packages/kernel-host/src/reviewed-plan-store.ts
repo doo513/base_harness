@@ -19,6 +19,15 @@ export interface PlanSelection {
   variant?: string
   agent: string
   messageID: string
+  execution?: {
+    adapterID: string
+    modelID?: string
+    options?: Record<string, string>
+    capabilityRevision?: string
+    kind?: "model_api" | "agent_runtime"
+    backendId?: string
+    connectionId?: string
+  }
 }
 
 export interface ReviewedPlanRecord {

@@ -35,6 +35,11 @@ import {
   SessionStateStore, sessionSelection, summarizeRun,
   type RunHistory, type SessionStateStoreOptions,
 } from "./session-state-store"
+import {
+  domainPolicy as resolveDomainPolicy,
+  normalizeSelectionControl,
+  type DomainPolicy,
+} from "@base-harness/domain"
 
 export type { RunHistory, SessionStateStoreOptions } from "./session-state-store"
 export interface KernelHostOptions extends ReviewedPlanStoreOptions {
@@ -55,6 +60,7 @@ export interface MetaReviewRequest {
 export interface KernelStatus {
   domain: KernelSessionState["domain"]
   skills: KernelSessionState["skills"]
+  domainPolicy: DomainPolicy
   execution?: KernelSessionState["execution"]
   planningPreference: KernelSessionState["planningPreference"]
   planningState: KernelSessionState["planningState"]
@@ -154,6 +160,7 @@ interface RuntimeCoordinator {
     planId: string
     planRevision: number
     goalContractHash: string
+    domainPolicy?: DomainPolicy
     context?: unknown
   }): Promise<any>
   beginRestoredPlanExecution?(sessionID: string, input: any): Promise<any>
@@ -409,11 +416,20 @@ export class KernelHost {
         maxSameFailureRepairs: input.maxSameFailureRepairs ?? 2,
         maxParallelWorkUnits: Math.max(1, Math.min(2, input.maxParallelWorkUnits ?? 2)),
       }
+      // Keep the selected execution backend in the Kernel session state before
+      // the first status read. Without this, TUI prompts temporarily use the
+      // external model marker but the follow-up status falls back to the
+      // ordinary Provider loop and reports a fake external model as missing.
+      record.state = { ...record.state, execution: input.execution }
       record.restored = false
       record.workspace = input.workspace
       record.goal = input.goal
       record.context = input.context
-      const result = await this.runtime.openRun({ ...input, revisesPlan })
+      const result = await this.runtime.openRun({
+        ...input,
+        revisesPlan,
+        domainPolicy: resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills }),
+      })
       record.runId = result.runId
       return this.emitStatus(input.sessionID, result)
     } catch (error) {
@@ -433,7 +449,8 @@ export class KernelHost {
     if (context) record.context = context
     record.review = undefined
     record.state = { ...record.state, planningState: "contract_preflight" }
-    let normalized = normalizeContractProposal(proposal)
+    const policy = resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills })
+    let normalized = applyDomainContractPolicy(normalizeContractProposal(proposal), policy)
     assertContractProposal(normalized.contract)
     validateInterpretationBindings(
       normalized.interpretation,
@@ -459,7 +476,7 @@ export class KernelHost {
         record.state = { ...record.state, planningState: "awaiting_input" }
         return this.emitStatus(sessionID, this.runtime.status(sessionID))
       }
-      normalized = normalizeContractProposal(reviewed.artifact)
+      normalized = applyDomainContractPolicy(normalizeContractProposal(reviewed.artifact), policy)
       assertContractProposal(normalized.contract)
       validateInterpretationBindings(
         normalized.interpretation,
@@ -502,7 +519,14 @@ export class KernelHost {
     record.contractHash = digest(normalized.contract)
     record.decision = record.revisionOnly
       ? "planned"
-      : decidePlanning(record.state, planningSignals(normalized.contract, undefined))
+      : decidePlanning(
+          record.state,
+          planningSignals(
+            normalized.contract,
+            undefined,
+            resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills }),
+          ),
+        )
     record.state = {
       ...record.state,
       planningState: record.decision === "direct" ? "executing" : "planning_decision",
@@ -520,12 +544,11 @@ export class KernelHost {
       throw kernelError("CONTRACT_REQUIRED")
     }
     this.assertPlanningRunAvailable(sessionID)
-    const executionGraph = structuredClone(record.state.skills.includes("hackathon")
-      ? prioritizeDemoGraph(graph)
-      : graph)
-    const decision = record.revisionOnly
+    const policy = resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills })
+    const executionGraph = structuredClone(policy.demoFirst ? prioritizeDemoGraph(graph) : graph)
+    const decision = record.revisionOnly || record.state.execution?.kind === "agent_runtime"
       ? "planned"
-      : decidePlanning(record.state, planningSignals(record.contract, executionGraph))
+      : decidePlanning(record.state, planningSignals(record.contract, executionGraph, policy))
     record.decision = decision
     if (decision === "direct" && record.state.planningPreference !== "plan_once") {
       record.state = { ...record.state, planningState: "executing" }
@@ -689,6 +712,8 @@ export class KernelHost {
         const input = {
           planningRunId, planId: record.plan.planId, planRevision: record.plan.revision,
           goalContractHash: record.plan.goalContractHash, context: record.graphContext,
+          execution: record.state.execution,
+          domainPolicy: resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills }),
         }
         const execution = record.restored
           ? await this.runtime.beginRestoredPlanExecution!(sessionID, {
@@ -729,7 +754,15 @@ export class KernelHost {
       if (this.runtime.status(sessionID).runId === record.runId) await this.runtime.cancel?.(sessionID)
       this.clearReviewedPlan(record)
     }
-    const selected = applyControl(record.state, control)
+    const selected = control.type === "domain.set" || control.type === "skill.set"
+      ? {
+          ...record.state,
+          ...normalizeSelectionControl(
+            { domain: record.state.domain, skills: record.state.skills },
+            control,
+          ),
+        }
+      : applyControl(record.state, control)
     await this.persistSelection(sessionID, selected, selectionWorkspace)
     record.state = selected
     if (control.type === "domain.set" || control.type === "skill.set") record.explicitSelection = true
@@ -742,12 +775,15 @@ export class KernelHost {
   ) {
     const record = this.session(sessionID)
     const operation = hostOperation ?? operationForTool(toolID)
-    if (record.state.domain === "general" && operation === "unknown") {
+    const policy = resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills })
+    if (operation === "unknown" && !policy.allowedOperations.includes(operation as never)) {
       throw kernelError("DOMAIN_PERMISSION_UNKNOWN")
     }
-    if (!allowsOperation(record.state, operation, subagentType)) {
+    if (!allowsOperation(record.state, operation, subagentType, policy)) {
       throw kernelError(
-        record.state.domain === "general" ? "DOMAIN_PERMISSION_DENIED" : "PLAN_ONLY_MUTATION_DENIED",
+        policy.allowedOperations.includes(operation as never)
+          ? "PLAN_ONLY_MUTATION_DENIED"
+          : "DOMAIN_PERMISSION_DENIED",
       )
     }
   }
@@ -774,9 +810,11 @@ export class KernelHost {
 
   private mergeStatus(sessionID: string, status: any) {
     const record = this.session(sessionID)
+    const domainPolicy = resolveDomainPolicy({ domain: record.state.domain, skills: record.state.skills })
     const kernel: KernelStatus = {
       domain: record.state.domain,
       skills: record.state.skills,
+      domainPolicy,
       execution: record.state.execution,
       planningPreference: record.state.planningPreference,
       // Terminal runs have no planning work in flight. Do not mutate admission state.
@@ -1006,7 +1044,7 @@ function parseMetaOutput(raw: unknown, phase: MetaReviewPhase): MetaReviewReport
   return parseMetaReview(JSON.parse(raw.slice(start, end + 1)), phase)
 }
 
-function planningSignals(contract: any, graph: any): PlanningSignals {
+function planningSignals(contract: any, graph: any, policy?: Pick<DomainPolicy, "requiresPlan">): PlanningSignals {
   const claims = Array.isArray(contract?.claims) ? contract.claims : []
   const criteria = Array.isArray(contract?.criteria) ? contract.criteria : []
   const units = Array.isArray(graph?.units) ? graph.units : []
@@ -1044,6 +1082,7 @@ function planningSignals(contract: any, graph: any): PlanningSignals {
         ),
       ),
     ),
+    domainRequiresPlan: policy?.requiresPlan,
   }
 }
 
@@ -1079,6 +1118,27 @@ function normalizeContractProposal(proposal: unknown): {
   const contract = { ...input }
   delete contract.interpretation
   return { contract, interpretation }
+}
+
+function applyDomainContractPolicy(
+  normalized: { contract: Record<string, unknown>; interpretation: InterpretationProposal },
+  policy: DomainPolicy,
+) {
+  const templates = policy.verification.criterionTemplates
+  if (!templates.length || !Array.isArray(normalized.contract.criteria)) return normalized
+  const allowed = new Set(templates)
+  const criteria = normalized.contract.criteria.map((raw) => {
+    if (!raw || typeof raw !== "object") return raw
+    const criterion = raw as Record<string, unknown>
+    const template = criterion.verificationTemplate
+    if (template !== undefined && (typeof template !== "string" || !allowed.has(template))) {
+      throw kernelError("DOMAIN_CRITERION_TEMPLATE")
+    }
+    return template === undefined
+      ? { ...criterion, verificationTemplate: templates[0] }
+      : criterion
+  })
+  return { ...normalized, contract: { ...normalized.contract, criteria } }
 }
 
 function preflightStatus(
@@ -1170,11 +1230,34 @@ async function assertPlanFresh(plan: PlanSpec, workspace: string) {
 function selectionForPlan(context: unknown): PlanSelection | undefined {
   const value = context as { messageID?: string; agent?: string; extra?: {
     modelSelection?: { providerID?: string; modelID?: string }; variant?: string;
+    executionSelection?: {
+      adapterID?: string; modelID?: string; options?: Record<string, string>;
+      capabilityRevision?: string; kind?: "model_api" | "agent_runtime";
+      backendId?: string; connectionId?: string;
+    };
   } } | undefined
   const model = value?.extra?.modelSelection
-  if (!model?.providerID || !model.modelID || !value?.messageID || !value.agent) return
-  return { providerID: model.providerID, modelID: model.modelID, variant: value.extra?.variant,
-    messageID: value.messageID, agent: value.agent }
+  const execution = value?.extra?.executionSelection
+  if ((!model?.providerID || !model.modelID) && (!execution?.adapterID || !execution.modelID)) return
+  if (!value?.messageID || !value.agent) return
+  return {
+    providerID: model?.providerID ?? `external/${execution!.adapterID}`,
+    modelID: model?.modelID ?? execution!.modelID!,
+    variant: value.extra?.variant,
+    messageID: value.messageID,
+    agent: value.agent,
+    execution: execution?.adapterID && execution.modelID
+      ? {
+          adapterID: execution.adapterID,
+          modelID: execution.modelID,
+          options: execution.options,
+          capabilityRevision: execution.capabilityRevision,
+          kind: execution.kind,
+          backendId: execution.backendId,
+          connectionId: execution.connectionId,
+        }
+      : undefined,
+  }
 }
 
 function digest(value: unknown) {

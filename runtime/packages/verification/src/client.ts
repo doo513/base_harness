@@ -208,6 +208,7 @@ export class ProcessVerificationClient implements VerificationClient {
         configuredProfile: input.configuredProfile,
         effectiveProfile: input.effectiveProfile,
         escalationReasons: input.escalationReasons,
+        domainPolicy: input.domainPolicy,
         ...(input.goalContract ? { goalContract: input.goalContract } : {}),
       },
       input.scopeId,

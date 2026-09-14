@@ -14,6 +14,7 @@ import {
   type ProcessVerificationClient,
   type VerificationProfile,
   type VerificationStatus,
+  type DomainPolicySnapshot,
 } from "@base-harness/verification"
 import { CandidateService } from "./candidate-service"
 import type {
@@ -30,6 +31,7 @@ import type {
   VerificationTarget,
   WorkerExecutor,
   WorkerState,
+  ExecutionSelection,
 } from "./contracts"
 import { integrationRepairPrompt, workerRepairPrompt } from "./repair-router"
 import { PersistenceGateway } from "./persistence-gateway"
@@ -84,6 +86,8 @@ type RunRecord = {
   effectiveProfile: VerificationProfile
   isolation?: import("./contracts").IsolationStatus
   sandboxRuns: number
+  executionSelection?: ExecutionSelection
+  domainPolicy?: DomainPolicySnapshot
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -300,14 +304,35 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (isTrustedFailureEnvelope(error) && error.runId === run.runId && error.scopeId === scopeId) {
       return this.failureStatus(run, error)
     }
-    const source = error instanceof Orchestration.OrchestrationError
+    const backendCode = stringValue(record(error)?.code)
+    const externalBackendFailure = backendCode !== undefined && /^(?:AGY|BACKEND)_/.test(backendCode)
+    const source = externalBackendFailure
+      ? backendCode.includes("SCOPE") ? "harness" : "provider"
+      : error instanceof Orchestration.OrchestrationError
       ? error.code === "WORKSPACE_CONFLICT" ? "workspace" : "harness"
       : error instanceof VerificationClientError
         ? error.failureKind === "workspace_conflict" ? "workspace" : "verifier"
         : "harness"
     return this.failureStatus(run, createFailureEnvelope({
-      runId: run.runId, scopeId, source, producer: "orchestrator", phase, error,
+      runId: run.runId,
+      scopeId,
+      source,
+      producer: externalBackendFailure ? "model_gateway" : "orchestrator",
+      phase,
+      error,
     }))
+  }
+
+  private async recordPreContractFailure(run: RunRecord, failure: TrustedFailureEnvelope) {
+    if (!this.isLive(run)) return
+    const status = this.failureStatus(run, failure)
+    run.executionFailures.set(run.sessionID, status)
+    run.rootExecutionFailure = status
+    run.verification = status
+    // Failure recording is independent from contract acceptance. It is not
+    // Evidence and must not grant mutation or Ready authority.
+    this.orchestration.markOutcome(run.sessionID, "blocked")
+    await this.publish(run)
   }
 
   private async failWorker(run: RunRecord, worker: WorkerRecord, error: unknown, phase: string, observed = true) {
@@ -362,6 +387,7 @@ export class CoordinatorRuntime implements CoordinatorService {
           goalSources: [run.source],
           configuredProfile: run.configuredProfile,
           effectiveProfile: run.effectiveProfile,
+          domainPolicy: run.domainPolicy,
         },
         { redactor: (value) => this.persistence.redact(run.runId, value) },
       )
@@ -477,12 +503,14 @@ export class CoordinatorRuntime implements CoordinatorService {
       trigger: input.trigger ?? "auto",
       contractAccepted: false,
       context: input.context,
+      executionSelection: input.execution,
       integrationStarted: false,
       integrationComplete: true,
       settledWaiters: new Set(),
       configuredProfile: profile,
       effectiveProfile: input.effectiveProfile ?? profile,
       sandboxRuns: 0,
+      domainPolicy: input.domainPolicy,
     }
     this.repository.set(run)
     await this.publish(run)
@@ -520,8 +548,10 @@ export class CoordinatorRuntime implements CoordinatorService {
       const nextInput: BeginRunInput = {
         sessionID, workspace: planning.workspace, goal: planning.goal,
         configuredProfile: planning.configuredProfile, effectiveProfile: planning.effectiveProfile,
-        maxSameFailureRepairs: planning.verification.maxSameFailureRepairs,
+         maxSameFailureRepairs: planning.verification.maxSameFailureRepairs,
         maxParallelWorkUnits: planning.maxParallel, trigger: planning.trigger,
+        execution: planning.executionSelection,
+        domainPolicy: planning.domainPolicy,
         context: input.context ?? planning.context,
       }
       // Closing a planning sidecar cannot transfer its observations, evidence, or completion authority.
@@ -557,7 +587,8 @@ export class CoordinatorRuntime implements CoordinatorService {
       sessionID, workspace: input.workspace, goal: input.goal, context: input.context,
       configuredProfile: input.configuredProfile, effectiveProfile: input.effectiveProfile,
       trigger: input.trigger, maxSameFailureRepairs: input.maxSameFailureRepairs,
-      maxParallelWorkUnits: input.maxParallelWorkUnits,
+      maxParallelWorkUnits: input.maxParallelWorkUnits, execution: input.execution,
+      domainPolicy: input.domainPolicy,
     })
     const run = this.runs.get(sessionID)
     if (!run || run.runId !== opened.runId || run.runId === input.planningRunId) throw new Error("PLAN_EXECUTION_RUN_INVALID")
@@ -587,6 +618,7 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (!run) return this.snapshotOrInactive(sessionID)
     if (run.planExecutionStarting) throw new Error("RUN_ACTIVE: contract changes are suspended during execution handoff")
     if (run.metaReviewFailure) throw new Error("META_REVIEW_RUN_FAILED: start a new run after resolving the review failure")
+    if (run.rootExecutionFailure) return this.snapshot(run)
     await this.ensureVerifier(run)
     if (!run.verifier) return this.snapshot(run)
     const contract = materializeProposal(run.source, proposal)
@@ -715,6 +747,7 @@ export class CoordinatorRuntime implements CoordinatorService {
           rootSessionID: run.sessionID, unit: worker.unit, context: run.context, signal: run.execution.signal, taskID, repairPrompt,
         })
         if (!this.isLive(run)) return
+        worker.output = result.output
         if (worker.scopeId && worker.scopeId !== result.sessionID) {
           throw new Error("WORKER_SCOPE_MISMATCH: executor returned a different child session.")
         }
@@ -861,7 +894,26 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (run.integrationStarted || run.integrationComplete || run.interrupted) return
     run.integrationStarted = true
     await this.publish(run)
-    if (!this.integrationExecutor || !run.context || !run.graph) {
+    if (!run.context || !run.graph) {
+      await this.blockRootExecution(run,
+        Object.assign(new Error("Coordinator root integration executor is unavailable."), { code: "ROOT_INTEGRATION_UNAVAILABLE" }),
+        "root.integration.dispatch")
+      return
+    }
+    // A WorkGraph is not complete when its workers finish: the root integration
+    // stage is the single place where shared files and final root decisions run.
+    // If no executor is registered, the branch below turns that missing stage
+    // into a harness failure instead of silently issuing Ready.
+    const needsIntegration =
+      run.graph.integrationPaths.length > 0 ||
+      run.graph.units.some((unit) => unit.integrationRequests.length > 0)
+    if (!needsIntegration) {
+      run.integrationComplete = true
+      await this.publish(run)
+      if (run.trigger === "auto") void this.verifyRoot(run.sessionID, "automatic")
+      return
+    }
+    if (!this.integrationExecutor) {
       await this.blockRootExecution(run,
         Object.assign(new Error("Coordinator root integration executor is unavailable."), { code: "ROOT_INTEGRATION_UNAVAILABLE" }),
         "root.integration.dispatch")
@@ -1011,6 +1063,40 @@ export class CoordinatorRuntime implements CoordinatorService {
     const run = this.runFor(sessionID)
     if (!run || run.interrupted || run.metaReviewFailure) return
     if (!run.contractAccepted) {
+      if (type === "session.error" && properties?.error) {
+        const errorName = stringValue(record(properties.error)?.name) ?? "unknown"
+        const errorCode = stringValue(record(properties.error)?.code)
+        const externalBackendFailure = errorCode !== undefined && /^(?:AGY|BACKEND)_/.test(errorCode)
+        const key = `session.error:${sessionID}:${errorName}`
+        if (!run.observedActions.has(key)) {
+          run.observedActions.add(key)
+          await this.recordPreContractFailure(run, createFailureEnvelope({
+            runId: run.runId,
+            scopeId: run.sessionID,
+            source: externalBackendFailure ? "provider" : "model",
+            producer: externalBackendFailure ? "model_gateway" : "model_gateway",
+            phase: externalBackendFailure ? "provider.execution" : "model.response",
+            error: properties.error,
+          }))
+        }
+        return
+      }
+      if (type === "message.part.updated" && part?.type === "tool") {
+        const state = record(part.state)
+        if (state?.status === "error") {
+          const rawError = state.error ?? { name: "ToolExecutionError", message: "Tool execution failed" }
+          await this.recordPreContractFailure(run, createFailureEnvelope({
+            runId: run.runId,
+            scopeId: run.sessionID,
+            actionId: stringValue(part.id),
+            source: "tool",
+            producer: "tool_host",
+            phase: "tool.execute",
+            error: rawError,
+          }))
+          return
+        }
+      }
       if (type === "session.error" || (type === "message.part.updated" && part?.type === "tool")) {
         if (run.pendingHostEvents.length < 2048) run.pendingHostEvents.push({ type, data })
       }
@@ -1078,7 +1164,13 @@ export class CoordinatorRuntime implements CoordinatorService {
           input: state?.input,
           output: state?.output,
           error: failure,
-          metadata: { hostObserved: true, callId: stringValue(part.callID) },
+          metadata: {
+            hostObserved: true,
+            callId: stringValue(part.callID),
+            ...(record(state?.metadata)?.evidenceSummary !== undefined
+              ? { evidenceSummary: record(state?.metadata)?.evidenceSummary }
+              : {}),
+          },
         })
         this.acceptVerifierStatus(run, observed)
         if (status === "completed" && observed.state !== "failure") run.executionFailures.delete(sessionID)
@@ -1231,6 +1323,8 @@ export class CoordinatorRuntime implements CoordinatorService {
       readyEligible: run.verification.readyEligible === true,
       message: run.verification.message,
       isolation: run.isolation,
+      execution: run.executionSelection,
+      domainPolicy: run.domainPolicy,
       metrics: {
         observedActions: run.observedActions.size,
         workers: run.workers.size,

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { link, lstat, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises"
 import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistence"
 import type { KernelSessionState } from "@base-harness/kernel"
+import { domainPolicy as resolveDomainPolicy } from "@base-harness/domain"
 import os from "node:os"
 import path from "node:path"
 
@@ -56,16 +57,27 @@ const terminal = new Set(["ready", "blocked", "failure", "interrupted", "plan_re
 
 function validSelection(value: unknown): value is SessionSelection {
   if (!object(value) || !exactKeys(value, ["domain", "skills", "planningPreference", "execution"])
-      || !["develop", "general"].includes(value.domain)
       || !["auto", "plan_once"].includes(value.planningPreference)
-      || !Array.isArray(value.skills) || value.skills.length > 1
-      || value.skills.some((skill: unknown) => skill !== "hackathon")
-      || (value.domain === "general" && value.skills.length > 0)) return false
+      || !Array.isArray(value.skills) || value.skills.length > 1) return false
+  try {
+    const policy = resolveDomainPolicy({
+      domain: value.domain as "develop" | "general",
+      skills: value.skills as Array<"hackathon">,
+    })
+    if (policy.domainId !== value.domain) return false
+  } catch {
+    return false
+  }
   const execution = value.execution
   if (execution === undefined) return true
-  if (!object(execution) || !exactKeys(execution, ["adapterID", "modelID", "options", "capabilityRevision"])
+  if (!object(execution) || !exactKeys(execution, [
+    "adapterID", "modelID", "options", "capabilityRevision", "kind", "backendId", "connectionId",
+  ])
       || !text(execution.adapterID, 256) || !execution.adapterID
       || (execution.modelID !== undefined && !text(execution.modelID, 512))
+      || (execution.kind !== undefined && !["model_api", "agent_runtime"].includes(execution.kind))
+      || (execution.backendId !== undefined && !text(execution.backendId, 256))
+      || (execution.connectionId !== undefined && !text(execution.connectionId, 256))
       || (execution.capabilityRevision !== undefined && !text(execution.capabilityRevision, 512))) return false
   return execution.options === undefined || (object(execution.options)
     && Object.keys(execution.options).length <= 32

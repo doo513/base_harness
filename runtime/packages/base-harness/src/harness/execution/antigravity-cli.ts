@@ -10,6 +10,7 @@ import {
   parseAntigravityStreamEvent,
   type AntigravityCapabilities,
 } from "@base-harness/core/antigravity-protocol"
+import type { BackendMutationPolicy } from "./backend"
 
 type ErrorCode =
   | "AGY_UNAVAILABLE"
@@ -60,6 +61,8 @@ interface ExecuteInput {
   modelID?: string
   options?: Record<string, string>
   capabilityRevision?: string
+  phase?: string
+  mutationPolicy?: BackendMutationPolicy
   signal?: AbortSignal
   routeWrite(relativePath: string): Promise<{ physicalPath: string }>
 }
@@ -70,10 +73,22 @@ interface ExecuteResult {
   capabilityRevision: string
 }
 
-const excludedRoots = new Set([".git", ".venv", "node_modules", "dist", "build", ".next", "target", ".cache"])
+// These directories are disposable execution state, not candidate artifacts.
+// Apply the filter at every depth: a repository workspace commonly contains
+// runtime/node_modules, package-level build output, and nested test caches.
+// Walking those directories made the TUI appear hung before the first model
+// request and could turn dependencies into an enormous candidate snapshot.
+const excludedDirectories = new Set([
+  ".git", ".venv", "venv", "Python", "node_modules", "dist", "build", ".next", "target",
+  ".cache", ".pytest_cache", "__pycache__", ".tools", "coverage", ".turbo", ".vite",
+])
 const managed = new Map<string, ManagedWorkspace>()
 const maxChangedFiles = 256
 const maxChangedBytes = 50 * 1024 * 1024
+
+function isExcludedPath(relative: string): boolean {
+  return relative.split(path.sep).some((segment) => excludedDirectories.has(segment))
+}
 
 function childEnvironment(): Record<string, string> {
   const keys = [
@@ -112,8 +127,8 @@ async function runCommand(command: string[], input?: string, signal?: AbortSigna
   signal?.addEventListener("abort", terminate, { once: true })
   const timeout = setTimeout(terminate, timeoutMs)
   try {
-    if (input !== undefined) processHandle.stdin.write(input)
-    processHandle.stdin.end()
+    if (input !== undefined) await processHandle.stdin.write(input)
+    await processHandle.stdin.end()
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(processHandle.stdout).text(),
       new Response(processHandle.stderr).text(),
@@ -138,8 +153,8 @@ async function digestFile(file: string): Promise<string> {
 async function snapshot(root: string, relative = "", result = new Map<string, SnapshotEntry>()) {
   const directory = path.join(root, relative)
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-    if (!relative && excludedRoots.has(entry.name)) continue
     const childRelative = path.join(relative, entry.name)
+    if (isExcludedPath(childRelative)) continue
     const child = path.join(root, childRelative)
     const stat = await fs.lstat(child)
     if (stat.isSymbolicLink()) {
@@ -186,7 +201,7 @@ async function managedWorkspace(sessionID: string, workspace: string): Promise<M
     filter: (candidate) => {
       const relative = path.relative(source, candidate)
       if (!relative) return true
-      return !excludedRoots.has(relative.split(path.sep)[0]!)
+      return !isExcludedPath(relative)
     },
   })
   const record: ManagedWorkspace = {
@@ -209,7 +224,10 @@ async function dispose(sessionID: string): Promise<void> {
 }
 
 async function linuxPath(windowsPath: string): Promise<string> {
-  if (process.platform !== "win32") return windowsPath
+  // The native Windows backend must not depend on wsl.exe or wslpath.
+  // antigravityCommand uses the same environment switch when choosing the
+  // actual process backend.
+  if (process.platform !== "win32" || process.env.BASE_HARNESS_AGY_USE_WSL === "0") return windowsPath
   const command = [
     "wsl.exe",
     ...(process.env.BASE_HARNESS_AGY_WSL_DISTRO ? ["-d", process.env.BASE_HARNESS_AGY_WSL_DISTRO] : []),
@@ -254,13 +272,28 @@ async function captureChanges(record: ManagedWorkspace, routeWrite: ExecuteInput
   if (changed.length > maxChangedFiles || changed.reduce((total, [, entry]) => total + entry.size, 0) > maxChangedBytes) {
     throw new AntigravityCliError("AGY_SCOPE_VIOLATION", "Managed execution exceeded the candidate change limit")
   }
+  const routes: Array<{ relative: string; sourcePath: string; physicalPath: string }> = []
   for (const [relative, entry] of changed) {
     if (entry.kind !== "file") {
       throw new AntigravityCliError("AGY_SCOPE_VIOLATION", `Managed execution changed a link: ${relative}`)
     }
-    const route = await routeWrite(relative.split(path.sep).join("/"))
+    let route: { physicalPath: string }
+    try {
+      route = await routeWrite(relative.split(path.sep).join("/"))
+    } catch (error) {
+      throw new AntigravityCliError(
+        "AGY_SCOPE_VIOLATION",
+        `Managed execution could not publish ${relative}`,
+        error,
+      )
+    }
+    routes.push({ relative, sourcePath: path.join(record.root, relative), physicalPath: route.physicalPath })
+  }
+  // Resolve every destination before copying any file. A later scope failure
+  // must not leave an earlier allowed file partially published.
+  for (const route of routes) {
     await fs.mkdir(path.dirname(route.physicalPath), { recursive: true })
-    await fs.copyFile(path.join(record.root, relative), route.physicalPath)
+    await fs.copyFile(route.sourcePath, route.physicalPath)
   }
   return changed.map(([relative]) => relative.split(path.sep).join("/"))
 }
@@ -299,7 +332,12 @@ export namespace AntigravityCli {
     }
 
     const workspace = await managedWorkspace(input.sessionID, input.workspace)
-    const cwd = await linuxPath(workspace.root)
+    const mutationPolicy = input.mutationPolicy ?? (
+      input.phase === "plan" || input.phase === "meta_review" ? "forbid" : "capture"
+    )
+    const executeManaged = async (): Promise<ExecuteResult> => {
+    const useWsl = process.platform === "win32" && process.env.BASE_HARNESS_AGY_USE_WSL !== "0"
+    const cwd = useWsl ? await linuxPath(workspace.root) : workspace.root
     const args = [
       "--input-format",
       "stream-json",
@@ -307,6 +345,11 @@ export namespace AntigravityCli {
       "stream-json",
       "--disable-slash-commands",
       "--sandbox",
+      ...(process.env.BASE_HARNESS_AGY_SKIP_PERMISSIONS === "0" ? [] : ["--dangerously-skip-permissions"]),
+      "--mode",
+      mutationPolicy === "forbid" ? "plan" : "accept-edits",
+      "--add-dir",
+      cwd,
       "--print-timeout",
       process.env.BASE_HARNESS_AGY_PRINT_TIMEOUT ?? "20m",
       ...(input.modelID ? ["--model", input.modelID] : []),
@@ -314,7 +357,7 @@ export namespace AntigravityCli {
     ]
     const command = antigravityCommand(args, {
       distro: process.env.BASE_HARNESS_AGY_WSL_DISTRO,
-      linuxCwd: process.platform === "win32" ? cwd : undefined,
+      linuxCwd: useWsl ? cwd : undefined,
     })
     const request = `${JSON.stringify({ event: "user", message: { content: input.prompt } })}\n`
     const result = await runCommand(command, request, input.signal, 25 * 60 * 1000, workspace.root)
@@ -334,10 +377,31 @@ export namespace AntigravityCli {
     } catch (error) {
       throw new AntigravityCliError("AGY_PROTOCOL_ERROR", "Antigravity returned malformed stream-json", error)
     }
-    if (!terminal || terminal.status !== "SUCCESS" || typeof terminal.response !== "string") {
+    const terminalPayload = terminal && isTerminalPayload(terminal.result) ? terminal.result : terminal
+    const deniedActions = terminalPayload && Array.isArray((terminalPayload as { denied_actions?: unknown }).denied_actions)
+      ? (terminalPayload as { denied_actions: unknown[] }).denied_actions
+      : terminal && Array.isArray(terminal.denied_actions) ? terminal.denied_actions : []
+    if (
+      !terminalPayload || terminalPayload.status !== "SUCCESS" ||
+      typeof terminalPayload.response !== "string" || !terminalPayload.response.trim() ||
+      deniedActions.length > 0
+    ) {
       throw new AntigravityCliError("AGY_RUN_FAILED", "Antigravity did not return a successful terminal result", terminal)
     }
+    if (mutationPolicy === "forbid") {
+      return { output: terminalPayload.response, changedFiles: [], capabilityRevision: capabilities.revision }
+    }
     const changedFiles = await captureChanges(workspace, input.routeWrite)
-    return { output: terminal.response, changedFiles, capabilityRevision: capabilities.revision }
+    return { output: terminalPayload.response, changedFiles, capabilityRevision: capabilities.revision }
+    }
+    return executeManaged().finally(async () => {
+      if (mutationPolicy === "forbid") await dispose(input.sessionID)
+    })
   }
+}
+
+function isTerminalPayload(value: unknown): value is { status: unknown; response: unknown } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const payload = value as Record<string, unknown>
+  return "status" in payload || "response" in payload
 }

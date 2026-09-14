@@ -36,6 +36,18 @@ export const TuiCommandBuilder = (yargs: Argv) =>
         type: "string",
         describe: "agent to use",
       })
+      .option("execution-backend", {
+        type: "string",
+        describe: "external execution backend ID discovered by the Host",
+      })
+      .option("execution-model", {
+        type: "string",
+        describe: "exact model ID reported by the selected execution backend",
+      })
+      .option("execution-effort", {
+        type: "string",
+        describe: "exact reasoning effort reported for the selected external model",
+      })
       .option("auto", {
         type: "boolean",
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",

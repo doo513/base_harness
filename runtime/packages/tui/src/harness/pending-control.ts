@@ -1,3 +1,5 @@
+import { normalizeSelectionControl, type DomainSelection } from "@base-harness/domain"
+
 export type HarnessControl =
   | { type: "domain.set"; domain: "develop" | "general" }
   | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
@@ -49,24 +51,25 @@ export function queueHarnessControl(control: HarnessControl) {
 }
 
 export function pendingHarnessSelection(): PendingHarnessSelection {
-  let domain: PendingHarnessSelection["domain"] = "develop"
-  let hackathon = false
+  let selection: DomainSelection = { domain: "develop", skills: [] }
   let planOnce = false
   let execution: PendingHarnessSelection["execution"]
   for (const control of pending) {
-    if (control.type === "domain.set") {
-      domain = control.domain
-      hackathon = false
-    } else if (control.type === "skill.set") {
-      hackathon = control.enabled
-      if (control.enabled) domain = "develop"
+    if (control.type === "domain.set" || control.type === "skill.set") {
+      selection = normalizeSelectionControl(selection, control)
     } else if (control.type === "execution.select") {
       execution = control.selection
     } else if (control.type === "planning.plan_once") {
       planOnce = true
     }
   }
-  return { domain, hackathon, planOnce, execution, count: pending.length }
+  return {
+    domain: selection.domain,
+    hackathon: selection.skills.includes("hackathon"),
+    planOnce,
+    execution,
+    count: pending.length,
+  }
 }
 
 export function subscribePendingHarnessControls(listener: () => void) {

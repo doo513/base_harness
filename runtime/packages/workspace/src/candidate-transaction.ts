@@ -52,6 +52,18 @@ export async function publishCandidateFiles(
   const temporary = new Set<string>()
   let journalCreated = false
 
+  const ensureDirectory = async (directory: string) => {
+    try {
+      await io.mkdir(directory, { recursive: true })
+    } catch (error) {
+      // Bun's Windows fs compatibility layer can report EEXIST for a
+      // recursive mkdir whose directory already exists. Treat only that
+      // idempotent case as success; a file at the path still fails on the
+      // following exclusive write instead of being hidden.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    }
+  }
+
   const writeExclusive = async (filename: string, value: Uint8Array, mode: number, track = false) => {
     const handle = await io.open(filename, "wx", mode)
     if (track) temporary.add(filename)
@@ -84,7 +96,7 @@ export async function publishCandidateFiles(
   }
 
   try {
-    await io.mkdir(path.dirname(options.journal), { recursive: true })
+    await ensureDirectory(path.dirname(options.journal))
     await io.mkdir(options.journal)
     journalCreated = true
 
@@ -92,7 +104,7 @@ export async function publishCandidateFiles(
     // Backups are copied, never renamed across workspace/state filesystem boundaries.
     for (const entry of entries) {
       await assertCurrent(entry.path, entry.beforeHash)
-      await io.mkdir(path.dirname(entry.path), { recursive: true })
+      await ensureDirectory(path.dirname(entry.path))
       await writeExclusive(entry.temporary, entry.after, entry.mode, true)
       if (entry.backup && entry.before) await writeExclusive(entry.backup, entry.before, 0o600)
     }

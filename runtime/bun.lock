@@ -284,6 +284,13 @@
         "drizzle-kit": "catalog:",
       },
     },
+    "packages/domain": {
+      "name": "@base-harness/domain",
+      "version": "2.0.0",
+      "devDependencies": {
+        "typescript": "catalog:",
+      },
+    },
     "packages/effect-drizzle-sqlite": {
       "name": "@base-harness/effect-drizzle-sqlite",
       "version": "0.1.0",
@@ -340,6 +347,7 @@
       "name": "@base-harness/kernel-host",
       "version": "2.0.0",
       "dependencies": {
+        "@base-harness/domain": "workspace:*",
         "@base-harness/kernel": "workspace:*",
         "@base-harness/workspace": "workspace:*",
       },
@@ -475,6 +483,7 @@
       "version": "2.0.0",
       "dependencies": {
         "@base-harness/core": "workspace:*",
+        "@base-harness/domain": "workspace:*",
         "@base-harness/plugin": "workspace:*",
         "@base-harness/sdk": "workspace:*",
         "@base-harness/ui": "workspace:*",
@@ -905,6 +914,8 @@
     "@base-harness/coordinator": ["@base-harness/coordinator@workspace:packages/coordinator"],
 
     "@base-harness/core": ["@base-harness/core@workspace:packages/core"],
+
+    "@base-harness/domain": ["@base-harness/domain@workspace:packages/domain"],
 
     "@base-harness/effect-drizzle-sqlite": ["@base-harness/effect-drizzle-sqlite@workspace:packages/effect-drizzle-sqlite"],
 

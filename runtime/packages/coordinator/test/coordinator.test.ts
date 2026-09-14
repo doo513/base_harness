@@ -26,6 +26,45 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
+test("Coordinator records a model failure before contract acceptance", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "base-harness-precontract-"))
+  roots.push(workspace)
+
+  const runtime = new CoordinatorRuntime(async (input) => new FakeVerifier(input) as unknown as ProcessVerificationClient)
+  runtimes.push({ runtime, workspace })
+  runtime.orchestration.beginPrompt({
+    sessionID: "precontract-root",
+    workspace,
+    goal: "Use the configured model to complete the task",
+  })
+  await runtime.openRun({
+    sessionID: "precontract-root",
+    workspace,
+    goal: "Use the configured model to complete the task",
+    configuredProfile: "adaptive",
+  })
+
+  await runtime.observeHostEvent("session.error", {
+    sessionID: "precontract-root",
+    error: {
+      name: "APIError",
+      data: {
+        message: "provider rejected the continuation",
+        statusCode: 400,
+        isRetryable: false,
+      },
+    },
+  })
+
+  const status = runtime.status("precontract-root")
+  expect(status.phase).toBe("blocked")
+  expect(status.verificationState).toBe("failure")
+  expect(status.outcome).toBe("failure")
+  expect(status.failureKind).toBe("model_provider_error")
+  expect(status.readyEligible).toBe(false)
+  expect(status.message).toContain("provider rejected the continuation")
+})
+
 class FakeVerifier {
   readonly runId: string
   readonly rootScopeId: string

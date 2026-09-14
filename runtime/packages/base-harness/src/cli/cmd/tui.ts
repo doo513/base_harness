@@ -102,6 +102,9 @@ export const TuiThreadCommand = cmd({
         model: args.model,
         agent: args.agent,
         prompt: args.prompt,
+        executionBackend: args["execution-backend"],
+        executionModel: args["execution-model"],
+        executionEffort: args["execution-effort"],
         replay: noReplay ? false : undefined,
         replayLimit: args.replayLimit,
         demo: args.demo,
@@ -142,6 +145,17 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
+      const executionBackend = args["execution-backend"]
+      const executionModel = args["execution-model"]
+      const executionEffort = args["execution-effort"]
+      if (executionBackend !== undefined && !executionModel?.trim()) {
+        UI.error("--execution-model is required with --execution-backend")
+        return
+      }
+      if (executionBackend === undefined && (executionModel !== undefined || executionEffort !== undefined)) {
+        UI.error("--execution-model and --execution-effort require --execution-backend")
+        return
+      }
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -225,6 +239,9 @@ export const TuiThreadCommand = cmd({
               agent: args.agent,
               model: args.model,
               prompt,
+              executionBackend,
+              executionModel,
+              executionEffort,
               fork: args.fork,
               auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
             },

@@ -21,6 +21,7 @@
       "packages/base-harness",
       "packages/codemode",
       "packages/coordinator",
+      "packages/domain",
       "packages/kernel",
       "packages/core",
       "packages/effect-drizzle-sqlite",

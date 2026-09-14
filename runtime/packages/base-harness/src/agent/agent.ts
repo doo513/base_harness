@@ -371,6 +371,9 @@ const layer = Layer.effect(
       }) {
         const cfg = yield* config.get()
         const model = input.model ?? (yield* provider.defaultModel())
+        if (model.providerID.startsWith("external/")) {
+          return yield* Effect.die(new Error("EXTERNAL_MODEL_ROUTE_REQUIRED"))
+        }
         const resolved = yield* provider.getModel(model.providerID, model.modelID)
         const language = yield* provider.getLanguage(resolved)
         const tracer = cfg.experimental?.openTelemetry

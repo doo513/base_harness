@@ -25,9 +25,12 @@ import { executionBridge } from "../harness/execution-context"
 import { runUntilCancelled } from "../harness/execution-lifetime"
 import { requireExecutionModel } from "../harness/model-selection"
 import { AntigravityCli, type ExecutionSelection } from "../harness/execution/antigravity-cli"
+import { ExecutionBackends, normalizeBackendSelection } from "../harness/execution/backend-router"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@base-harness/core/database/database"
+import { ModelV2 } from "@base-harness/core/model"
+import { ProviderV2 } from "@base-harness/core/provider"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -246,20 +249,27 @@ export const TaskTool = Tool.define(
         Coordinator.registerWorkerScope(ctx.sessionID, nextSession.id, params.work_unit_id)
       }
 
-      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
-        Effect.provideService(Database.Service, database),
-        Effect.orDie,
-      )
-      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
-      const variant = msg.info.variant
-
-      const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
       const execution =
         (Coordinator.status(ctx.sessionID) as { execution?: ExecutionSelection }).execution ??
         AntigravityCli.selectionFromEnvironment()
+      const managedSelection = params.work_unit_id ? normalizeBackendSelection(execution) : undefined
+      const msg = managedSelection
+        ? undefined
+        : yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+            Effect.provideService(Database.Service, database),
+            Effect.orDie,
+          )
+      if (!managedSelection && (!msg || msg.info.role !== "assistant")) {
+        return yield* Effect.fail(new Error("Not an assistant message"))
+      }
+      const variant = msg?.info.role === "assistant" ? msg.info.variant : undefined
+      const selectedModel = msg?.info.role === "assistant"
+        ? { modelID: msg.info.modelID, providerID: msg.info.providerID }
+        : {
+            modelID: ModelV2.ID.make(managedSelection!.modelId),
+            providerID: ProviderV2.ID.make(`external/${managedSelection!.backendId}`),
+          }
+      const model = next.model ?? selectedModel
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -279,21 +289,22 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTaskCore = Effect.fn("TaskTool.runTask")(function* () {
-        if (params.work_unit_id && execution) {
-          if (execution.adapterID !== AntigravityCli.id) {
-            return yield* Effect.fail(new Error(`Unknown managed execution adapter: ${execution.adapterID}`))
+        if (params.work_unit_id && managedSelection) {
+          if (!ExecutionBackends.get(managedSelection.backendId)) {
+            return yield* Effect.fail(new Error(`Unknown managed execution adapter: ${managedSelection.backendId}`))
           }
           const workspace = Coordinator.status(ctx.sessionID).workspace
           if (!workspace) return yield* Effect.fail(new Error("COORDINATOR_WORKSPACE_REQUIRED"))
           const result = yield* Effect.tryPromise({
             try: () =>
-              AntigravityCli.execute({
+              ExecutionBackends.execute({
                 sessionID: nextSession.id,
+                scopeID: nextSession.id,
                 workspace: workspace,
                 prompt: taskPrompt,
-                modelID: execution.modelID,
-                options: execution.options,
-                capabilityRevision: execution.capabilityRevision,
+                selection: managedSelection,
+                phase: params.task_id ? "repair" : "implementation",
+                mutationPolicy: "capture",
                 signal: ctx.abort,
                 routeWrite: async (relativePath) => {
                   const route = await Orchestration.resolveWrite(nextSession.id, workspace, relativePath)
@@ -534,6 +545,25 @@ export const TaskTool = Tool.define(
           noEvidenceOrReadyAuthority: true,
         },
       })
+      const execution = (Coordinator.status(request.sessionID) as { execution?: ExecutionSelection }).execution
+      const selection = normalizeBackendSelection(execution)
+      if (selection && ExecutionBackends.get(selection.backendId)) {
+        const workspace = Coordinator.status(request.sessionID).workspace
+        return metaReviews.run(reviewerContext, request, () =>
+          ExecutionBackends.execute({
+            sessionID: request.sessionID,
+            scopeID: request.sessionID,
+            phase: "meta_review",
+            workspace,
+            prompt,
+            selection,
+            mutationPolicy: "forbid",
+            routeWrite: async () => {
+              throw new Error("META_REVIEW_READ_ONLY")
+            },
+          }).then((result) => result.output),
+        )
+      }
       return metaReviews.run(reviewerContext, request, () =>
         coordinatorBridge.promise(
           run(
@@ -575,7 +605,14 @@ export const TaskTool = Tool.define(
           runUntilCancelled(run(
             {
               description: request.unit.title,
-              prompt: request.repairPrompt ?? request.unit.instructions,
+              prompt: [
+                "The Host Coordinator assigned exactly one WorkUnit. Follow its path boundary strictly.",
+                "Allowed read paths (relative to the workspace): " + JSON.stringify(request.unit.readSet),
+                "Allowed write paths (relative to the workspace): " + JSON.stringify(request.unit.writeSet),
+                "Do not create, modify, delete, or rename any path outside the allowed write paths. Do not implement another WorkUnit's files, even if the user goal mentions them.",
+                "Do not install packages or create virtual environments, dependency directories, caches, or generated files (for example Python, venv, .venv, node_modules, __pycache__, or .pytest_cache) inside the workspace. Use the supplied runtime and existing dependencies; only the declared write paths may remain as output.",
+                request.repairPrompt ?? request.unit.instructions,
+              ].join("\n\n"),
               subagent_type: request.unit.agentType ?? "general",
               task_id: request.taskID,
               work_unit_id: request.unit.id,
@@ -597,6 +634,10 @@ export const TaskTool = Tool.define(
       }
       const coordinatorBridge = executionBridge(source, request.rootSessionID, Coordinator.status(request.rootSessionID).workspace)
       const ops = source.promptOps ?? (source.extra?.promptOps as TaskPromptOps | undefined)
+      const externalExecution = (Coordinator.status(request.rootSessionID) as { execution?: ExecutionSelection }).execution
+      if (normalizeBackendSelection(externalExecution)) {
+        return Promise.reject(new Error("EXTERNAL_ROOT_INTEGRATION_UNSUPPORTED"))
+      }
       const model = requireExecutionModel(source.model ?? source.extra?.modelSelection)
       const variant = source.variant ?? (source.extra?.variant as string | undefined)
       if (!ops) return Promise.reject(new Error("Root integration requires promptOps in the WorkGraph context"))

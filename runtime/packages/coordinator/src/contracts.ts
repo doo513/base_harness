@@ -1,6 +1,7 @@
 import type * as Orchestration from "@base-harness/workspace/orchestration"
 import type {
   GoalContractProposal,
+  DomainPolicySnapshot,
   VerificationProfile,
   VerificationStatus,
 } from "@base-harness/verification"
@@ -23,6 +24,17 @@ export interface CoordinatorWorkerStatus {
   scopeId?: string
   repairCount: number
   failureFingerprint?: string
+  output?: string
+}
+
+export interface ExecutionSelection {
+  adapterID: string
+  modelID?: string
+  options?: Record<string, string>
+  capabilityRevision?: string
+  kind?: "model_api" | "agent_runtime"
+  backendId?: string
+  connectionId?: string
 }
 
 export interface HarnessStatus {
@@ -62,6 +74,8 @@ export interface HarnessStatus {
     sandboxRuns: number
   }
   isolation?: IsolationStatus
+  execution?: ExecutionSelection
+  domainPolicy?: DomainPolicySnapshot
 }
 
 export interface IsolationStatus {
@@ -88,6 +102,8 @@ export interface ExecutionPlanLink {
 
 export interface PlanExecutionInput extends ExecutionPlanLink {
   context?: unknown
+  execution?: ExecutionSelection
+  domainPolicy?: DomainPolicySnapshot
 }
 
 export interface RestoredPlanExecutionInput extends PlanExecutionInput, Omit<BeginRunInput, "sessionID"> {
@@ -105,7 +121,9 @@ export interface BeginRunInput {
   maxSameFailureRepairs?: number
   maxParallelWorkUnits?: number
   trigger?: "auto" | "manual"
+  execution?: ExecutionSelection
   context?: unknown
+  domainPolicy?: DomainPolicySnapshot
 }
 
 export interface HostActionEvent {

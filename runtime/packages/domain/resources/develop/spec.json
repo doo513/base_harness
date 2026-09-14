@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "domain-spec-v1",
+  "id": "develop",
+  "revision": "develop-1",
+  "description": "GoalContract-bound development with verified workspace mutation.",
+  "allowedOperations": ["read", "search", "question", "control", "mutate", "execute", "delegate"],
+  "allowedSubagentTypes": ["explore", "meta-review", "general", "build"],
+  "planning": {
+    "requiresPlan": false,
+    "demoFirst": false
+  },
+  "verification": {
+    "defaultStrength": "execution",
+    "criterionTemplates": ["artifact", "command_exit", "behavior"]
+  },
+  "measurement": {
+    "summarySchemaVersion": "evidence-summary-v1",
+    "requiredFields": ["actionId", "criterionId", "status", "observed"]
+  },
+  "compatibleSkills": ["hackathon"]
+}

@@ -31,15 +31,20 @@ describe("kernel", () => {
       hasExternalClaim: false,
       applicabilityResolved: true,
       requiredEvidenceFamilyCount: 1,
+      domainRequiresPlan: true,
     })).toBe("planned")
   })
 
   test("general domain is read-only", () => {
     const state = applyControl(createKernelSessionState(), { type: "domain.set", domain: "general" })
-    expect(allowsOperation(state, "read")).toBe(true)
-    expect(allowsOperation(state, "mutate")).toBe(false)
-    expect(allowsOperation(state, "delegate", "explore")).toBe(true)
-    expect(allowsOperation(state, "delegate", "general")).toBe(false)
+    const policy = {
+      allowedOperations: ["read", "search", "question", "control", "delegate"] as const,
+      allowedSubagentTypes: ["explore"] as const,
+    }
+    expect(allowsOperation(state, "read", undefined, policy)).toBe(true)
+    expect(allowsOperation(state, "mutate", undefined, policy)).toBe(false)
+    expect(allowsOperation(state, "delegate", "explore", policy)).toBe(true)
+    expect(allowsOperation(state, "delegate", "general", policy)).toBe(false)
   })
 
   test("rejects blocking pass and cyclic plans", () => {

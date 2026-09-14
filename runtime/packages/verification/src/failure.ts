@@ -71,6 +71,8 @@ const protocolCodes = new Set([
   "invalid_response_format",
   "response_schema_error",
   "schema_validation_error",
+  "backend_protocol_error",
+  "agy_protocol_error",
 ])
 const providerCodes = new Set([
   "authentication_error",
@@ -83,6 +85,18 @@ const providerCodes = new Set([
   "provider_internal_error",
   "service_unavailable",
   "transport_error",
+  "backend_unavailable",
+  "backend_auth_required",
+  "backend_capability_stale",
+  "backend_model_unavailable",
+  "backend_option_unsupported",
+  "backend_run_failed",
+  "agy_unavailable",
+  "agy_auth_required",
+  "agy_capability_stale",
+  "agy_model_unavailable",
+  "agy_option_unsupported",
+  "agy_run_failed",
 ])
 const transientProviderCodes = new Set([
   "rate_limit_exceeded",
@@ -90,6 +104,10 @@ const transientProviderCodes = new Set([
   "provider_internal_error",
   "service_unavailable",
   "transport_error",
+  "backend_unavailable",
+  "agy_unavailable",
+  "backend_run_failed",
+  "agy_run_failed",
 ])
 
 const typed = (value: unknown) => {
