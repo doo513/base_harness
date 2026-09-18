@@ -1,4 +1,10 @@
-import { Coordinator, type GoalContractProposal, type HarnessStatus } from "./coordinator-service"
+import {
+  Coordinator,
+  type DomainExecutionProposal,
+  type DomainPreparation,
+  type GoalContractProposal,
+  type HarnessStatus,
+} from "./coordinator-service"
 import { normalizeBackendSelection, ExecutionBackends } from "./execution/backend-router"
 import { BackendExecutionError } from "./execution/backend"
 
@@ -46,7 +52,9 @@ function normalizePredicate(value: unknown) {
   return predicate
 }
 
-function extractJSON(text: string): Record<string, unknown> {
+type SupportedDomain = "general" | "develop"
+
+function extractJSON(text: string, domain: SupportedDomain): Record<string, unknown> {
   for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
     let depth = 0
     let quoted = false
@@ -69,7 +77,8 @@ function extractJSON(text: string): Record<string, unknown> {
         if (depth === 0) {
           try {
             const value = record(JSON.parse(text.slice(start, index + 1)))
-            if (value && (value.contract !== undefined || value.goalContract !== undefined) && value.workGraph !== undefined) {
+            if (value && (value.contract !== undefined || value.goalContract !== undefined)
+                && (domain === "general" || value.workGraph !== undefined)) {
               return value
             }
           } catch {
@@ -83,44 +92,14 @@ function extractJSON(text: string): Record<string, unknown> {
   throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: expected one JSON planning object")
 }
 
-function planningProposal(value: Record<string, unknown>) {
+function planningProposal(value: Record<string, unknown>, domain: SupportedDomain, goal: string) {
   const contract = record(value.contract ?? value.goalContract)
-  const graph = record(value.workGraph)
   if (
     !contract || !Array.isArray(contract.criteria) || !Array.isArray(contract.claims) ||
     !record(contract.interpretation)
   ) {
     throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: contract is missing criteria, claims, or interpretation")
   }
-  if (!graph || !Array.isArray(graph.units) || !Array.isArray(graph.integrationPaths)) {
-    throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: WorkGraph is missing units or integrationPaths")
-  }
-  if (graph.integrationPaths.length > 0 || graph.units.some((unit) => {
-    const item = record(unit)
-    return Boolean(item && Array.isArray(item.integrationRequests) && item.integrationRequests.length > 0)
-  })) {
-    throw new Error("EXTERNAL_INTEGRATION_UNSUPPORTED: external candidates cannot enter root integration")
-  }
-  const units = graph.units.map((unit) => {
-    const item = record(unit)
-    if (!item) throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: WorkUnit is not an object")
-    if (typeof item.id !== "string" || !item.id.trim()
-        || typeof item.title !== "string" || !item.title.trim()
-        || typeof item.instructions !== "string" || !item.instructions.trim()
-        || !Array.isArray(item.claimIds) || item.claimIds.length === 0
-        || !Array.isArray(item.criterionIds)
-        || !Array.isArray(item.readSet)
-        || !Array.isArray(item.writeSet) || item.writeSet.length === 0
-        || !Array.isArray(item.integrationRequests)) {
-      throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: every WorkUnit needs instructions, Claim binding, and at least one writeSet path")
-    }
-    return {
-      ...item,
-      readSet: normalizeWorkPaths(item.readSet, "readSet", false),
-      writeSet: normalizeWorkPaths(item.writeSet, "writeSet", true),
-      agentType: "general",
-    }
-  })
   const claims = contract.claims.map((claim) => {
     const item = record(claim)
     if (!item) throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: Claim is not an object")
@@ -139,26 +118,90 @@ function planningProposal(value: Record<string, unknown>) {
       predicate: normalizePredicate(item.predicate),
     }
   })
-  return { contract: { ...contract, claims }, graph: { ...graph, units } }
+  const normalizedContract = { ...contract, claims }
+  if (domain === "general") {
+    return {
+      contract: normalizedContract,
+      proposal: {
+        kind: "direct",
+        dispatch: "adapter",
+        instruction: goal,
+        mutationPolicy: "forbid",
+      } satisfies DomainExecutionProposal,
+    }
+  }
+  const graph = record(value.workGraph)
+  if (!graph || !Array.isArray(graph.units) || !Array.isArray(graph.integrationPaths)) {
+    throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: WorkGraph is missing units or integrationPaths")
+  }
+  if (graph.integrationPaths.length > 0 || graph.units.some((unit) => {
+    const item = record(unit)
+    return Boolean(item && Array.isArray(item.integrationRequests) && item.integrationRequests.length > 0)
+  })) {
+    throw new Error("EXTERNAL_INTEGRATION_UNSUPPORTED: external candidates cannot enter root integration")
+  }
+  const units = graph.units.map((unit) => {
+    const item = record(unit)
+    if (!item) throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: WorkUnit is not an object")
+    if (typeof item.id !== "string" || !item.id.trim()
+        || typeof item.title !== "string" || !item.title.trim()
+        || typeof item.instructions !== "string" || !item.instructions.trim()
+        || !Array.isArray(item.claimIds) || item.claimIds.length === 0
+        || !Array.isArray(item.criterionIds)
+        || !Array.isArray(item.dependsOn)
+        || !Array.isArray(item.readSet)
+        || !Array.isArray(item.writeSet) || item.writeSet.length === 0
+        || !Array.isArray(item.integrationRequests)) {
+      throw new Error("EXTERNAL_PLANNING_PROTOCOL_INVALID: every WorkUnit needs instructions, Claim binding, and at least one writeSet path")
+    }
+    return {
+      id: item.id,
+      title: item.title,
+      instructions: item.instructions,
+      claimIds: [...item.claimIds] as string[],
+      criterionIds: [...item.criterionIds] as string[],
+      dependsOn: [...item.dependsOn] as string[],
+      readSet: normalizeWorkPaths(item.readSet, "readSet", false),
+      writeSet: normalizeWorkPaths(item.writeSet, "writeSet", true),
+      integrationRequests: [...item.integrationRequests] as string[],
+      agentType: "general",
+    }
+  })
+  return {
+    contract: normalizedContract,
+    proposal: {
+      kind: "work_graph",
+      graph: { units, integrationPaths: [...graph.integrationPaths] as string[] },
+    } satisfies DomainExecutionProposal,
+  }
 }
 
 async function requestPlanning(input: {
   sessionID: string
   workspace: string
   goal: string
+  authoringSkill: string
   selection: Parameters<typeof ExecutionBackends.execute>[0]["selection"]
+  runId: string
+  domain: SupportedDomain
+  preparation: DomainPreparation
 }) {
+  if (!input.authoringSkill?.trim()) throw new Error("CONTRACT_SKILL_UNAVAILABLE:goal-contract-authoring")
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     const planning = await ExecutionBackends.execute({
       sessionID: input.sessionID,
+      runId: input.runId,
       scopeID: input.sessionID,
       phase: "plan",
       workspace: input.workspace,
       prompt: JSON.stringify({
         protocol: "base-harness-external-planning-v1",
+        instructions: input.authoringSkill,
         attempt,
         goal: input.goal,
+        domain: input.domain,
+        preparation: input.preparation,
         response: {
           contract: {
             goal: input.goal,
@@ -169,7 +212,11 @@ async function requestPlanning(input: {
               origin: "user",
               statement: "verifiable claim",
               kind: "artifact",
-              scope: { targets: ["literal workspace path"], capabilities: ["capability"], exclusions: [] },
+              scope: {
+                targets: [input.domain === "general" ? "named result or source" : "literal workspace path"],
+                capabilities: [input.domain === "general" ? "read" : "modify"],
+                exclusions: [],
+              },
               applicability: {
                 os: "current",
                 arch: "current",
@@ -187,10 +234,12 @@ async function requestPlanning(input: {
             constraints: [],
             interpretation: { version: 1, candidates: [] },
           },
-          workGraph: {
-            units: [{ id: "unit-id", title: "implementation unit", instructions: "implementation instructions", claimIds: ["claim-id"], criterionIds: ["criterion-id"], dependsOn: [], readSet: ["literal path"], writeSet: ["literal path"], integrationRequests: [] }],
-            integrationPaths: [],
-          },
+          ...(input.domain === "develop" ? {
+            workGraph: {
+              units: [{ id: "unit-id", title: "implementation unit", instructions: "implementation instructions", claimIds: ["claim-id"], criterionIds: ["criterion-id"], dependsOn: [], readSet: ["literal path"], writeSet: ["literal path"], integrationRequests: [] }],
+              integrationPaths: [],
+            },
+          } : {}),
         },
         constraints: [
           "Do not call tools during planning; use only the supplied goal and return the complete proposed object.",
@@ -199,7 +248,12 @@ async function requestPlanning(input: {
           "Predicate fields: content_contains/content_equals/sha256/output_contains require value:string; command_exit requires expectedExitCode:number; output_contains may set stream to stdout or stderr.",
           "Claim kind must be one of: artifact, execution, behavior, configuration, negative, external. Use behavior, not behavioral.",
           "Every claim.scope must have at least one target path and at least one non-empty capability string. Artifact implementation claims may use capabilities [\"create\", \"modify\"], and behavioral test claims may use [\"execute\", \"verify\"].",
-          "Every WorkUnit must have at least one writeSet path because the Coordinator does not dispatch a read-only implementation unit. Put test or verification Claims on the implementation WorkUnit instead of creating a separate unit with writeSet: [].",
+          ...(input.domain === "develop" ? [
+            "Every WorkUnit must have at least one writeSet path because the Coordinator does not dispatch a read-only implementation unit. Put test or verification Claims on the implementation WorkUnit instead of creating a separate unit with writeSet: [].",
+          ] : [
+            "This is a read-only General request. Do not return a WorkGraph and do not require a writeSet.",
+            "Use a result or source name for claim.scope.targets and read/report capabilities.",
+          ]),
           "Do not edit files, run shell commands, call tools that write, or claim Evidence or Ready.",
           "Every required criterion must be covered by at least one WorkUnit.",
           ...(attempt === 0 ? [] : [
@@ -215,7 +269,7 @@ async function requestPlanning(input: {
       },
     })
     try {
-      return planningProposal(extractJSON(planning.output))
+      return planningProposal(extractJSON(planning.output, input.domain), input.domain, input.goal)
     } catch (error) {
       lastError = error
     }
@@ -232,6 +286,7 @@ export async function executeExternalGoal(input: {
   workspace: string
   goal: string
   context: unknown
+  authoringSkill: string
   execution: unknown
   planOnly?: boolean
 }): Promise<{ status: HarnessStatus; output: string }> {
@@ -239,26 +294,46 @@ export async function executeExternalGoal(input: {
   if (!selection || !ExecutionBackends.get(selection.backendId)) {
     throw new Error("EXECUTION_BACKEND_UNAVAILABLE")
   }
+  const current = Coordinator.status(input.sessionID)
+  const domain = current.domainBinding?.selection.domain
+  if ((domain !== "general" && domain !== "develop") || !current.runId || !current.domainPreparation) {
+    throw new Error("DOMAIN_RUN_BINDING_INVALID")
+  }
   const parsed = await requestPlanning({
     sessionID: input.sessionID,
     workspace: input.workspace,
     goal: input.goal,
+    authoringSkill: input.authoringSkill,
     selection,
+    runId: current.runId,
+    domain,
+    preparation: current.domainPreparation,
   })
+  await Coordinator.stageExecutionProposal(input.sessionID, parsed.proposal, input.context)
   const accepted = await Coordinator.proposeContract(input.sessionID, parsed.contract as unknown as GoalContractProposal, input.context)
+  // Clarification and revision are processing states, not Runtime rejection or execution permission.
+  const outcome = accepted.contractProcessing?.outcome
+  if (outcome === "needs_input" || outcome === "revision_required") {
+    return { status: accepted, output: contractPauseOutput(outcome) }
+  }
   if (accepted.contractStatus !== "accepted") {
     throw new Error(accepted.message ?? "EXTERNAL_CONTRACT_REJECTED")
   }
-  await Coordinator.acceptWorkGraph(input.sessionID, {
-    ...parsed.graph,
-  }, input.context)
   if (input.planOnly) {
     return {
       status: Coordinator.status(input.sessionID),
       output: "External execution plan prepared. Use /execute to apply it.",
     }
   }
+  const candidateOutput = accepted.domainResult?.output
   const status = await Coordinator.verify({ sessionID: input.sessionID, reason: "completion" })
-  const output = status.workers.flatMap((worker) => worker.output ? [worker.output] : []).join("\n").trim()
+  const output = status.domainResult?.output ?? candidateOutput
+    ?? status.workers.flatMap((worker) => worker.output ? [worker.output] : []).join("\n").trim()
   return { status, output }
+}
+
+export function contractPauseOutput(outcome: "needs_input" | "revision_required") {
+  return outcome === "needs_input"
+    ? "The contract needs your clarification before work can proceed."
+    : "A revised contract is required before work can proceed."
 }

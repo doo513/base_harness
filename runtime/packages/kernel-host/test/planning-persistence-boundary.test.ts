@@ -1,3 +1,4 @@
+import { contractFixture } from "./contract-fixture"
 import { expect, test } from "bun:test"
 import { promises as fs } from "node:fs"
 import os from "node:os"
@@ -35,12 +36,12 @@ function runtime() {
     status: () => ({ ...current, readyEligible: false }),
   }
 }
-const proposal = {
+const proposal = contractFixture({
   interpretation: { version: 1, candidates: [] },
   criteria: [{ criterionId: "criterion-1", claimIds: ["claim-1"], required: true, risk: "low" }],
   claims: [{ claimId: "claim-1", criterionIds: ["criterion-1"], required: true,
     applicability: { status: "applicable" }, verifierPolicy: { minimumEvidenceFamilies: 1 } }],
-}
+})
 const graph = {
   units: [{ id: "unit-1", title: "Change input", instructions: "Change only input.ts",
     claimIds: ["claim-1"], criterionIds: ["criterion-1"], dependsOn: [],

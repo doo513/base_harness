@@ -1,0 +1,97 @@
+Autonomous M1-M3 final verification
+Date: 2026-09-18 (Asia/Seoul)
+Repository: /mnt/c/users/doo33/downloads/base_harness
+Scope: explicit autonomous-v1 path only; M4/M5 and follow-up verifier policy excluded
+
+FINAL RESULTS
+
+1. Design contracts
+   runtime/node_modules/.bin/tsc -p docs/design/autonomous-domain-core/tsconfig.json
+   PASS (strict/noEmit)
+
+2. Package typechecks
+   bun run typecheck in:
+   - runtime/packages/domain-contracts
+   - runtime/packages/kernel
+   - runtime/packages/domain
+   - runtime/packages/coordinator
+   - runtime/packages/verification
+   - runtime/packages/kernel-host
+   - runtime/packages/base-harness
+   - runtime/packages/tui
+   PASS (all eight)
+
+3. Module boundary
+   cd runtime && bun run check:harness-boundaries
+   PASS: Harness module boundaries are valid.
+
+4. Full Harness regression, including actual Python sidecars
+   cd runtime
+   XDG_STATE_HOME=/tmp/autonomous-m3-full-final-20260918-b BASE_HARNESS_PYTHON=python3 bun run test:harness
+   PASS: 441 tests, 0 failures, 2675 assertions, 59 files
+
+5. App M3 integration
+   cd runtime
+   XDG_STATE_HOME=/tmp/autonomous-m3-app-final-20260918-b bun test \
+     ./packages/base-harness/test/harness/autonomous-model.test.ts \
+     ./packages/base-harness/test/harness/autonomous-external.test.ts \
+     ./packages/base-harness/test/harness/autonomous-tools.test.ts \
+     ./packages/base-harness/test/harness/autonomous-question.test.ts \
+     ./packages/base-harness/test/harness/autonomous-facade.test.ts \
+     ./packages/base-harness/test/harness/execution-context.test.ts
+   PASS: 23 tests, 0 failures, 106 assertions
+   Covered: existing local model loop, controlled external process, pinned basis/backend,
+   real ToolRegistry and Sandbox, Python observation, Question service, provider cancellation,
+   incomplete usage settlement, Host facade and request-scoped execution context.
+
+6. Python legacy and v5
+   PYTHONPATH=src python3 -m pytest tests/test_verified_sidecar.py tests/test_measurement_v5.py -q
+   PASS: 43 tests
+
+7. Focused autonomous components
+   Coordinator autonomous budget/run/runtime: 36 pass, 0 fail, 128 assertions
+   KernelHost autonomous Host: 11 pass, 0 fail, 66 assertions
+   Python measurement client: 10 pass, 0 fail, 32 assertions
+   Local model loop: 6 pass, 0 fail, 29 assertions
+   External backend: 4 pass, 0 fail, 22 assertions
+   ToolRegistry/Sandbox: 2 pass, 0 fail, 16 assertions
+
+8. Product-facing related regression
+   Base Harness CLI tests: 11 pass, 0 fail, 62 assertions
+   TUI harness tests (package cwd): 95 pass, 0 fail, 392 assertions
+
+9. Scoped whitespace/integrity check
+   git -c core.whitespace=cr-at-eol diff --check -- <tracked M1-M3 bridge files>
+   PASS
+   rg trailing-whitespace scan over new M1-M3 TypeScript, Python and documentation files
+   PASS (no matches)
+
+AUTHORITY AND SEMANTICS OBSERVED
+
+- Default remains legacy; autonomous-v1 requires explicit config.
+- Prepare context reaches both local-model and external-backend requests.
+- Internal skills and unavailable MCP instructions are omitted on the autonomous loop.
+- Only authority-backed native read/search/execute tools are advertised; mutation/delegation is closed.
+- Plain success/Ready wording remains not_assessed and never creates Evidence or Ready.
+- Python v5 returns facts only; wrong executor and Ready/control fields are rejected.
+- Corrupt measurement responses latch the client and close the Run as runtime_fault.
+- Ordinary measurement service failure remains feedback so another investigation or partial finish is possible.
+- Cancelled, stale-basis, stale-Run and late results do not update the current completion.
+- Backend IDs cannot be replaced by another registered object; backend objects and selection options are frozen.
+- Domain strategy candidate inputs are detached and immutable.
+
+NON-AUTHORITATIVE FAILED INVOCATIONS (NOT COUNTED AS REGRESSIONS)
+
+- Coordinator tests run without an isolated XDG_STATE_HOME hit EROFS at the environment default
+  /home/doo33/.local/state. The explicit /tmp state-root run passed.
+- TUI TSX tests invoked from the monorepo root could not resolve the package JSX runtime.
+  The documented package-cwd command passed 95/95.
+- Previously observed config-suite project $schema expectation and sandbox local-listen restriction
+  are outside this M1-M3 patch and were not hidden or reclassified as passes.
+
+LIMITS PRESERVED
+
+- No M4 workspace mutation, Candidate publication, recursive Task/delegation or WorkGraph amendment.
+- No M5 default migration, dedicated UI semantics, restart execution recovery or exit-policy change.
+- No domain-specific completion policy or dedicated verifier binding redesign.
+- No commercial-model quality claim; all model/backend executions used controlled local fixtures.

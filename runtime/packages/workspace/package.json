@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test ./test"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@base-harness/domain-contracts": "workspace:*"
+  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:"

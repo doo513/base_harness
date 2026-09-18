@@ -58,6 +58,15 @@ export const Isolation = Schema.Struct({
 })
 
 export const Kernel = Schema.Struct({
+  executionSemantics: Schema.optional(Schema.Literals(["legacy", "autonomous-v1"])).annotate({
+    description: "Explicit opt-in Run semantics. Default remains legacy during migration",
+  }),
+  autonomous: Schema.optional(Schema.Struct({
+    timeoutMs: Schema.optional(PositiveInt),
+    maxActions: Schema.optional(PositiveInt),
+    allowExecution: Schema.optional(Schema.Boolean),
+    maxModelTokens: Schema.optional(PositiveInt),
+  })).annotate({ description: "Autonomous root limits and sandbox-command opt-in; unsupported hard caps are rejected" }),
   defaultDomain: Schema.optional(Schema.Literals(["develop", "general"])).annotate({
     description: "Default Kernel domain for a new session",
   }),

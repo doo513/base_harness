@@ -4496,11 +4496,11 @@ export class Session2 extends HeyApiClient {
           }
         | {
             type: "domain.set"
-            domain: "develop" | "general"
+            domain: string
           }
         | {
             type: "skill.set"
-            skill: "hackathon"
+            skill: string
             enabled: boolean
           }
         | {

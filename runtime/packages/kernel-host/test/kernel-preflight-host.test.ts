@@ -54,6 +54,8 @@ describe("KernelHost selective contract preflight", () => {
     await host.openRun({ sessionID: "s1", workspace: ".", goal: "one file" })
     const status = await host.proposeContract("s1", contract())
     expect(status.preflight.decision).toBe("accept")
+    expect(status.preflight.pipelineStage).toBe("validate_dedupe")
+    expect(status.preflight.scannedCandidateCount).toBe(0)
     expect(status.preflight.reviewerCallCount).toBe(0)
     expect(proposed).toHaveLength(1)
     expect((proposed[0] as Record<string, unknown>).interpretation).toBeUndefined()
@@ -84,13 +86,16 @@ describe("KernelHost selective contract preflight", () => {
   test("calls the reviewer once for a high-risk contract", async () => {
     const { host, proposed } = harness()
     let calls = 0
+    let reviewerPlanningState: string | undefined
     host.registerMetaReviewer(async () => {
       calls += 1
+      reviewerPlanningState = host.status("s1").planningState
       return { phase: "goal_contract", outcome: "pass", issues: [] }
     })
     await host.openRun({ sessionID: "s1", workspace: ".", goal: "high risk" })
     const status = await host.proposeContract("s1", contract("high"))
     expect(calls).toBe(1)
+    expect(reviewerPlanningState).toBe("contract_reviewing")
     expect(status.preflight.reviewerCallCount).toBe(1)
     expect(proposed).toHaveLength(1)
   })

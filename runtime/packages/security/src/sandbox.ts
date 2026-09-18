@@ -124,6 +124,7 @@ async function execute(
   argv: string[],
   options: { cwd?: string; timeoutMs: number; maxOutputBytes: number; signal?: AbortSignal },
 ): Promise<Capture> {
+  options.signal?.throwIfAborted()
   const child = Bun.spawn(argv, {
     cwd: options.cwd,
     stdin: "ignore",
@@ -152,6 +153,7 @@ async function execute(
   }
   const abort = () => child.kill()
   options.signal?.addEventListener("abort", abort, { once: true })
+  if (options.signal?.aborted) abort()
   const timer = setTimeout(() => {
     timedOut = true
     child.kill()
@@ -342,6 +344,7 @@ export class SandboxManager {
     if (request.command.includes("\0")) throw new SandboxError("SANDBOX_POLICY_DENIED", "Sandbox command contains NUL")
     const policy = isolationPolicy(request.config)
     const input = await validateSandboxWorkspace(request.workspace, policy.maxInputBytes)
+    request.signal?.throwIfAborted()
     const backend = policy.strictBackend === "auto" ? (process.platform === "win32" ? "wsl2" : "namespace") : policy.strictBackend
     if (backend === "wsl2") {
       if (process.platform !== "win32") throw new SandboxError("SANDBOX_UNAVAILABLE", "WSL2 backend requires Windows")
@@ -352,4 +355,3 @@ export class SandboxManager {
 }
 
 export const StrictSandbox = new SandboxManager()
-

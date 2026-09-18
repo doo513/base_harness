@@ -50,7 +50,7 @@ export class BackendRouter {
   private readonly backends = new Map<string, ExecutionBackend>()
 
   constructor(backends: ExecutionBackend[] = [antigravityBackend, CodexAppServer]) {
-    for (const backend of backends) this.backends.set(backend.id, backend)
+    for (const backend of backends) this.register(backend)
   }
 
   get(id: string) {
@@ -58,7 +58,9 @@ export class BackendRouter {
   }
 
   register(backend: ExecutionBackend) {
-    this.backends.set(backend.id, backend)
+    const current = this.backends.get(backend.id)
+    if (current && current !== backend) throw new Error("BACKEND_ALREADY_REGISTERED: " + backend.id)
+    this.backends.set(backend.id, Object.freeze(backend))
     return this
   }
 

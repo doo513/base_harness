@@ -24,6 +24,11 @@ export interface BackendCapabilities {
   reasoningEfforts: string[]
   reasoningOption?: string
   modelDetails?: BackendModelInfo[]
+  /** Explicit opt-in. Backends without this contract never receive autonomous Runs. */
+  autonomousDecision?: {
+    protocol: "autonomous-decision-v1"
+    resourceUsage: "reported-v1"
+  }
 }
 
 export type BackendMutationPolicy = "forbid" | "capture"
@@ -49,6 +54,8 @@ export interface BackendExecutionResult {
   backendId: string
   modelId: string
   nativeOptions: Record<string, string>
+  /** Required when autonomousDecision.resourceUsage is reported-v1. */
+  resourceUsage?: { modelTokens: number; costMinorUnits: number }
 }
 
 export interface ExecutionBackend {
@@ -104,7 +111,7 @@ export function normalizeBackendSelection(input: unknown): BackendSelection | un
     backendId,
     connectionId: typeof value.connectionId === "string" ? value.connectionId : backendId,
     modelId,
-    nativeOptions,
+    nativeOptions: Object.freeze(nativeOptions),
     capabilityRevision: typeof value.capabilityRevision === "string" ? value.capabilityRevision : "",
   })
 }

@@ -1,3 +1,4 @@
+import { contractFixture } from "./contract-fixture"
 import { expect, test } from "bun:test"
 import { lstat, mkdtemp, mkdir, readFile, readdir, rename, writeFile, rm } from "node:fs/promises"
 import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistence"
@@ -52,12 +53,12 @@ async function fixture(body: (value: {
     if (hackathon) await host.control("root", { type: "skill.set", skill: "hackathon", enabled: true })
     await host.control("root", { type: "planning.plan_once" })
     await host.openRun({ sessionID: "root", workspace, goal: "Update the module" })
-    await host.proposeContract("root", {
+    await host.proposeContract("root", contractFixture({
       interpretation: { version: 1, candidates: [] },
       criteria: [{ criterionId: "criterion", claimIds: ["claim"], statement: "Update module", required: true, risk: "low" }],
       claims: [{ claimId: "claim", criterionIds: ["criterion"], statement: "Update module", required: true,
         applicability: { status: "applicable" }, scope: { targets: ["input.ts"] }, verifierPolicy: { minIndependentFamilies: 1 } }],
-    })
+    }))
     const context = { sessionID: "root", messageID: "assistant-plan", agent: "build",
       extra: { modelSelection: { providerID: "fixture", modelID: "reasoner" }, variant: "native-exact",
         promptOps: { mustNotPersist: () => {} }, credential: "never-save-this" } }
@@ -97,6 +98,8 @@ test("a fresh Host restores a reviewed plan without reviving execution or rerunn
     expect(fresh.calls.restored[0].contract).toEqual(saved.contract)
     expect(fresh.calls.graphs[0].context.freshRequest).toBe(true)
     expect(fresh.calls.reviews).toBe(0)
+    expect(() => host.assertToolAllowed("root", "write")).not.toThrow()
+    expect(() => host.assertToolAllowed("root", "bash")).toThrow("CONTRACT_RISK_EXCEEDED")
   })
 })
 

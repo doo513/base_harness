@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@base-harness/domain-contracts": "workspace:*"
   }
 }

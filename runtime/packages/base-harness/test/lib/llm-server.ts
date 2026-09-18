@@ -612,6 +612,7 @@ function isTitleRequest(body: unknown): boolean {
 namespace TestLLMServer {
   export interface Service {
     readonly url: string
+    readonly respond: (handler: (hit: Hit) => Item | Reply) => Effect.Effect<void>
     readonly push: (...input: (Item | Reply)[]) => Effect.Effect<void>
     readonly pushMatch: (match: Match, ...input: (Item | Reply)[]) => Effect.Effect<void>
     readonly textMatch: (match: Match, value: string, opts?: { usage?: Usage }) => Effect.Effect<void>
@@ -641,6 +642,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
       const server = yield* HttpServer.HttpServer
       const router = yield* HttpRouter.HttpRouter
 
+      let responder: ((hit: Hit) => Item | Reply) | undefined
       let hits: Hit[] = []
       let list: Queue[] = []
       let waits: Wait[] = []
@@ -663,7 +665,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
 
       const pull = (hit: Hit) => {
         const index = list.findIndex((entry) => !entry.match || entry.match(hit))
-        if (index === -1) return
+        if (index === -1) return responder ? item(responder(hit)) : undefined
         const first = list[index]
         list = [...list.slice(0, index), ...list.slice(index + 1)]
         return first.item
@@ -709,6 +711,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
           server.address._tag === "TcpAddress"
             ? `http://127.0.0.1:${server.address.port}/v1`
             : `unix://${server.address.path}/v1`,
+        respond: (handler) => Effect.sync(() => { responder = handler }),
         push: Effect.fn("TestLLMServer.push")(function* (...input: (Item | Reply)[]) {
           queue(...input)
         }),
@@ -757,6 +760,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
           queue(reply().wait(wait).text(value).stop().item())
         }),
         reset: Effect.sync(() => {
+          responder = undefined
           hits = []
           list = []
           waits = []

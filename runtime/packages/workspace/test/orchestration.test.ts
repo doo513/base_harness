@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Orchestration from "../src/orchestration"
+import { acceptedContract } from "./contract-fixture"
 
 const roots: string[] = []
 
@@ -22,7 +23,9 @@ async function fixture() {
     workspace,
     goal: "Refactor the complete module architecture with parallel implementation units",
   })
-  Orchestration.registerContract("root", ["claim-1"], ["criterion-1"])
+  Orchestration.registerContract(
+    "root", ["claim-1"], ["criterion-1"], acceptedContract(["claim-1"], ["criterion-1"]),
+  )
   await Orchestration.acceptWorkGraph("root", {
     units: [
       {

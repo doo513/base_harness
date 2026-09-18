@@ -1,4 +1,13 @@
 import type * as Orchestration from "@base-harness/workspace/orchestration"
+import type { AutonomousRun, AutonomousRunPorts, AutonomousRunSetup } from "./autonomous-run"
+import type {
+  DomainExecutionBinding,
+  DomainExecutionDispatcher,
+  DomainExecutionProposal,
+  DomainExecutionResult,
+  DomainPreparation,
+  DomainRunBinding,
+} from "@base-harness/domain-contracts"
 import type {
   GoalContractProposal,
   DomainPolicySnapshot,
@@ -42,7 +51,9 @@ export interface HarnessStatus {
   workspace: string
   runId: string
   goal: string
-  phase: Orchestration.Phase | "inactive" | "plan_ready"
+  phase: Orchestration.Phase | "inactive" | "plan_ready" | "autonomous"
+  /** Separate semantics; never interpreted through legacy outcome/Ready fields. */
+  autonomous?: ReturnType<AutonomousRun["snapshot"]>
   executionPlan?: ExecutionPlanLink
   revisesPlan?: ExecutionPlanLink
   workers: CoordinatorWorkerStatus[]
@@ -76,6 +87,10 @@ export interface HarnessStatus {
   isolation?: IsolationStatus
   execution?: ExecutionSelection
   domainPolicy?: DomainPolicySnapshot
+  domainBinding?: DomainRunBinding
+  domainPreparation?: DomainPreparation
+  /** Candidate output only; never verifier Evidence or Ready. */
+  domainResult?: DomainExecutionResult
 }
 
 export interface IsolationStatus {
@@ -104,6 +119,8 @@ export interface PlanExecutionInput extends ExecutionPlanLink {
   context?: unknown
   execution?: ExecutionSelection
   domainPolicy?: DomainPolicySnapshot
+  domainBinding?: DomainExecutionBinding
+  domainPreparation?: DomainPreparation
 }
 
 export interface RestoredPlanExecutionInput extends PlanExecutionInput, Omit<BeginRunInput, "sessionID"> {
@@ -111,6 +128,8 @@ export interface RestoredPlanExecutionInput extends PlanExecutionInput, Omit<Beg
 }
 
 export interface BeginRunInput {
+  /** Trusted Host composition only. A JSON actor cannot install executable ports. */
+  autonomousFactory?: (runId: string) => Promise<{ setup: AutonomousRunSetup; ports: AutonomousRunPorts }>
   sessionID: string
   workspace: string
   goal: string
@@ -124,6 +143,8 @@ export interface BeginRunInput {
   execution?: ExecutionSelection
   context?: unknown
   domainPolicy?: DomainPolicySnapshot
+  domainBinding?: DomainExecutionBinding
+  domainPreparation?: DomainPreparation
 }
 
 export interface HostActionEvent {
@@ -139,6 +160,7 @@ export interface VerificationTarget {
 export interface WorkerExecutionRequest {
   /** Owned by the Coordinator run, not a parent model stream or tool call. */
   signal: AbortSignal
+  runId: string
   rootSessionID: string
   unit: Orchestration.WorkUnit
   context: unknown
@@ -155,6 +177,7 @@ export type WorkerExecutor = (request: WorkerExecutionRequest) => Promise<Worker
 
 export interface IntegrationExecutionRequest {
   signal: AbortSignal
+  runId: string
   rootSessionID: string
   context: unknown
   integrationPaths: string[]
@@ -165,6 +188,19 @@ export interface IntegrationExecutionRequest {
 export type IntegrationExecutor = (request: IntegrationExecutionRequest) => Promise<void>
 export type StatusPublisher = (status: HarnessStatus) => void | Promise<void>
 
+export interface DomainProposalSubmission {
+  sessionID: string
+  runId: string
+  proposal: DomainExecutionProposal
+  context: unknown
+}
+
+export interface DomainResultSubmission {
+  sessionID: string
+  runId: string
+  result: Omit<DomainExecutionResult, "runId">
+}
+
 export interface CoordinatorService {
   beginRun(input: BeginRunInput): Promise<HarnessStatus>
   observe(event: HostActionEvent): Promise<void>
@@ -173,6 +209,8 @@ export interface CoordinatorService {
     graph: Orchestration.WorkGraph
     context: unknown
   }): Promise<HarnessStatus>
+  submitDomainProposal(input: DomainProposalSubmission): Promise<HarnessStatus>
+  recordDomainResult(input: DomainResultSubmission): Promise<HarnessStatus>
   verify(target: VerificationTarget): Promise<HarnessStatus>
   cancel(sessionID: string): Promise<HarnessStatus>
   status(sessionID: string): HarnessStatus
@@ -180,3 +218,11 @@ export interface CoordinatorService {
 
 export type { GoalContractProposal, VerificationProfile, VerificationStatus }
 export type { WorkGraph, WorkUnit } from "@base-harness/workspace/orchestration"
+export type {
+  DomainExecutionBinding,
+  DomainExecutionDispatcher,
+  DomainExecutionProposal,
+  DomainExecutionResult,
+  DomainPreparation,
+  DomainRunBinding,
+}

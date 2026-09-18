@@ -13,7 +13,8 @@
   "dependencies": {
     "@base-harness/domain": "workspace:*",
     "@base-harness/kernel": "workspace:*",
-    "@base-harness/workspace": "workspace:*"
+    "@base-harness/workspace": "workspace:*",
+    "@base-harness/domain-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

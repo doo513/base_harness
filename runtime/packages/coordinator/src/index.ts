@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from "node:crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { isDeepStrictEqual } from "node:util"
 import * as Orchestration from "@base-harness/workspace/orchestration"
+import type {
+  DirectExecutionProposal,
+  DomainExecutionBinding,
+  DomainExecutionDispatcher,
+  DomainExecutionProposal,
+  DomainExecutionResult,
+  DomainPreparation,
+  DomainRunBinding,
+} from "@base-harness/domain-contracts"
 import {
   createFailureEnvelope,
   failureFingerprint,
@@ -36,6 +46,10 @@ import type {
 import { integrationRepairPrompt, workerRepairPrompt } from "./repair-router"
 import { PersistenceGateway } from "./persistence-gateway"
 import { RunRepository } from "./run-repository"
+import { AutonomousRun } from "./autonomous-run"
+import { createAutonomousMeasurementPorts, type AutonomousMeasurementOptions } from "./autonomous-measurement"
+import type { AutonomousPreparationResult, Json, SubjectRef, CheckSpec } from "@base-harness/domain-contracts"
+import type { ResourceUsage } from "./autonomous-budget"
 import { dependenciesComplete, hasPendingWork, nextRunnable } from "./scheduler"
 import { inactiveVerification, nonRepairableFailure } from "./state-machine"
 
@@ -45,6 +59,7 @@ type WorkerRecord = CoordinatorWorkerStatus & {
 }
 
 type RunRecord = {
+  autonomous?: AutonomousRun
   sessionID: string
   runId: string
   goal: string
@@ -88,6 +103,11 @@ type RunRecord = {
   sandboxRuns: number
   executionSelection?: ExecutionSelection
   domainPolicy?: DomainPolicySnapshot
+  domainBinding?: DomainRunBinding
+  domainPreparation?: DomainPreparation
+  domainProposal?: DomainExecutionProposal
+  domainResult?: DomainExecutionResult
+  domainExecution?: Promise<HarnessStatus>
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -99,6 +119,165 @@ const artifactPaths = (references: readonly unknown[]) => references.flatMap((re
   const value = typeof reference === "string" ? reference : stringValue(record(reference)?.path)
   return value ? [value] : []
 })
+
+const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0
+
+function bindDomainExecution(input: DomainExecutionBinding, runId: string): DomainRunBinding {
+  const value = record(input)
+  const selection = record(value?.selection)
+  const policy = record(value?.policy)
+  const module = record(value?.module)
+  const preparation = record(value?.preparationStrategy)
+  const proposal = record(value?.proposalStrategy)
+  const overlays = Array.isArray(value?.overlays) ? value.overlays.map(record) : undefined
+  const executor = record(value?.executor)
+  const executorOptions = record(executor?.options)
+  const selectionSkills = Array.isArray(selection?.skills) ? selection.skills : undefined
+  const skillRevisions = Array.isArray(policy?.skillRevisions) ? policy.skillRevisions : undefined
+  if (value?.schemaVersion !== "domain-execution-binding-v1" || !nonempty(runId)
+      || !nonempty(selection?.domain) || !selectionSkills
+      || selectionSkills.some((item) => !nonempty(item))
+      || new Set(selectionSkills).size !== selectionSkills.length
+      || !nonempty(policy?.domainId) || policy?.domainId !== selection?.domain
+      || !nonempty(policy?.domainRevision) || !skillRevisions
+      || skillRevisions.length !== selectionSkills.length
+      || skillRevisions.some((item) => !nonempty(item))
+      || !Array.isArray(policy?.allowedOperations) || !Array.isArray(policy?.allowedSubagentTypes)
+      || typeof policy?.requiresPlan !== "boolean" || typeof policy?.demoFirst !== "boolean"
+      || !nonempty(module?.id) || !nonempty(module?.revision)
+      || !nonempty(preparation?.id) || !nonempty(preparation?.revision)
+      || !nonempty(proposal?.id) || !nonempty(proposal?.revision)
+      || !overlays || overlays.length !== selectionSkills.length
+      || overlays.some((overlay, index) => !overlay
+        || overlay.overlayId !== selectionSkills[index]
+        || overlay.overlayRevision !== skillRevisions[index]
+        || !nonempty(record(overlay.module)?.id) || !nonempty(record(overlay.module)?.revision)
+        || !nonempty(record(overlay.preparationStrategy)?.id)
+        || !nonempty(record(overlay.preparationStrategy)?.revision)
+        || !nonempty(record(overlay.proposalStrategy)?.id)
+        || !nonempty(record(overlay.proposalStrategy)?.revision))
+      || !nonempty(executor?.id) || !nonempty(executor?.revision)
+      || !["model_api", "agent_runtime"].includes(String(executor?.kind))
+      || !executorOptions
+      || Object.values(executorOptions ?? {}).some((item) => typeof item !== "string")
+      || [executor.connectionId, executor.providerId, executor.modelId]
+        .some((item) => item !== undefined && !nonempty(item))) {
+    throw new Error("DOMAIN_RUN_BINDING_INVALID")
+  }
+  return { ...structuredClone(input), runId }
+}
+
+function unbindDomainExecution(input: DomainRunBinding): DomainExecutionBinding {
+  const { runId: _runId, ...binding } = structuredClone(input)
+  return binding
+}
+
+function validatePreparation(
+  input: DomainPreparation | undefined,
+  binding: DomainRunBinding | undefined,
+  workspace: string,
+  goal: string,
+) {
+  if (!input && !binding) return undefined
+  if (!input || !binding || input.schemaVersion !== "domain-preparation-v1"
+      || input.domainId !== binding.selection.domain || input.domainId !== binding.policy.domainId
+      || input.goal !== goal || input.workspace !== workspace
+      || (input.mode !== "read" && input.mode !== "develop")
+      || !Array.isArray(input.instructions) || input.instructions.some((item) => !nonempty(item))
+      || !Array.isArray(input.allowedOperations)
+      || input.allowedOperations.some((item) => !binding.policy.allowedOperations.includes(item))
+      || !Array.isArray(input.allowedSubagentTypes)
+      || input.allowedSubagentTypes.some((item) => !binding.policy.allowedSubagentTypes.includes(item))
+      || !Array.isArray(input.overlays) || input.overlays.length !== binding.overlays.length
+      || input.overlays.some((overlay, index) => overlay.id !== binding.overlays[index]?.overlayId
+        || overlay.revision !== binding.overlays[index]?.overlayRevision)
+      || !record(input.environment)
+      || Object.values(input.environment).some((item) => typeof item !== "string")) {
+    throw new Error("DOMAIN_PREPARATION_INVALID")
+  }
+  return structuredClone(input)
+}
+
+function normalizeDomainResult(run: RunRecord, result: DomainExecutionResult): DomainExecutionResult {
+  if (result.runId !== run.runId || !nonempty(result.adapterId) || typeof result.output !== "string"
+      || !Array.isArray(result.changedFiles)
+      || result.changedFiles.some((item) => !nonempty(item))) {
+    throw new Error("DOMAIN_EXECUTION_RESULT_INVALID")
+  }
+  return {
+    runId: run.runId,
+    output: result.output,
+    changedFiles: [...result.changedFiles],
+    adapterId: result.adapterId,
+    ...(nonempty(result.modelId) ? { modelId: result.modelId } : {}),
+  }
+}
+
+class DomainResultError extends Error {
+  override readonly name = "InvalidProviderOutput"
+
+  constructor(readonly domainCode: string, message: string) {
+    super(`${domainCode}: ${message}`)
+  }
+}
+
+const normalizedReportText = (value: string) => value.replace(/\r\n/g, "\n").trimEnd()
+
+function requiresDomainResult(run: RunRecord) {
+  return run.domainProposal?.kind === "direct"
+}
+
+/**
+ * Negative admission only: this can reject contradictory candidate output, but
+ * it cannot create Evidence or Ready. Positive verification remains in Python.
+ */
+function validateDomainResultBinding(
+  run: RunRecord,
+  result: DomainExecutionResult,
+  dispatch: DirectExecutionProposal["dispatch"],
+) {
+  if (!run.contractAccepted || run.domainProposal?.kind !== "direct" || run.domainProposal.dispatch !== dispatch) {
+    throw new DomainResultError("DOMAIN_RESULT_PHASE_INVALID", "result arrived outside its accepted direct execution")
+  }
+  const executor = run.domainBinding?.executor
+  if (!executor || result.adapterId !== executor.id) {
+    throw new DomainResultError("DOMAIN_RESULT_EXECUTOR_MISMATCH", "result does not match the pinned executor")
+  }
+  if (executor.modelId && result.modelId !== executor.modelId) {
+    throw new DomainResultError("DOMAIN_RESULT_MODEL_MISMATCH", "result does not match the pinned model")
+  }
+  if (run.domainProposal.mutationPolicy === "forbid" && result.changedFiles.length > 0) {
+    throw new DomainResultError("DOMAIN_RESULT_MUTATION_FORBIDDEN", "read-only execution reported workspace changes")
+  }
+  if (run.domainBinding?.selection.domain !== "general") return
+
+  const output = normalizedReportText(result.output)
+  if (!output.trim()) {
+    throw new DomainResultError("DOMAIN_RESULT_EMPTY", "General execution returned no report")
+  }
+  const contract = run.verification.goalContract
+  if (!contract) {
+    throw new DomainResultError("DOMAIN_RESULT_CONTRACT_MISSING", "accepted contract is unavailable")
+  }
+  const requiredCriteria = new Set(
+    contract.criteria.filter((criterion) => criterion.required).map((criterion) => criterion.criterionId),
+  )
+  for (const claim of contract.claims) {
+    if (!claim.criterionIds.some((criterionId) => requiredCriteria.has(criterionId))) continue
+    const predicate = claim.predicate
+    if (predicate.type !== "content_contains" && predicate.type !== "content_equals") continue
+    if (typeof predicate.value !== "string") continue
+    const expected = normalizedReportText(predicate.value)
+    // Empty literals, existence, hashes, summaries and inferred facts require a
+    // later semantic verifier; do not pretend a string guard proves them.
+    const contradicts = predicate.type === "content_equals"
+      ? output !== expected
+      : expected.length > 0 && !output.includes(expected)
+    if (contradicts) {
+      throw new DomainResultError("DOMAIN_RESULT_MISMATCH", "General report contradicts a required literal predicate")
+    }
+  }
+}
 
 const scopedFailureDetails = (failure: VerificationStatus | undefined) => failure ? {
   failureKind: failure.failureKind,
@@ -117,6 +296,7 @@ export class CoordinatorRuntime implements CoordinatorService {
   private readonly persistence: PersistenceGateway
   private executor?: WorkerExecutor
   private integrationExecutor?: IntegrationExecutor
+  private domainExecutor?: DomainExecutionDispatcher
   private readonly continuation = new AsyncLocalStorage<{ run: RunRecord; active: boolean }>()
   private completionGate: (sessionID: string) => boolean = () => true
   private readonly publishers = new Set<StatusPublisher>()
@@ -169,6 +349,7 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   beginDirect(sessionID: string) {
+    if (this.runFor(sessionID)?.autonomous) throw new Error("RUN_SEMANTICS_FIXED")
     this.orchestration.beginDirectExecution(sessionID)
   }
 
@@ -178,6 +359,14 @@ export class CoordinatorRuntime implements CoordinatorService {
 
   registerIntegrationExecutor(executor: IntegrationExecutor) {
     this.integrationExecutor = executor
+  }
+
+  /** Application composition installs one stable dispatcher; per-run selection lives in the binding. */
+  registerDomainExecutor(executor: DomainExecutionDispatcher) {
+    if (this.domainExecutor && this.domainExecutor !== executor) {
+      throw new Error("DOMAIN_EXECUTOR_ALREADY_REGISTERED")
+    }
+    this.domainExecutor = executor
   }
 
   isInternalContinuation(sessionID: string) {
@@ -236,6 +425,98 @@ export class CoordinatorRuntime implements CoordinatorService {
     return this.acceptWorkGraph(input.sessionID, input.graph, input.context)
   }
 
+  async submitDomainProposal(input: {
+    sessionID: string
+    runId: string
+    proposal: DomainExecutionProposal
+    context: unknown
+  }) {
+    const run = this.runFor(input.sessionID)
+    if (!run || run.runId !== input.runId || !this.isLive(run)) throw new Error("DOMAIN_RUN_MISMATCH")
+    if (!run.contractAccepted) throw new Error("CONTRACT_REQUIRED: domain execution requires an accepted GoalContract")
+    if (!run.domainBinding || run.domainBinding.runId !== run.runId || !run.domainPreparation) {
+      throw new Error("DOMAIN_RUN_BINDING_INVALID")
+    }
+    const proposal = structuredClone(input.proposal)
+    run.domainProposal = proposal
+    run.context = input.context
+    if (proposal.kind === "work_graph") {
+      return this.acceptWorkGraphForRun(run, proposal.graph, input.context)
+    }
+    this.beginDirect(run.sessionID)
+    if (proposal.dispatch === "attached") {
+      await this.publish(run)
+      return this.snapshot(run)
+    }
+    if (run.domainExecution) throw new Error("RUN_ACTIVE: domain execution is already in progress")
+    if (!this.domainExecutor) throw new Error("DOMAIN_EXECUTOR_UNAVAILABLE")
+    const execution = (async () => {
+      try {
+        const result = await this.domainExecutor!({
+          sessionID: run.sessionID,
+          runId: run.runId,
+          workspace: run.workspace,
+          goal: run.goal,
+          signal: run.execution.signal,
+          binding: structuredClone(run.domainBinding!),
+          preparation: structuredClone(run.domainPreparation!),
+          proposal: structuredClone(proposal as DirectExecutionProposal),
+          context: run.context,
+        })
+        if (!this.isLive(run)) return this.snapshot(run)
+        const normalized = normalizeDomainResult(run, result)
+        validateDomainResultBinding(run, normalized, "adapter")
+        if (run.domainResult && !isDeepStrictEqual(run.domainResult, normalized)) {
+          throw new DomainResultError("DOMAIN_RESULT_CONFLICT", "a direct Run produced more than one result")
+        }
+        run.domainResult ??= normalized
+        await this.publish(run)
+        return this.snapshot(run)
+      } catch (error) {
+        if (this.isLive(run)) await this.blockRootExecution(run, error, "domain.execute")
+        return this.snapshot(run)
+      }
+    })()
+    run.domainExecution = execution
+    try {
+      return await execution
+    } finally {
+      if (run.domainExecution === execution) run.domainExecution = undefined
+    }
+  }
+
+  async recordDomainResult(input: {
+    sessionID: string
+    runId: string
+    result: Omit<DomainExecutionResult, "runId">
+  }) {
+    const run = this.runFor(input.sessionID)
+    // Late model output is candidate data, so silently discard it instead of touching the current run.
+    if (!run || run.runId !== input.runId || !this.isLive(run)) return this.snapshotOrInactive(input.sessionID)
+    if (!run.domainBinding || run.domainBinding.runId !== run.runId) throw new Error("DOMAIN_RUN_BINDING_INVALID")
+    // Contract-building, WorkGraph and adapter results do not enter through the
+    // attached-model callback. Terminal runs also cannot have their candidate
+    // output rewritten after a verifier decision.
+    if (!run.contractAccepted || run.domainProposal?.kind !== "direct"
+        || run.domainProposal.dispatch !== "attached" || run.verification.outcome) {
+      return this.snapshot(run)
+    }
+    try {
+      const normalized = normalizeDomainResult(run, { ...structuredClone(input.result), runId: input.runId })
+      validateDomainResultBinding(run, normalized, "attached")
+      if (run.domainResult) {
+        if (isDeepStrictEqual(run.domainResult, normalized)) return this.snapshot(run)
+        throw new DomainResultError("DOMAIN_RESULT_CONFLICT", "an attached Run attempted to replace its result")
+      }
+      run.domainResult = normalized
+      await this.publish(run)
+      if (run.trigger === "auto") queueMicrotask(() => void this.verifyRoot(run.sessionID, "automatic"))
+    } catch (error) {
+      if (this.isLive(run)) await this.blockRootExecution(run, error, "domain.result")
+    }
+    return this.snapshot(run)
+  }
+
   verify(target: VerificationTarget) {
     return this.verifyRoot(target.sessionID, target.reason ?? "manual")
   }
@@ -250,7 +531,8 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   private isLive(run: RunRecord) {
-    return this.isCurrent(run) && !run.interrupted && !run.persistenceFailed
+    // Legacy verifier/repair callbacks never control an autonomous Run.
+    return !run.autonomous && this.isCurrent(run) && !run.interrupted && !run.persistenceFailed
   }
 
   private acceptVerifierStatus(run: RunRecord, status: VerificationStatus) {
@@ -306,7 +588,10 @@ export class CoordinatorRuntime implements CoordinatorService {
     }
     const backendCode = stringValue(record(error)?.code)
     const externalBackendFailure = backendCode !== undefined && /^(?:AGY|BACKEND)_/.test(backendCode)
-    const source = externalBackendFailure
+    const domainResultFailure = error instanceof DomainResultError
+    const source = domainResultFailure
+      ? "model"
+      : externalBackendFailure
       ? backendCode.includes("SCOPE") ? "harness" : "provider"
       : error instanceof Orchestration.OrchestrationError
       ? error.code === "WORKSPACE_CONFLICT" ? "workspace" : "harness"
@@ -317,7 +602,7 @@ export class CoordinatorRuntime implements CoordinatorService {
       runId: run.runId,
       scopeId,
       source,
-      producer: externalBackendFailure ? "model_gateway" : "orchestrator",
+      producer: domainResultFailure || externalBackendFailure ? "model_gateway" : "orchestrator",
       phase,
       error,
     }))
@@ -362,6 +647,7 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   private async disposeRun(run: RunRecord, interrupt = true) {
+    if (run.autonomous) await run.autonomous.terminate("interrupted")
     run.interrupted = true
     run.execution.abort()
     if (interrupt) this.orchestration.markInterrupted(run.sessionID)
@@ -377,6 +663,7 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   private async ensureVerifier(run: RunRecord) {
+    if (run.autonomous) throw new Error("RUN_SEMANTICS_FIXED: autonomous runs use observations, not v4 verification")
     if (run.verifier || run.verifierFailure) return run.verifier
     try {
       run.verifier = await this.verifierFactory(
@@ -413,7 +700,9 @@ export class CoordinatorRuntime implements CoordinatorService {
 
   async openRun(input: BeginRunInput) {
     if (this.revisionTransitions.has(input.sessionID)) throw new Error("RUN_ACTIVE: a planning revision is opening")
-    if (!input.revisesPlan) return this.openRunState(input)
+    if (input.autonomousFactory !== undefined && typeof input.autonomousFactory !== "function") throw new Error("AUTONOMOUS_HOST_FACTORY_REQUIRED")
+    if (input.autonomousFactory && input.revisesPlan) throw new Error("AUTONOMOUS_PLAN_HANDOFF_UNSUPPORTED")
+    if (!input.revisesPlan && !input.autonomousFactory) return this.openRunState(input)
     this.revisionTransitions.add(input.sessionID)
     try {
       return await this.openRunState(input)
@@ -426,6 +715,10 @@ export class CoordinatorRuntime implements CoordinatorService {
     this.candidates.activate()
     await this.repository.initialize()
     let existing = this.runs.get(input.sessionID)
+    if (existing?.autonomous?.snapshot().lifecycle === "closed") {
+      await this.disposeRun(existing, false)
+      existing = undefined
+    }
     if (existing?.planExecutionStarting) throw new Error("RUN_ACTIVE: a plan execution handoff is in progress")
     const revision = input.revisesPlan ? structuredClone(input.revisesPlan) : undefined
     if (revision) {
@@ -470,51 +763,90 @@ export class CoordinatorRuntime implements CoordinatorService {
       existing = undefined
     }
     if (existing) {
+      if (Boolean(existing.autonomous) !== Boolean(input.autonomousFactory)) {
+        throw new Error("RUN_SEMANTICS_FIXED: active Run semantics cannot be changed")
+      }
       if (input.context !== undefined) existing.context = input.context
       return this.snapshot(existing)
     }
     const runId = "run-" + randomUUID()
-    this.orchestration.beginPrompt({ sessionID: input.sessionID, workspace: input.workspace, goal: input.goal, exploration: "manual" })
-    this.orchestration.setRunIdentity(input.sessionID, runId)
-    this.persistence.openRun(runId)
-    const source = goalSource(input.goal, "session-" + input.sessionID, "user_message")
-    const profile = input.configuredProfile ?? "adaptive"
-    const run: RunRecord = {
-      sessionID: input.sessionID,
-      runId,
-      goal: input.goal,
-      workspace: input.workspace,
-      source,
-      revisesPlan: revision,
-      verification: inactiveVerification(runId, input.sessionID, input.maxSameFailureRepairs),
-      workers: new Map(),
-      draining: false,
-      drainRequested: false,
-      executionFailures: new Map(),
-      active: new Set(),
-      openedScopes: new Set([input.sessionID]),
-      observedActions: new Set(),
-      pendingHostEvents: [],
-      hostEvents: Promise.resolve(),
-      hostEventDepth: 0,
-      maxParallel: Math.max(1, Math.min(2, input.maxParallelWorkUnits ?? 2)),
-      interrupted: false,
-      execution: new AbortController(),
-      trigger: input.trigger ?? "auto",
-      contractAccepted: false,
-      context: input.context,
-      executionSelection: input.execution,
-      integrationStarted: false,
-      integrationComplete: true,
-      settledWaiters: new Set(),
-      configuredProfile: profile,
-      effectiveProfile: input.effectiveProfile ?? profile,
-      sandboxRuns: 0,
-      domainPolicy: input.domainPolicy,
+    const domainBinding = input.domainBinding ? bindDomainExecution(input.domainBinding, runId) : undefined
+    const domainPreparation = validatePreparation(input.domainPreparation, domainBinding, input.workspace, input.goal)
+    const autonomousInput = input.autonomousFactory ? await input.autonomousFactory(runId) : undefined
+    let autonomous: AutonomousRun | undefined
+    try {
+      if (autonomousInput && (autonomousInput.setup.binding.runId !== runId || autonomousInput.setup.taskId !== input.sessionID)) {
+        throw new Error("AUTONOMOUS_HOST_BINDING")
+      }
+      autonomous = autonomousInput ? new AutonomousRun(autonomousInput.setup, autonomousInput.ports, Date.now, () => {
+        queueMicrotask(() => {
+          const current = this.runs.get(input.sessionID)
+          if (current?.runId === runId) void this.publish(current).catch(() => undefined)
+        })
+      }) : undefined
+      this.orchestration.beginPrompt({ sessionID: input.sessionID, workspace: input.workspace, goal: input.goal, exploration: "manual" })
+      this.orchestration.setRunIdentity(input.sessionID, runId)
+      this.persistence.openRun(runId)
+      const source = goalSource(input.goal, "session-" + input.sessionID, "user_message")
+      const profile = input.configuredProfile ?? "adaptive"
+      const run: RunRecord = {
+        autonomous,
+        sessionID: input.sessionID,
+        runId,
+        goal: input.goal,
+        workspace: input.workspace,
+        source,
+        revisesPlan: revision,
+        verification: inactiveVerification(runId, input.sessionID, input.maxSameFailureRepairs),
+        workers: new Map(),
+        draining: false,
+        drainRequested: false,
+        executionFailures: new Map(),
+        active: new Set(),
+        openedScopes: new Set([input.sessionID]),
+        observedActions: new Set(),
+        pendingHostEvents: [],
+        hostEvents: Promise.resolve(),
+        hostEventDepth: 0,
+        maxParallel: Math.max(1, Math.min(2, input.maxParallelWorkUnits ?? 2)),
+        interrupted: false,
+        execution: new AbortController(),
+        trigger: input.trigger ?? "auto",
+        contractAccepted: false,
+        context: input.context,
+        executionSelection: input.execution,
+        integrationStarted: false,
+        integrationComplete: true,
+        settledWaiters: new Set(),
+        configuredProfile: profile,
+        effectiveProfile: input.effectiveProfile ?? profile,
+        sandboxRuns: 0,
+        domainPolicy: domainBinding
+          ? structuredClone(domainBinding.policy)
+          : input.domainPolicy ? structuredClone(input.domainPolicy) : undefined,
+        domainBinding,
+        domainPreparation,
+      }
+      this.repository.set(run)
+      await this.publish(run)
+      return this.snapshot(run)
+    } catch (error) {
+      // The factory transferred ownership even when binding validation or Run
+      // construction fails before the controller reaches the repository.
+      if (autonomous) await autonomous.terminate("runtime_fault").catch(() => undefined)
+      else if (autonomousInput) {
+        const configured = autonomousInput.setup.cleanupTimeoutMs
+        const timeoutMs = Number.isSafeInteger(configured) && configured > 0 ? Math.min(configured, 30_000) : 5_000
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          await Promise.race([
+            Promise.resolve().then(() => autonomousInput.ports.cleanup()).catch(() => undefined),
+            new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs) }),
+          ])
+        } finally { if (timer) clearTimeout(timer) }
+      }
+      throw error
     }
-    this.repository.set(run)
-    await this.publish(run)
-    return this.snapshot(run)
   }
 
   async beginPlanExecution(sessionID: string, input: PlanExecutionInput) {
@@ -552,6 +884,8 @@ export class CoordinatorRuntime implements CoordinatorService {
         maxParallelWorkUnits: planning.maxParallel, trigger: planning.trigger,
         execution: planning.executionSelection,
         domainPolicy: planning.domainPolicy,
+        domainBinding: planning.domainBinding ? unbindDomainExecution(planning.domainBinding) : undefined,
+        domainPreparation: planning.domainPreparation ? structuredClone(planning.domainPreparation) : undefined,
         context: input.context ?? planning.context,
       }
       // Closing a planning sidecar cannot transfer its observations, evidence, or completion authority.
@@ -589,6 +923,8 @@ export class CoordinatorRuntime implements CoordinatorService {
       trigger: input.trigger, maxSameFailureRepairs: input.maxSameFailureRepairs,
       maxParallelWorkUnits: input.maxParallelWorkUnits, execution: input.execution,
       domainPolicy: input.domainPolicy,
+      domainBinding: input.domainBinding,
+      domainPreparation: input.domainPreparation,
     })
     const run = this.runs.get(sessionID)
     if (!run || run.runId !== opened.runId || run.runId === input.planningRunId) throw new Error("PLAN_EXECUTION_RUN_INVALID")
@@ -616,13 +952,17 @@ export class CoordinatorRuntime implements CoordinatorService {
   async proposeContract(sessionID: string, proposal: GoalContractProposal) {
     const run = this.runFor(sessionID)
     if (!run) return this.snapshotOrInactive(sessionID)
+    if (run.autonomous) throw new Error("RUN_SEMANTICS_FIXED")
     if (run.planExecutionStarting) throw new Error("RUN_ACTIVE: contract changes are suspended during execution handoff")
     if (run.metaReviewFailure) throw new Error("META_REVIEW_RUN_FAILED: start a new run after resolving the review failure")
     if (run.rootExecutionFailure) return this.snapshot(run)
+    run.contractAccepted = false
+    // A replacement proposal immediately revokes the prior contract's path and
+    // risk authority; only the verifier-accepted replacement is registered below.
+    this.orchestration.registerContract(run.sessionID, [], [])
     await this.ensureVerifier(run)
     if (!run.verifier) return this.snapshot(run)
     const contract = materializeProposal(run.source, proposal)
-    run.contractAccepted = false
     this.acceptVerifierStatus(run, await run.verifier.proposeContract(contract))
     const accepted = run.verification.goalContract
     if (
@@ -637,7 +977,12 @@ export class CoordinatorRuntime implements CoordinatorService {
     }
     run.contractAccepted = true
     run.contractProposal = structuredClone(proposal)
-    this.orchestration.registerContract(run.sessionID, accepted.claims.map((claim) => claim.claimId), accepted.criteria.map((criterion) => criterion.criterionId))
+    this.orchestration.registerContract(
+      run.sessionID,
+      accepted.claims.map((claim) => claim.claimId),
+      accepted.criteria.map((criterion) => criterion.criterionId),
+      accepted,
+    )
     const pending = run.pendingHostEvents.splice(0)
     for (const event of pending) await this.observeHostEvent(event.type, event.data)
     await this.publish(run)
@@ -647,6 +992,10 @@ export class CoordinatorRuntime implements CoordinatorService {
   async acceptWorkGraph(sessionID: string, graph: Orchestration.WorkGraph, context: unknown) {
     const run = this.runFor(sessionID)
     if (!run) throw new Error("Coordinator run is not open")
+    return this.acceptWorkGraphForRun(run, graph, context)
+  }
+
+  private async acceptWorkGraphForRun(run: RunRecord, graph: Orchestration.WorkGraph, context: unknown) {
     if (run.planExecutionStarting) throw new Error("RUN_ACTIVE: WorkGraph dispatch is suspended during execution handoff")
     if (run.metaReviewFailure) throw new Error("META_REVIEW_RUN_FAILED: WorkGraph dispatch is suspended")
     if (run.rootExecutionFailure) throw new Error("ROOT_EXECUTION_FAILED: start a new run before dispatching more WorkUnits")
@@ -744,7 +1093,8 @@ export class CoordinatorRuntime implements CoordinatorService {
         }
         phase = taskID ? "worker.repair.execute" : "worker.execute"
         const result = await this.executor!({
-          rootSessionID: run.sessionID, unit: worker.unit, context: run.context, signal: run.execution.signal, taskID, repairPrompt,
+          rootSessionID: run.sessionID, runId: run.runId, unit: worker.unit, context: run.context,
+          signal: run.execution.signal, taskID, repairPrompt,
         })
         if (!this.isLive(run)) return
         worker.output = result.output
@@ -900,19 +1250,10 @@ export class CoordinatorRuntime implements CoordinatorService {
         "root.integration.dispatch")
       return
     }
-    // A WorkGraph is not complete when its workers finish: the root integration
-    // stage is the single place where shared files and final root decisions run.
-    // If no executor is registered, the branch below turns that missing stage
-    // into a harness failure instead of silently issuing Ready.
-    const needsIntegration =
-      run.graph.integrationPaths.length > 0 ||
-      run.graph.units.some((unit) => unit.integrationRequests.length > 0)
-    if (!needsIntegration) {
-      run.integrationComplete = true
-      await this.publish(run)
-      if (run.trigger === "auto") void this.verifyRoot(run.sessionID, "automatic")
-      return
-    }
+    // A WorkGraph is not complete when its workers finish. Root integration is
+    // also the lifecycle hand-off that confirms the application executor ran;
+    // an empty integrationPaths/integrationRequests list means "no requested
+    // shared-file merge", not "skip the root executor".
     if (!this.integrationExecutor) {
       await this.blockRootExecution(run,
         Object.assign(new Error("Coordinator root integration executor is unavailable."), { code: "ROOT_INTEGRATION_UNAVAILABLE" }),
@@ -922,6 +1263,7 @@ export class CoordinatorRuntime implements CoordinatorService {
     try {
       await this.continueRoot(run, {
         rootSessionID: run.sessionID,
+        runId: run.runId,
         context: run.context,
         integrationPaths: run.graph.integrationPaths,
         integrationRequests: run.graph.units.flatMap((unit) => unit.integrationRequests),
@@ -961,6 +1303,17 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (run.interrupted || !this.completionGate(sessionID)) return this.snapshot(run)
     if (this.pending(run)) return this.snapshot(run)
     if (run.rootExecutionFailure) return this.snapshot(run)
+    // Early idle/completion can arrive before the attached model callback has
+    // recorded its current-Run result. Keep that state retryable and non-Ready.
+    if (requiresDomainResult(run) && !run.domainResult) return this.snapshot(run)
+    if (run.domainResult && run.domainProposal?.kind === "direct") {
+      try {
+        validateDomainResultBinding(run, run.domainResult, run.domainProposal.dispatch)
+      } catch (error) {
+        await this.blockRootExecution(run, error, "domain.result.verify_gate")
+        return this.snapshot(run)
+      }
+    }
     const requiredClaims = new Set(
       run.verification.goalContract?.criteria.filter(criterion => criterion.required).flatMap(criterion => criterion.claimIds) ?? [],
     )
@@ -1023,6 +1376,7 @@ export class CoordinatorRuntime implements CoordinatorService {
         await this.publish(run)
         await this.continueRoot(run, {
           rootSessionID: run.sessionID,
+          runId: run.runId,
           context: run.context,
           integrationPaths: run.graph?.integrationPaths ?? [],
           integrationRequests: run.graph?.units.flatMap((unit) => unit.integrationRequests) ?? [],
@@ -1238,6 +1592,12 @@ export class CoordinatorRuntime implements CoordinatorService {
   async cancel(sessionID: string) {
     const run = this.runFor(sessionID)
     if (!run) return this.snapshotOrInactive(sessionID)
+    if (run.autonomous) {
+      await run.autonomous.terminate("cancelled")
+      run.execution.abort()
+      await this.publish(run)
+      return this.snapshot(run)
+    }
     run.interrupted = true
     run.execution.abort()
     run.verification = { ...run.verification, outcome: undefined, readyEligible: false, readyRef: null, scopeAttestation: null }
@@ -1266,6 +1626,83 @@ export class CoordinatorRuntime implements CoordinatorService {
     return run ? this.snapshot(run) : this.snapshotOrInactive(sessionID)
   }
 
+  private autonomousRun(sessionID: string, runId: string) {
+    const run = this.runs.get(sessionID)
+    if (!run?.autonomous || run.runId !== runId || !this.isCurrent(run)) throw new Error("AUTONOMOUS_RUN_MISMATCH")
+    return { run, controller: run.autonomous }
+  }
+
+  autonomousBasis(sessionID: string, runId: string) {
+    return this.autonomousRun(sessionID, runId).controller.basis()
+  }
+
+  async prepareAutonomous(sessionID: string, runId: string, preparation: AutonomousPreparationResult) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    controller.prepare(preparation)
+    await this.publish(run)
+    return this.snapshot(run)
+  }
+
+  async resumeAutonomous(sessionID: string, runId: string, clarification: import("@base-harness/domain-contracts").AutonomousClarification) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    if (!clarification) throw new Error("AUTONOMOUS_CLARIFICATION_REQUIRED")
+    controller.resume(clarification)
+    await this.publish(run)
+    return this.snapshot(run)
+  }
+
+  async reviseAutonomousIntent(sessionID: string, runId: string, revision: import("@base-harness/domain-contracts").AutonomousIntentRevision) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    if (!revision) throw new Error("AUTONOMOUS_INTENT_REVISION_REQUIRED")
+    controller.reviseIntent(revision)
+    await this.publish(run)
+    return this.snapshot(run)
+  }
+
+  async submitAutonomousDecision(sessionID: string, runId: string, proposal: unknown) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    const result = await controller.submit(proposal)
+    if (!this.isCurrent(run)) return { accepted: false as const, code: "AUTONOMOUS_RUN_MISMATCH" }
+    await this.publish(run)
+    if (run.persistenceFailed) return { accepted: false as const, code: "STATUS_PERSISTENCE_FAILED" }
+    return result
+  }
+
+  async reserveAutonomousModel(sessionID: string, runId: string, requestId: string, payload: Json, upperBound: ResourceUsage) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    const reservation = await controller.reserveModel(requestId, payload, upperBound)
+    await this.publish(run)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    return { reservation, signal: reservation === "reserved" ? controller.modelSignal(requestId) : undefined }
+  }
+
+  async settleAutonomousModel(sessionID: string, runId: string, requestId: string, usage: ResourceUsage) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    await controller.settleModel(requestId, usage)
+    await this.publish(run)
+  }
+
+  registerAutonomousSubject(sessionID: string, runId: string, subject: SubjectRef) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    controller.registerSubject(subject)
+  }
+
+  registerAutonomousCheck(sessionID: string, runId: string, check: CheckSpec) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    controller.registerCheck(check)
+  }
+
+  createAutonomousMeasurementPorts(options: AutonomousMeasurementOptions) {
+    return createAutonomousMeasurementPorts(options)
+  }
+
   private snapshotOrInactive(sessionID: string): HarnessStatus {
     return {
       sessionID,
@@ -1290,6 +1727,20 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   private snapshot(run: RunRecord): HarnessStatus {
+    if (run.autonomous) {
+      const autonomous = run.autonomous.snapshot()
+      return {
+        ...this.snapshotOrInactive(run.sessionID), sessionID: run.sessionID, runId: run.runId,
+        workspace: run.workspace, goal: run.goal, phase: run.persistenceFailed ? "blocked" : "autonomous", autonomous,
+        ...(run.persistenceFailed ? { outcome: "failure" as const, verificationState: "failure" as const,
+          failureKind: run.verification.failureKind, message: run.verification.message } : {}),
+        activeCount: autonomous.pendingDecisionIds.length,
+        execution: run.executionSelection ? structuredClone(run.executionSelection) : undefined,
+        domainBinding: run.domainBinding ? structuredClone(run.domainBinding) : undefined,
+        domainPolicy: run.domainPolicy ? structuredClone(run.domainPolicy) : undefined,
+        metrics: { observedActions: autonomous.budget.actions, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0, sandboxRuns: run.sandboxRuns },
+      }
+    }
     const orchestration = this.orchestration.snapshot(run.sessionID)
     return {
       sessionID: run.sessionID,
@@ -1323,8 +1774,11 @@ export class CoordinatorRuntime implements CoordinatorService {
       readyEligible: run.verification.readyEligible === true,
       message: run.verification.message,
       isolation: run.isolation,
-      execution: run.executionSelection,
-      domainPolicy: run.domainPolicy,
+      execution: run.executionSelection ? structuredClone(run.executionSelection) : undefined,
+      domainPolicy: run.domainPolicy ? structuredClone(run.domainPolicy) : undefined,
+      domainBinding: run.domainBinding ? structuredClone(run.domainBinding) : undefined,
+      domainPreparation: run.domainPreparation ? structuredClone(run.domainPreparation) : undefined,
+      domainResult: run.domainResult ? structuredClone(run.domainResult) : undefined,
       metrics: {
         observedActions: run.observedActions.size,
         workers: run.workers.size,
@@ -1352,6 +1806,10 @@ export class CoordinatorRuntime implements CoordinatorService {
         const code = typeof rawCode === "string" && /^[A-Z0-9_]{1,80}$/.test(rawCode) ? rawCode : "STATUS_PERSISTENCE_FAILED"
         // A failed durable sink is terminal for this run, not a code-repair instruction.
         run.persistenceFailed = true
+        if (run.autonomous) {
+          await run.autonomous.terminate("runtime_fault")
+          run.autonomous.recordPersistenceFault(code)
+        }
         run.execution.abort()
         run.integrationComplete = false
         run.verification = {
@@ -1387,6 +1845,7 @@ export class CoordinatorRuntime implements CoordinatorService {
 
   resetForTest() {
     for (const run of this.runs.values()) {
+      if (run.autonomous) void run.autonomous.terminate("interrupted")
       run.interrupted = true
       run.execution.abort()
       void run.verifier?.close().catch(() => undefined)
@@ -1395,6 +1854,9 @@ export class CoordinatorRuntime implements CoordinatorService {
     this.candidates.reset()
     this.executor = undefined
     this.integrationExecutor = undefined
+    // The Domain dispatcher is application composition, not session state.
+    // Keeping the stable function prevents a test/run reset from leaving later
+    // sessions with an unregistered adapter while still forbidding replacement.
     this.publishers.clear()
     this.statusCheckpoint = undefined
   }
@@ -1405,5 +1867,7 @@ export const Coordinator = new CoordinatorRuntime()
 export * from "./contracts"
 export { RunRepository } from "./run-repository"
 export { CandidateService } from "./candidate-service"
+export type { AutonomousRunSetup, AutonomousRunPorts, AutonomousDecisionResult } from "./autonomous-run"
+export type { AutonomousMeasurementOptions } from "./autonomous-measurement"
 
 export type { GoalContractProposal, VerificationStatus }

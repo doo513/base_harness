@@ -51,6 +51,20 @@ export class RunRepository<T extends RepositoryRun> {
       const target = path.join(this.stateDirectory, entry.name)
       try {
         const value = JSON.parse(await fs.readFile(target, "utf8")) as Record<string, unknown>
+        if (value.schemaVersion === "coordinator-run-v2") {
+          // New records remain history-only after restart, just like legacy ones.
+          const state = value.autonomous as Record<string, unknown> | undefined
+          if (state?.lifecycle !== "closed") {
+            value.interrupted = true
+            value.updatedAt = new Date().toISOString()
+            if (state) {
+              state.lifecycle = "closed"
+              state.recovery = { reason: "interrupted", processesResumed: false }
+            }
+            await this.atomicWrite(target, value)
+          }
+          continue
+        }
         if (!terminal.has(String(value.phase ?? ""))) {
           value.phase = "interrupted"
           value.interrupted = true
@@ -86,7 +100,11 @@ export class RunRepository<T extends RepositoryRun> {
   async persist(status: HarnessStatus, interrupted: boolean) {
     if (!this.persistent || !status.runId) return
     const digest = createHash("sha256").update(status.goal).digest("hex")
-    const body = {
+    const body = status.autonomous ? {
+      schemaVersion: "coordinator-run-v2", sessionID: status.sessionID, runId: status.runId,
+      workspace: status.workspace, goalDigest: digest, semantics: "autonomous-v1",
+      autonomous: status.autonomous, interrupted, updatedAt: new Date().toISOString(),
+    } : {
       schemaVersion: "coordinator-run-v1",
       sessionID: status.sessionID,
       runId: status.runId,

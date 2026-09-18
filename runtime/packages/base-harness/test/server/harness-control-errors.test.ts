@@ -46,3 +46,25 @@ test("a blocked planning run has a typed public explanation", () => {
   expect(result?.message).toContain("Host run is blocked")
   expect(result?.message).not.toContain("private")
 })
+
+test("Host selection failures expose registered codes without leaking private identifiers", () => {
+  for (const code of ["DOMAIN_UNKNOWN", "OVERLAY_UNKNOWN", "DOMAIN_CONTROL_INVALID", "DOMAIN_SKILL_INCOMPATIBLE", "DOMAIN_SKILL_CONFLICT"]) {
+    const result = harnessControlRejection(Object.assign(new Error("private custom identifier"), { code }))
+    expect(result?.kind).toBe(code)
+    expect(result?.message).not.toContain("private")
+  }
+})
+
+for (const code of ["PLAN_DOMAIN_BINDING_REQUIRED", "PLAN_DOMAIN_BINDING_CHANGED", "PLAN_EXECUTION_GRAPH_CHANGED", "PLAN_RUN_CHANGED"]) {
+  test(`${code} crosses the rejected Host promise boundary as an actionable public error`, async () => {
+    const result = await Effect.runPromise(Effect.exit(mapHarnessControlFailure(Effect.promise(async () => {
+      throw Object.assign(new Error("private workspace and credentials"), { code })
+    }))))
+    if (result._tag !== "Failure") throw new Error("Expected a request rejection")
+    const error = Cause.squash(result.cause)
+    expect(error).toBeInstanceOf(InvalidRequestError)
+    expect((error as InvalidRequestError).kind).toBe(code)
+    expect((error as InvalidRequestError).message.toLowerCase()).toContain("review")
+    expect(JSON.stringify(error)).not.toContain("private")
+  })
+}

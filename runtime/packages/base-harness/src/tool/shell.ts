@@ -23,7 +23,7 @@ import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { SandboxError, StrictSandbox } from "@base-harness/core/sandbox"
 import { WINDOWS_JOB_OBJECT_ENV } from "@base-harness/core/platform-adapter"
-import { Coordinator } from "../harness/coordinator-service"
+import { Coordinator, Orchestration } from "../harness/coordinator-service"
 
 export { Parameters } from "./shell/prompt"
 
@@ -615,6 +615,8 @@ export const ShellTool = Tool.define(
               const cwd = params.workdir
                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
                 : instanceCtx.directory
+              if (Coordinator.status(ctx.sessionID).autonomous) Coordinator.assertToolAllowed(ctx.sessionID, "bash")
+              else yield* Effect.promise(() => Orchestration.assertOpaqueExecutionAllowed(ctx.sessionID))
               if (params.timeout !== undefined && params.timeout < 0) {
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
@@ -632,7 +634,7 @@ export const ShellTool = Tool.define(
               )
 
               const effectiveProfile = Coordinator.status(ctx.sessionID).effectiveProfile ?? cfg.verification?.profile ?? "adaptive"
-              if (effectiveProfile === "strict") {
+              if (effectiveProfile === "strict" || Coordinator.status(ctx.sessionID).autonomous) {
                 const env = yield* shellEnv(ctx, cwd)
                 return yield* Effect.promise(async () => {
                   try {
@@ -646,7 +648,7 @@ export const ShellTool = Tool.define(
                       command: params.command,
                       workspace: instanceCtx.directory,
                       cwd,
-                      config: cfg.isolation,
+                      config: { ...cfg.isolation, timeoutMs: Math.min(timeout, cfg.isolation?.timeoutMs ?? timeout) },
                       signal: ctx.abort,
                     })
                     await Coordinator.recordIsolation(ctx.sessionID, result.provenance)
@@ -655,7 +657,8 @@ export const ShellTool = Tool.define(
                     await ctx.metadata({ metadata: { output: preview(output), exit: result.exitCode, sandbox: result.provenance } })
                     return {
                       title: params.command,
-                      metadata: { output: preview(output), exit: result.exitCode, truncated: false, sandbox: result.provenance },
+                      metadata: { output: preview(output), exit: result.exitCode, truncated: false, sandbox: result.provenance,
+                        measurement: { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode } },
                       output: `${output}\n\n<sandbox_metadata>\nbackend=${result.provenance.backend}\nnetwork=${result.provenance.network}\n</sandbox_metadata>`,
                     }
                   } catch (error) {
@@ -669,7 +672,7 @@ export const ShellTool = Tool.define(
                     })
                     throw error
                   }
-                })
+                }).pipe(Effect.uninterruptible)
               }
 
               return yield* run(

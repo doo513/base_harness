@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test"
 import {
   decideContractPreflight,
   parseInterpretationProposal,
+  prepareContractPreflight,
+  scanContractPreflight,
+  validateAndDedupeContractPreflight,
   validateInterpretationBindings,
   type ContractPreflightSignals,
 } from "../src"
@@ -16,6 +19,59 @@ const signals: ContractPreflightSignals = {
 }
 
 describe("selective contract preflight", () => {
+  test("separates Prepare, Scan, and Validate/Dedupe before Prove", () => {
+    const interpretation = {
+      version: 1,
+      candidates: [
+        {
+          id: "u1",
+          kind: "assumption",
+          impact: "implementation_choice",
+          affectedClaimIds: ["claim-1"],
+          affectedCriterionIds: [],
+          sourceRefs: [{ source: "user_prompt" }],
+          statement: "The private helper name is not prescribed.",
+        },
+      ],
+    }
+    const prepared = prepareContractPreflight(interpretation, signals)
+    expect(prepared.stage).toBe("prepare")
+
+    const scanned = scanContractPreflight(prepared, {
+      claimIds: ["claim-1"],
+      criterionIds: ["criterion-1"],
+    })
+    expect(scanned.stage).toBe("scan")
+    expect(scanned.assumptionCandidates.map((candidate) => candidate.id)).toEqual(["u1"])
+
+    const validated = validateAndDedupeContractPreflight(scanned)
+    expect(validated.stage).toBe("validate_dedupe")
+    expect(validated.result.decision).toBe("accept")
+    expect(validated.scannedCandidateCount).toBe(1)
+  })
+
+  test("deduplicates repeated reasons and affected bindings", () => {
+    const candidates = ["u1", "u2"].map((id) => ({
+      id,
+      kind: "conflict",
+      impact: "scope",
+      affectedClaimIds: ["claim-1"],
+      affectedCriterionIds: ["criterion-1"],
+      sourceRefs: [{ source: "user_prompt" }],
+      statement: `Scope conflict ${id}.`,
+    }))
+    const scanned = scanContractPreflight(
+      prepareContractPreflight({ version: 1, candidates }, signals),
+      { claimIds: ["claim-1"], criterionIds: ["criterion-1"] },
+    )
+
+    const validated = validateAndDedupeContractPreflight(scanned)
+    expect(validated.scannedCandidateCount).toBe(2)
+    expect(validated.result.reasons).toEqual(["scope_conflict"])
+    expect(validated.result.affectedClaimIds).toEqual(["claim-1"])
+    expect(validated.result.affectedCriterionIds).toEqual(["criterion-1"])
+  })
+
   test("accepts an atomic implementation choice without meta review", () => {
     const interpretation = parseInterpretationProposal({
       version: 1,

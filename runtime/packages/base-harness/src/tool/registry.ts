@@ -57,7 +57,8 @@ import { McpCatalog } from "@/mcp/catalog"
 import { HarnessContractTool } from "./harness-contract"
 import { HarnessWorkGraphTool } from "./harness-workgraph"
 import { assertHarnessContractSubmitted } from "./harness-contract-state"
-import { Orchestration } from "../harness/coordinator-service"
+import { Coordinator, Orchestration } from "../harness/coordinator-service"
+import { autonomousNativeToolOperation } from "../harness/autonomous-capabilities"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (
@@ -312,7 +313,12 @@ const layer = Layer.effect(
         return true
       })
 
-      const scoped = input.sessionID ? Orchestration.filterToolsForScope(input.sessionID, filtered) : filtered
+      const autonomous = input.sessionID && Coordinator.status(input.sessionID).autonomous
+      const scoped = autonomous ? filtered.filter((tool) => {
+        const operation = autonomousNativeToolOperation(tool.id)
+        return operation !== undefined && autonomous.authority.capabilities.some((capability) => capability.operation === operation)
+      })
+        : input.sessionID ? Orchestration.filterToolsForScope(input.sessionID, filtered) : filtered
       const codeModeDescription = scoped.some((tool) => tool.id === "execute")
         ? yield* describeCodeMode(input)
         : undefined
@@ -351,7 +357,7 @@ const layer = Layer.effect(
                 ? args.subagent_type
                 : undefined
               assertHarnessContractSubmitted(context.sessionID, tool.id, undefined, subagentType)
-              Orchestration.assertToolAllowed(context.sessionID, tool.id, args)
+              if (!Coordinator.status(context.sessionID).autonomous) Orchestration.assertToolAllowed(context.sessionID, tool.id, args)
               return tool.execute(args, context)
             },
             formatValidationError: tool.formatValidationError,
@@ -456,6 +462,7 @@ export const node = LayerNode.make({
     Todo.node,
     Agent.node,
     Skill.node,
+    Permission.node,
     Session.node,
     BackgroundJob.node,
     Provider.node,

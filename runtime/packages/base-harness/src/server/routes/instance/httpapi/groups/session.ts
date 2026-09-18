@@ -85,11 +85,11 @@ export const HarnessControlPayload = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("domain.set"),
-    domain: Schema.Literals(["develop", "general"]),
+    domain: Schema.String,
   }),
   Schema.Struct({
     type: Schema.Literal("skill.set"),
-    skill: Schema.Literal("hackathon"),
+    skill: Schema.String,
     enabled: Schema.Boolean,
   }),
   Schema.Struct({

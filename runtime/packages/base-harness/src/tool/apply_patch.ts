@@ -14,6 +14,7 @@ import DESCRIPTION from "./apply_patch.txt"
 import { FileSystem } from "@base-harness/core/filesystem"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
+import { Orchestration } from "../harness/coordinator-service"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -70,8 +71,15 @@ export const ApplyPatchTool = Tool.define(
       let totalDiff = ""
 
       for (const hunk of hunks) {
-        const filePath = path.resolve(instance.directory, hunk.path)
-        yield* assertExternalDirectoryEffect(ctx, filePath)
+        const requestedPath = path.resolve(instance.directory, hunk.path)
+        yield* assertExternalDirectoryEffect(ctx, requestedPath)
+        const admitted = yield* Effect.promise(() =>
+          Orchestration.resolveWrite(ctx.sessionID, instance.worktree, requestedPath),
+        )
+        if (admitted.overlay) {
+          return yield* Effect.fail(new Error("apply_patch is root-only under managed orchestration"))
+        }
+        const filePath = admitted.physicalPath
 
         switch (hunk.type) {
           case "add": {
@@ -139,8 +147,18 @@ export const ApplyPatchTool = Tool.define(
               if (change.removed) deletions += change.count || 0
             }
 
-            const movePath = hunk.move_path ? path.resolve(instance.directory, hunk.move_path) : undefined
-            yield* assertExternalDirectoryEffect(ctx, movePath)
+            const requestedMovePath = hunk.move_path ? path.resolve(instance.directory, hunk.move_path) : undefined
+            yield* assertExternalDirectoryEffect(ctx, requestedMovePath)
+            let movePath: string | undefined
+            if (requestedMovePath) {
+              const admittedMove = yield* Effect.promise(() =>
+                Orchestration.resolveWrite(ctx.sessionID, instance.worktree, requestedMovePath),
+              )
+              if (admittedMove.overlay) {
+                return yield* Effect.fail(new Error("apply_patch is root-only under managed orchestration"))
+              }
+              movePath = admittedMove.physicalPath
+            }
 
             fileChanges.push({
               filePath,

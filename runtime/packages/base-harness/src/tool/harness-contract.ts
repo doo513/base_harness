@@ -1,14 +1,17 @@
+import type { ContractSubmission } from "@base-harness/domain-contracts"
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { registerHarnessContractProposal } from "./harness-contract-state"
 import { Question } from "../question"
 import { captureExecutionContext } from "../harness/execution-context"
+import { requestContractQuestions } from "../harness/contract-questions"
 
 const StringList = Schema.mutable(Schema.Array(Schema.String))
 
 const Criterion = Schema.Struct({
   criterionId: Schema.String,
   statement: Schema.String,
+  verificationTemplate: Schema.optional(Schema.String),
   claimIds: StringList,
   required: Schema.Boolean,
   risk: Schema.Literals(["low", "medium", "high", "critical"]),
@@ -38,7 +41,10 @@ const Claim = Schema.Struct({
     exclusions: StringList,
   }),
   applicability: Schema.optional(Applicability),
-  predicate: Schema.Record(Schema.String, Schema.Unknown),
+  predicate: Schema.StructWithRest(
+    Schema.Struct({ type: Schema.String }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
   verifierPolicy: Schema.Struct({
     minimumStrength: Schema.Literals(["structural", "execution", "behavioral", "external_oracle"]),
     allowedVerifierIds: StringList,
@@ -82,7 +88,9 @@ export const Parameters = Schema.Struct({
   }),
 })
 
-type Proposal = Schema.Schema.Type<typeof Parameters>
+type Proposal = ContractSubmission
+// The transport schema and all runtime consumers use the same proposal shape.
+const _proposalSchema: Schema.Codec<ContractSubmission, any> = Parameters
 type Metadata = { contractProposal: Proposal }
 
 export const HarnessContractTool = Tool.define<typeof Parameters, Metadata, Question.Service>(
@@ -91,52 +99,21 @@ export const HarnessContractTool = Tool.define<typeof Parameters, Metadata, Ques
     const question = yield* Question.Service
     return {
       description:
-        "Submit a typed GoalContract and semantic uncertainty candidates before changing workspace state. The Kernel validates bindings and decides whether input, meta-review, or execution is allowed.",
+        "Submit a typed GoalContract and semantic uncertainty candidates before changing workspace state. The Kernel validates bindings; the Host requests input or review and awaits Runtime acceptance.",
       parameters: Parameters,
       execute: (params: Proposal, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const executionContext = yield* captureExecutionContext(ctx.sessionID, ctx)
-          const status = yield* Effect.promise(() =>
+          let status = yield* Effect.promise(() =>
             registerHarnessContractProposal(ctx.sessionID, params, executionContext),
           )
-          const preflightBlocking = Array.isArray(status.preflight?.requiredDecisions)
-            ? status.preflight.requiredDecisions
-            : []
-          const reviewBlocking = Array.isArray(status.metaReview?.issues)
-            ? status.metaReview.issues.filter(
-                (issue: { severity?: string }) => issue.severity === "blocking",
-              )
-            : []
-          const blocking = [...preflightBlocking, ...reviewBlocking]
-          let answers: ReadonlyArray<Question.Answer> | undefined
-          if (status.planningState === "awaiting_input" && blocking.length > 0) {
-            const questions = blocking.slice(0, 3).map(
-              (issue: { statement: string; suggestedResolution?: string }) => ({
-                question: issue.statement,
-                header: "Required decision",
-                options: [
-                  {
-                    label: "Apply suggestion",
-                    description:
-                      issue.suggestedResolution ??
-                      "Use the reviewer resolution for this blocking issue.",
-                  },
-                  {
-                    label: "Keep requirement",
-                    description:
-                      "Retain the current requirement and provide a custom clarification.",
-                  },
-                ],
-                multiple: false,
-                custom: true,
-              }),
-            )
-            answers = yield* question.ask({
-              sessionID: ctx.sessionID,
+          if (status.contractProcessing?.outcome === "needs_input") {
+            status = yield* requestContractQuestions({
+              sessionID: ctx.sessionID, abort: ctx.abort,
               tool: ctx.callID ? { messageID: ctx.messageID, callID: ctx.callID } : undefined,
-              questions,
-            })
+            }).pipe(Effect.provideService(Question.Service, question))
           }
+          const answers = status.contractProcessing?.answers
           return {
             title: "GoalContract proposal",
             output: JSON.stringify({ proposal: params, kernel: status, answers }, null, 2),

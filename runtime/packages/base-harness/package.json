@@ -153,7 +153,8 @@
     "xdg-basedir": "5.1.0",
     "yargs": "18.0.0",
     "zod": "catalog:",
-    "@base-harness/kernel-host": "workspace:*"
+    "@base-harness/kernel-host": "workspace:*",
+    "@base-harness/domain": "workspace:*"
   },
   "overrides": {
     "drizzle-orm": "catalog:"

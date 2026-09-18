@@ -26,12 +26,12 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title="Select domain"
+      title="Built-in domains · /domain <id> for registered domains"
       options={options}
       onSelect={(option) => {
         const body: HarnessControl = {
           type: "domain.set" as const,
-          domain: option.value as "develop" | "general",
+          domain: option.value,
         }
         if (route.data.type !== "session") {
           queueHarnessControl(body)

@@ -11,7 +11,9 @@ import { ToolRegistry } from "@/tool/registry"
 import { assertMcpOperationAllowed, operationForMcpTool } from "@/harness/mcp-operation"
 import { executionModelFromProvider } from "@/harness/model-selection"
 import { Truncate } from "@/tool/truncate"
-import { Orchestration } from "@/harness/coordinator-service"
+import { Coordinator, Orchestration } from "@/harness/coordinator-service"
+import { autonomousControlTools, type AutonomousFinalCandidate } from "@/harness/autonomous-tools"
+import { isAutonomousNativeTool } from "@/harness/autonomous-capabilities"
 import { assertHarnessContractSubmitted } from "@/tool/harness-contract-state"
 
 import { Plugin } from "@/plugin"
@@ -50,8 +52,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
+  onAutonomousFinal?: (candidate: AutonomousFinalCandidate) => void
 }) {
   const tools: Record<string, AITool> = {}
+  const advertisedRun = Coordinator.status(input.session.id)
+  const advertisedBasis = advertisedRun.autonomous ? Coordinator.autonomousBasis(input.session.id, advertisedRun.runId) : undefined
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
   const permission = yield* Permission.Service
@@ -106,11 +111,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     permission: input.session.permission,
     sessionID: input.session.id,
   })) {
+    if (advertisedRun.autonomous && !isAutonomousNativeTool(item.id)) continue
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
+        const current = Coordinator.status(input.session.id)
+        if (advertisedRun.autonomous) {
+          if (current.runId !== advertisedRun.runId) throw new Error("AUTONOMOUS_RUN_MISMATCH")
+          const decisionId = input.processor.message.id + ":" + options.toolCallId
+          return Coordinator.submitAutonomousDecision(input.session.id, advertisedRun.runId, decisionId, {
+            schemaVersion: "decision-v1", decisionId, basis: advertisedBasis!, observationIds: [],
+            action: { kind: "invoke", toolId: item.id, arguments: args },
+          }).then((result) => {
+              if (!result.accepted) return { title: "Admission diagnostic", metadata: {}, output: JSON.stringify(result) }
+              return result.output
+            })
+        }
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
@@ -150,6 +168,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
+  const autonomous = advertisedRun
+  if (autonomous.autonomous) {
+    if (!input.onAutonomousFinal) throw new Error("AUTONOMOUS_FINAL_HANDLER_REQUIRED")
+    return { ...tools, ...autonomousControlTools(input.session.id, autonomous.runId, input.processor.message.id, input.onAutonomousFinal) }
+  }
   const owner = Orchestration.snapshot(input.session.id)
   // Existing MCP invocation policy denies all managed children, including resource tools.
   if (owner && owner.sessionID !== input.session.id) return tools

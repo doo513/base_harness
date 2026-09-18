@@ -1,4 +1,6 @@
 export * from "./client"
 export * from "./failure"
+export * from "./measurement-types"
+export * from "./measurement-client"
 export * from "./profile"
 export * from "./types"

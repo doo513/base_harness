@@ -57,7 +57,8 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
-import { flushPendingHarnessControls, pendingHarnessSelection } from "../../harness/pending-control"
+import { flushPendingHarnessControls } from "../../harness/pending-control"
+import { unwrapHarnessResponse } from "../../harness/control-response"
 import { resolveLocalSlash } from "../../prompt/local-slash"
 import { harnessActorLabel } from "../../harness/identity-presentation"
 
@@ -1046,7 +1047,7 @@ export function Prompt(props: PromptProps) {
       sessionID = res.data.id
       try {
         if (args.executionBackend) {
-          await sdk.client.session.harnessControl({
+          unwrapHarnessResponse(await sdk.client.session.harnessControl({
             sessionID,
             directory,
             body: {
@@ -1057,31 +1058,12 @@ export function Prompt(props: PromptProps) {
                 options: args.executionEffort ? { reasoning_effort: args.executionEffort } : undefined,
               },
             },
-          })
+          }))
         }
         await flushPendingHarnessControls((body) =>
           sdk.client.session.harnessControl({
             sessionID: sessionID!,
             directory,
-            body,
-          }),
-        )
-      } catch (error) {
-        if (finishMoveProgress) move.finishSubmit()
-        toast.show({
-          message: `Harness setup failed before execution: ${errorMessage(error)}`,
-          variant: "error",
-        })
-        return true
-      }
-    }
-
-    if (sessionID != null && pendingHarnessSelection().count > 0) {
-      try {
-        await flushPendingHarnessControls((body) =>
-          sdk.client.session.harnessControl({
-            sessionID: sessionID!,
-            directory: location()?.directory ?? paths.cwd,
             body,
           }),
         )

@@ -1,3 +1,6 @@
+import { Skill } from "../skill"
+import { Permission } from "../permission"
+import { requireContractSkill } from "../harness/contract-skill"
 import * as Tool from "./tool"
 import {
   closeExplorationBudget,
@@ -117,6 +120,8 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const contractSkills = yield* Skill.Service
+    const skillPermissions = yield* Permission.Service
     const metaReviews = new MetaReviewDispatchRegistry<Tool.Context>()
 
     const run = Effect.fn("TaskTool.execute")(function* (
@@ -299,6 +304,9 @@ export const TaskTool = Tool.define(
             try: () =>
               ExecutionBackends.execute({
                 sessionID: nextSession.id,
+                runId: typeof ctx.extra?.coordinatorRunId === "string"
+                  ? ctx.extra.coordinatorRunId
+                  : undefined,
                 scopeID: nextSession.id,
                 workspace: workspace,
                 prompt: taskPrompt,
@@ -513,12 +521,25 @@ export const TaskTool = Tool.define(
           ...source.extra,
           bypassAgentCheck: true,
           coordinatorDispatch: true,
+          coordinatorRunId: request.runId,
         },
         metadata: () => Effect.void,
         ask: () => Effect.void,
       }
+      const reviewSkill = request.phase === "goal_contract" ? await coordinatorBridge.promise(Effect.gen(function* () {
+        const reviewer = yield* agent.get("meta-review")
+        if (!reviewer) return yield* Effect.fail(new Error("CONTRACT_SKILL_AGENT_UNAVAILABLE"))
+        const parent = yield* sessions.get(source.sessionID)
+        return yield* requireContractSkill("goal-contract-review", { sessionID: source.sessionID, agent: reviewer, permission: parent.permission }).pipe(
+          Effect.provideService(Skill.Service, contractSkills), Effect.provideService(Permission.Service, skillPermissions),
+        )
+      })) : undefined
       const prompt = JSON.stringify({
         protocol: "base-harness-meta-review-v1",
+        ...(reviewSkill ? {
+          instructions: reviewSkill, originalRequest: request.contractContext?.originalRequest,
+          clarifications: request.contractClarifications ?? [],
+        } : {}),
         phase: request.phase,
         attempt: request.attempt,
         artifact: request.artifact,
@@ -540,8 +561,7 @@ export const TaskTool = Tool.define(
           revisedArtifact: "include only for a safe typed correction",
         },
         constraints: {
-          blockingOnlyForRequiredDecision: true,
-          warningBecomesAssumption: true,
+          ...(request.phase === "plan" ? { blockingOnlyForRequiredDecision: true, warningBecomesAssumption: true } : {}),
           noEvidenceOrReadyAuthority: true,
         },
       })
@@ -552,6 +572,7 @@ export const TaskTool = Tool.define(
         return metaReviews.run(reviewerContext, request, () =>
           ExecutionBackends.execute({
             sessionID: request.sessionID,
+            runId: request.runId,
             scopeID: request.sessionID,
             phase: "meta_review",
             workspace,

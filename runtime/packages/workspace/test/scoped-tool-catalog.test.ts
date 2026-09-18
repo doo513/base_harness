@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import * as O from "../src/orchestration"
+import { acceptedContract } from "./contract-fixture"
 
 let root: string, workspace: string
 beforeEach(async () => {
@@ -27,7 +28,9 @@ async function child(kind: "worker" | "explore" | "meta-review", run: (store: O.
   await O.withWorkspaceCandidateStore(store, async () => {
     O.beginPrompt({ sessionID:"root", workspace, goal:"fixture", exploration:kind==="explore"?"always":"manual" })
     if (kind === "worker") {
-      O.registerContract("root", ["claim"], ["criterion"])
+      O.registerContract(
+        "root", ["claim"], ["criterion"], acceptedContract(["claim"], ["criterion"]),
+      )
       O.beginPlanning("root")
       await O.acceptWorkGraph("root", { units:[{
         id:"unit",title:"fixture unit",instructions:"write the assigned file",claimIds:["claim"],criterionIds:["criterion"],

@@ -2,7 +2,7 @@ import type { HarnessControl } from "@base-harness/kernel"
 
 export type HeadlessControl = Extract<
   HarnessControl,
-  { type: "domain.set" | "skill.set" | "planning.plan_once" | "planning.execute" }
+  { type: "domain.set" | "skill.set" | "execution.select" | "planning.plan_once" | "planning.execute" }
 >
 
 type HeadlessDomain = Extract<HeadlessControl, { type: "domain.set" }>["domain"]
@@ -10,6 +10,11 @@ type HeadlessDomain = Extract<HeadlessControl, { type: "domain.set" }>["domain"]
 export interface HeadlessControlOptions {
   domain?: HeadlessDomain
   hackathon?: boolean
+  overlay?: string[]
+  disableOverlay?: string[]
+  executionBackend?: string
+  executionModel?: string
+  executionEffort?: string
   plan?: boolean
   executePlan?: string
 }
@@ -36,6 +41,7 @@ export interface HarnessOutputStatus {
   failureKind?: string | null
   assuranceLevel?: string
   effectiveProfile?: string
+  autonomous?: { lifecycle?: string }
   [key: string]: unknown
 }
 
@@ -61,6 +67,18 @@ export function headlessControls(options: HeadlessControlOptions): HeadlessContr
   if (options.hackathon === true) {
     controls.push({ type: "skill.set", skill: "hackathon", enabled: true })
   }
+  for (const skill of options.overlay ?? []) controls.push({ type: "skill.set", skill, enabled: true })
+  for (const skill of options.disableOverlay ?? []) controls.push({ type: "skill.set", skill, enabled: false })
+  if (options.executionBackend) {
+    controls.push({
+      type: "execution.select",
+      selection: {
+        adapterID: options.executionBackend,
+        modelID: options.executionModel,
+        options: options.executionEffort ? { reasoning_effort: options.executionEffort } : undefined,
+      },
+    })
+  }
   if (options.plan === true) controls.push({ type: "planning.plan_once" })
   return controls
 }
@@ -71,6 +89,11 @@ export function assertExecutePlanOptions(options: ExecutePlanOptions): void {
   const conflicts = [
     options.domain !== undefined,
     options.hackathon === true,
+    Boolean(options.overlay?.length),
+    Boolean(options.disableOverlay?.length),
+    Boolean(options.executionBackend),
+    Boolean(options.executionModel),
+    Boolean(options.executionEffort),
     options.plan === true,
     Boolean(options.model),
     Boolean(options.variant),
@@ -110,6 +133,7 @@ export function harnessEventStatus(event: unknown, rootSessionID: string): Harne
 
 export function harnessSettled(status: HarnessOutputStatus, planOnly: boolean): boolean {
   if (planOnly && (status.planningState === "plan_ready" || status.phase === "plan_ready")) return true
+  if (status.autonomous?.lifecycle === "closed") return true
   return TERMINAL_PHASES.has(status.phase)
 }
 

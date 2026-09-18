@@ -59,6 +59,7 @@
         "@aws-sdk/credential-providers": "3.1057.0",
         "@base-harness/codemode": "workspace:*",
         "@base-harness/coordinator": "workspace:*",
+        "@base-harness/domain": "workspace:*",
         "@base-harness/kernel": "workspace:*",
         "@base-harness/kernel-host": "workspace:*",
         "@base-harness/llm": "workspace:*",
@@ -179,6 +180,8 @@
       "name": "@base-harness/coordinator",
       "version": "2.0.0",
       "dependencies": {
+        "@base-harness/domain-contracts": "workspace:*",
+        "@base-harness/kernel": "workspace:*",
         "@base-harness/security": "workspace:*",
         "@base-harness/verification": "workspace:*",
         "@base-harness/workspace": "workspace:*",
@@ -287,6 +290,17 @@
     "packages/domain": {
       "name": "@base-harness/domain",
       "version": "2.0.0",
+      "dependencies": {
+        "@base-harness/domain-contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/domain-contracts": {
+      "name": "@base-harness/domain-contracts",
+      "version": "2.0.0",
       "devDependencies": {
         "typescript": "catalog:",
       },
@@ -339,6 +353,9 @@
     "packages/kernel": {
       "name": "@base-harness/kernel",
       "version": "0.0.0",
+      "dependencies": {
+        "@base-harness/domain-contracts": "workspace:*",
+      },
       "devDependencies": {
         "typescript": "catalog:",
       },
@@ -348,6 +365,7 @@
       "version": "2.0.0",
       "dependencies": {
         "@base-harness/domain": "workspace:*",
+        "@base-harness/domain-contracts": "workspace:*",
         "@base-harness/kernel": "workspace:*",
         "@base-harness/workspace": "workspace:*",
       },
@@ -560,6 +578,10 @@
     "packages/verification": {
       "name": "@base-harness/verification",
       "version": "2.0.0",
+      "dependencies": {
+        "@base-harness/domain-contracts": "workspace:*",
+        "@base-harness/kernel": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -568,6 +590,9 @@
     "packages/workspace": {
       "name": "@base-harness/workspace",
       "version": "2.0.0",
+      "dependencies": {
+        "@base-harness/domain-contracts": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -916,6 +941,8 @@
     "@base-harness/core": ["@base-harness/core@workspace:packages/core"],
 
     "@base-harness/domain": ["@base-harness/domain@workspace:packages/domain"],
+
+    "@base-harness/domain-contracts": ["@base-harness/domain-contracts@workspace:packages/domain-contracts"],
 
     "@base-harness/effect-drizzle-sqlite": ["@base-harness/effect-drizzle-sqlite@workspace:packages/effect-drizzle-sqlite"],
 

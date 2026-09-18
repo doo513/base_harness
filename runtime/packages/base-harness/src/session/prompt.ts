@@ -1,3 +1,9 @@
+import { Skill } from "../skill"
+import { requireContractSkill } from "../harness/contract-skill"
+import { autonomousModelTurn } from "../harness/autonomous-model"
+import { autonomousExternalTurn, type AutonomousExternalFeedback } from "../harness/autonomous-external"
+import type { AutonomousFinalCandidate } from "../harness/autonomous-tools"
+import { canonicalJson } from "@base-harness/kernel"
 import { LayerNode } from "@base-harness/core/effect/layer-node"
 import { PermissionV1 } from "@base-harness/core/v1/permission"
 import path from "path"
@@ -102,7 +108,9 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 import { Coordinator, Orchestration } from "../harness/coordinator-service"
 import { captureExecutionContext } from "../harness/execution-context"
 import { requireExecutionModel } from "../harness/model-selection"
-import { executeExternalGoal } from "../harness/external-execution"
+import { executeExternalGoal, contractPauseOutput } from "../harness/external-execution"
+import { requestContractQuestions } from "../harness/contract-questions"
+import { Question } from "../question"
 import { ExecutionBackends, normalizeBackendSelection } from "../harness/execution/backend-router"
 
 export interface Interface {
@@ -198,6 +206,8 @@ const layer = Layer.effect(
     const commands = yield* Command.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
+    const contractSkills = yield* Skill.Service
+    const contractQuestions = yield* Question.Service
     const fsys = yield* FSUtil.Service
     const mcp = yield* MCP.Service
     const lsp = yield* LSP.Service
@@ -1137,6 +1147,8 @@ const layer = Layer.effect(
         .join("\n")
         .trim()
       let executionContext: unknown
+      let attachedExecution: { runId: string; adapterId: string; modelId?: string; autonomous?: boolean } | undefined
+      let domainInstructions: string[] = []
       if (goal) {
         const cfg = yield* config.get()
         const instance = yield* InstanceState.context
@@ -1180,7 +1192,7 @@ const layer = Layer.effect(
           workspace: instance.directory,
           goal,
           mode: cfg.orchestration?.mode,
-          exploration: planOnly ? "manual" : cfg.orchestration?.exploration,
+          exploration: planOnly || cfg.kernel?.executionSemantics === "autonomous-v1" ? "manual" : cfg.orchestration?.exploration,
           maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
           model: {
             providerID: selectedModel.providerID,
@@ -1194,6 +1206,7 @@ const layer = Layer.effect(
           executionContext = yield* captureExecutionContext(input.sessionID, {
             sessionID: input.sessionID,
             messageID: contextMessageID,
+            autonomousPolicy: cfg.kernel?.autonomous ? structuredClone(cfg.kernel.autonomous) : undefined,
             agent: contextAgent,
             abort: new AbortController().signal,
             messages: [],
@@ -1206,8 +1219,12 @@ const layer = Layer.effect(
               variant: input.variant,
               executionSelection: execution,
             },
-          })
-          yield* Effect.promise(() =>
+          }).pipe(
+            Effect.provideService(Permission.Service, permission), Effect.provideService(Session.Service, sessions),
+            Effect.provideService(Agent.Service, agents), Effect.provideService(ToolRegistry.Service, registry),
+            Effect.provideService(Question.Service, contractQuestions),
+          )
+          const opened = yield* Effect.promise(() =>
             Coordinator.openRun({
               sessionID: input.sessionID,
               workspace: instance.directory,
@@ -1218,11 +1235,38 @@ const layer = Layer.effect(
               maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
               trigger: cfg.verification?.trigger,
               defaultDomain: cfg.kernel?.defaultDomain ?? "develop",
+              semantics: kernelStatus?.autonomous && kernelStatus.autonomous.lifecycle !== "closed" ? "autonomous-v1" : cfg.kernel?.executionSemantics,
               context: executionContext,
               execution,
+              domainExecutor: externalSelection ? {
+                id: externalSelection.backendId,
+                revision: externalSelection.capabilityRevision || "1",
+                kind: externalSelection.kind,
+                connectionId: externalSelection.connectionId,
+                modelId: externalSelection.modelId,
+                options: externalSelection.nativeOptions,
+              } : {
+                id: "session-model",
+                revision: "1",
+                kind: "model_api",
+                providerId: selectedModel.providerID,
+                modelId: selectedModel.modelID,
+                options: {},
+              },
+              executionEnvironment: { platform: process.platform },
             }),
           )
+          domainInstructions = opened.domainPreparation?.instructions ?? []
+          attachedExecution = {
+            runId: opened.runId,
+            autonomous: Boolean(opened.autonomous),
+            adapterId: opened.domainBinding?.executor.id ?? "session-model",
+            ...(opened.domainBinding?.executor.modelId ? { modelId: opened.domainBinding.executor.modelId } : {}),
+          }
         }
+        const preparedInstruction = domainInstructions.length
+          ? "\n\nDomain preparation:\n" + domainInstructions.map((item) => "- " + item).join("\n")
+          : ""
         const synthetic = {
           type: "text" as const,
           text: planOnly
@@ -1231,8 +1275,10 @@ const layer = Layer.effect(
                 "Submit harness_contract and harness_workgraph without changing workspace state.",
                 "Use read-only tools only when contract construction requires workspace facts; do not delegate exploration by default.",
                 "Stop after the Kernel reports plan_ready; execution requires /execute.",
-              ].join("\n")
-            : directive.instruction,
+              ].join("\n") + preparedInstruction
+            : attachedExecution?.autonomous ? JSON.stringify({ protocol: "autonomous-v1", domain: cfg.kernel?.defaultDomain ?? "develop",
+                instructions: "Use admitted tools to investigate. Register measurements when useful; choose subsequent actions from the observed facts. A final assessment is not verifier-certified success." })
+              : directive.instruction + preparedInstruction,
           synthetic: true,
         }
         const exploration = directive.explore
@@ -1270,15 +1316,25 @@ const layer = Layer.effect(
       if (!session.parentID) {
         const instance = yield* InstanceState.context
         const status = yield* Effect.promise(() => Coordinator.readStatus(input.sessionID, instance.directory))
-        if (goal && status.execution?.adapterID && status.execution.modelID) {
-          const result = yield* Effect.promise(() => executeExternalGoal({
+        if (goal && status.execution?.adapterID && status.execution.modelID && !status.autonomous) {
+          const author = yield* agents.get(input.agent ?? message.info.agent)
+          if (!author) return yield* Effect.die(new Error("CONTRACT_SKILL_AGENT_UNAVAILABLE"))
+          const authoringSkill = yield* requireContractSkill("goal-contract-authoring", { sessionID: input.sessionID, agent: author, permission: session.permission }).pipe(Effect.provideService(Skill.Service, contractSkills), Effect.provideService(Permission.Service, permission), Effect.orDie)
+          let result = yield* Effect.promise(() => executeExternalGoal({
             sessionID: input.sessionID,
             workspace: instance.directory,
             goal,
+            authoringSkill,
             context: executionContext,
             execution: status.execution,
             planOnly: status.planOnly === true,
           }))
+          if ((result.status as { contractProcessing?: { outcome: string } }).contractProcessing?.outcome === "needs_input") {
+            const clarified = yield* requestContractQuestions({ sessionID: input.sessionID }).pipe(
+              Effect.provideService(Question.Service, contractQuestions),
+            )
+            result = { status: clarified, output: contractPauseOutput(clarified.contractProcessing.outcome) }
+          }
           if (message.info.role !== "user") return message
           const now = Date.now()
           const info: SessionV1.Assistant = {
@@ -1310,7 +1366,25 @@ const layer = Layer.effect(
           return { info, parts: [part] }
         }
       }
-      return yield* loop({ sessionID: input.sessionID })
+      const completed = yield* loop({ sessionID: input.sessionID })
+      if (attachedExecution && !attachedExecution.autonomous) {
+        const output = completed.parts
+          .filter((part): part is SessionV1.TextPart => part.type === "text")
+          .map((part) => part.text)
+          .join("\n")
+          .trim()
+        yield* Effect.promise(() => Coordinator.recordExecutionResult(
+          input.sessionID,
+          attachedExecution!.runId,
+          {
+            output,
+            changedFiles: [],
+            adapterId: attachedExecution!.adapterId,
+            ...(attachedExecution!.modelId ? { modelId: attachedExecution!.modelId } : {}),
+          },
+        ))
+      }
+      return completed
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1325,11 +1399,24 @@ const layer = Layer.effect(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
+        let autonomousFeedback: string | undefined
+        let autonomousTerminal: SessionV1.WithParts | undefined
+        const openedRun = Coordinator.status(sessionID)
+        const externalAutonomous = openedRun.autonomous ? normalizeBackendSelection(openedRun.execution) : undefined
+        let externalFeedback: AutonomousExternalFeedback | undefined
+        const externalHistory: AutonomousExternalFeedback[] = []
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
+          const runStatus = Coordinator.status(sessionID)
+          if ((openedRun.autonomous || runStatus.autonomous) && openedRun.runId !== runStatus.runId) break
+          if (runStatus.autonomous?.lifecycle === "closed") break
+          if (runStatus.autonomous?.lifecycle === "waiting_input") {
+            const resumed = yield* Effect.tryPromise(() => Coordinator.requestAutonomousAnswers(sessionID, runStatus.runId)).pipe(Effect.option)
+            if (Option.isNone(resumed) || resumed.value.status !== "proceed") break
+          }
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
@@ -1339,6 +1426,47 @@ const layer = Layer.effect(
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+
+          if (runStatus.autonomous && externalAutonomous) {
+            if (tasks.length) throw new Error("AUTONOMOUS_NESTED_TASK_UNSUPPORTED")
+            step++
+            const msg: SessionV1.Assistant = {
+              id: MessageID.ascending(), parentID: lastUser.id, role: "assistant", mode: lastUser.agent,
+              agent: lastUser.agent, variant: lastUser.model.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: ModelV2.ID.make(externalAutonomous.modelId), providerID: ProviderV2.ID.make("external/" + externalAutonomous.backendId),
+              time: { created: Date.now() }, sessionID,
+            }
+            yield* sessions.updateMessage(msg)
+            const turn = yield* Effect.tryPromise({
+              try: () => autonomousExternalTurn({ sessionID, runId: runStatus.runId, workspace: ctx.directory,
+                goal: runStatus.autonomous!.intent.requirements.map((item) => item.text).join("\n"),
+                requestId: msg.id, selection: externalAutonomous, previous: externalFeedback, history: externalHistory }),
+              catch: (error) => error,
+            }).pipe(Effect.tapError((error) => {
+              msg.error = MessageV2.fromError(error, { providerID: msg.providerID, aborted: false })
+              msg.time.completed = Date.now()
+              return sessions.updateMessage(msg)
+            }), Effect.orDie)
+            externalFeedback = turn.feedback
+            externalHistory.push(turn.feedback)
+            const current = Coordinator.status(sessionID)
+            msg.time.completed = Date.now()
+            msg.finish = current.runId === runStatus.runId && current.autonomous?.lifecycle === "closed" ? "stop" : "tool-calls"
+            msg.tokens.output = turn.resourceUsage.modelTokens
+            msg.cost = turn.resourceUsage.costMinorUnits / 100
+            yield* sessions.updateMessage(msg)
+            const terminalParts: SessionV1.Part[] = []
+            if (turn.displayText) {
+              const part: SessionV1.TextPart = { id: PartID.ascending(), sessionID, messageID: msg.id, type: "text", text: turn.displayText }
+              yield* sessions.updatePart(part)
+              terminalParts.push(part)
+            }
+            if (current.runId === runStatus.runId && current.autonomous?.lifecycle === "closed") autonomousTerminal = { info: msg, parts: terminalParts }
+            if (current.runId !== runStatus.runId || current.autonomous?.lifecycle === "closed") break
+            continue
+          }
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1352,7 +1480,7 @@ const layer = Layer.effect(
             ) ?? false
 
           if (
-            lastAssistant?.finish &&
+            !autonomousFeedback && lastAssistant?.finish &&
             !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
             lastAssistant.parentID === lastUser.id
@@ -1373,7 +1501,7 @@ const layer = Layer.effect(
           }
 
           step++
-          if (step === 1)
+          if (step === 1 && !runStatus.autonomous)
             yield* title({
               session,
               modelID: lastUser.model.modelID,
@@ -1384,6 +1512,7 @@ const layer = Layer.effect(
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
 
+          if (runStatus.autonomous && task) throw new Error("AUTONOMOUS_NESTED_TASK_UNSUPPORTED")
           if (task?.type === "subtask") {
             yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
             continue
@@ -1406,6 +1535,7 @@ const layer = Layer.effect(
             lastFinished.summary !== true &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
+            if (runStatus.autonomous) throw new Error("AUTONOMOUS_COMPACTION_UNSUPPORTED")
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
           }
@@ -1466,6 +1596,7 @@ const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
 
+            let finalCandidate: AutonomousFinalCandidate | undefined
             const tools = yield* SessionTools.resolve({
               agent,
               session,
@@ -1474,6 +1605,7 @@ const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              onAutonomousFinal: (candidate) => { finalCandidate = candidate },
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -1492,27 +1624,34 @@ const layer = Layer.effect(
               })
             }
 
-            if (step === 1)
+            if (step === 1 && !runStatus.autonomous)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
             const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
+              runStatus.autonomous ? Effect.succeed(undefined) : sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
-              sys.mcp(agent, session.permission),
+              runStatus.autonomous ? Effect.succeed(undefined) : sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
+            const contractAuthoring = !runStatus.autonomous && !session.parentID && ["contract_building", "contract_preparing", "contract_scanning", "contract_validate_dedupe", "contract_preflight", "awaiting_input"].includes((Coordinator.status(sessionID) as { planningState?: string }).planningState ?? "")
+              ? yield* requireContractSkill("goal-contract-authoring", { sessionID, agent, permission: session.permission }).pipe(Effect.provideService(Skill.Service, contractSkills), Effect.provideService(Permission.Service, permission), Effect.orDie)
+              : undefined
             const system = [
               ...env,
               ...instructions,
               ...(mcpInstructions ? [mcpInstructions] : []),
               ...(skills ? [skills] : []),
+              ...(contractAuthoring ? [contractAuthoring] : []),
             ]
             const format = lastUser.format ?? { type: "text" as const }
+            if (runStatus.autonomous) system.push(JSON.stringify({ protocol: "autonomous-v1", state: Coordinator.status(sessionID).autonomous, diagnostic: autonomousFeedback ?? null }))
+            autonomousFeedback = undefined
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-            const result = yield* handle.process({
+            const turnBasis = runStatus.autonomous ? Coordinator.autonomousBasis(sessionID, runStatus.runId) : undefined
+            const processTurn = handle.process({
               user: lastUser,
               agent,
               permission: session.permission,
@@ -1527,6 +1666,55 @@ const layer = Layer.effect(
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+            const result = yield* (runStatus.autonomous ? autonomousModelTurn({
+              sessionID, runId: runStatus.runId, requestId: msg.id,
+              payload: { messageId: msg.id, providerId: model.providerID, modelId: model.id },
+              usage: () => ({ modelTokens: handle.message.tokens.input + handle.message.tokens.output + handle.message.tokens.reasoning
+                + handle.message.tokens.cache.read + handle.message.tokens.cache.write, costMinorUnits: Math.ceil(handle.message.cost * 100) }),
+            }, processTurn) : processTurn)
+            if (finalCandidate && runStatus.autonomous) {
+              if (canonicalJson(finalCandidate.basis) !== canonicalJson(Coordinator.autonomousBasis(sessionID, runStatus.runId))) {
+                autonomousFeedback = "FINISH_BASIS_CHANGED"
+                return "continue" as const
+              }
+              const final = yield* Effect.promise(() => Coordinator.submitAutonomousDecision(sessionID, runStatus.runId, finalCandidate!.decisionId, { ...finalCandidate!.response, basedOn: finalCandidate!.basis }))
+              if (final.accepted) {
+                const stored = yield* sessions.findMessage(sessionID, (item) => item.info.id === msg.id).pipe(Effect.orDie)
+                const terminalParts = Option.isSome(stored) ? [...stored.value.parts] : []
+                if (!terminalParts.some((part) => part.type === "text") &&
+                    typeof finalCandidate.response.text === "string" && finalCandidate.response.text) {
+                  const part: SessionV1.TextPart = { id: PartID.ascending(), sessionID, messageID: msg.id,
+                    type: "text", text: finalCandidate.response.text }
+                  yield* sessions.updatePart(part)
+                  terminalParts.push(part)
+                }
+                autonomousTerminal = { info: handle.message, parts: terminalParts }
+                return "break" as const
+              }
+              autonomousFeedback = final.code
+              return "continue" as const
+            }
+
+            const plainFinished = handle.message.finish && !["tool-calls", "unknown", "content-filter"].includes(handle.message.finish)
+            if (runStatus.autonomous && turnBasis && plainFinished && !handle.message.error && format.type === "text") {
+              const stored = yield* sessions.findMessage(sessionID, (item) => item.info.id === msg.id).pipe(Effect.orDie)
+              const terminalParts = Option.isSome(stored) ? [...stored.value.parts] : []
+              const text = terminalParts.filter((part): part is SessionV1.TextPart => part.type === "text")
+                .map((part) => part.text).join("\n").trim()
+              if (!text) {
+                autonomousFeedback = "AUTONOMOUS_FINAL_TEXT_REQUIRED"
+                return "continue" as const
+              }
+              const final = yield* Effect.promise(() => Coordinator.submitAutonomousDecision(sessionID, runStatus.runId,
+                msg.id + ":plain-final", { kind: "final", text, basedOn: turnBasis, openWork: "drain",
+                  assessment: { status: "not_assessed", summary: text, uncertainties: [], citedObservationIds: [] } }))
+              if (final.accepted) {
+                autonomousTerminal = { info: handle.message, parts: terminalParts }
+                return "break" as const
+              }
+              autonomousFeedback = final.code
+              return "continue" as const
+            }
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -1561,6 +1749,7 @@ const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
+              if (runStatus.autonomous) throw new Error("AUTONOMOUS_COMPACTION_UNSUPPORTED")
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,
@@ -1579,7 +1768,7 @@ const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        return autonomousTerminal ?? (yield* lastAssistant(sessionID))
       },
     )
 
@@ -1864,6 +2053,8 @@ export const node = LayerNode.make({
     SessionRevert.node,
     SessionSummary.node,
     SystemPrompt.node,
+    Skill.node,
+    Question.node,
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,

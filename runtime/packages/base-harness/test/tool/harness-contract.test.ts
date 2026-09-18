@@ -68,13 +68,16 @@ async function withGate(
   // decisions are not mocked, and no module replacement leaks into later tests.
   const submit = host.proposeContract.bind(host)
   const admit = host.assertToolAllowed.bind(host)
+  const accepted = host.hasAcceptedContract.bind(host)
   const submitSpy = spyOn(KernelHost.prototype, "proposeContract").mockImplementation(submit)
   const admitSpy = spyOn(KernelHost.prototype, "assertToolAllowed").mockImplementation(admit)
+  const acceptedSpy = spyOn(KernelHost.prototype, "hasAcceptedContract").mockImplementation(accepted)
   try {
     if (options.planOnly) await host.control(sessionID, { type: "planning.plan_once" })
     await host.openRun({ sessionID, workspace: process.cwd(), goal: "verify contract gating" })
     await run({ sessionID, host, proposals: () => proposals })
   } finally {
+    acceptedSpy.mockRestore()
     admitSpy.mockRestore()
     submitSpy.mockRestore()
   }
@@ -106,7 +109,7 @@ test("invalid bidirectional binding never reaches runtime acceptance", async () 
     const invalid = proposal()
     invalid.criteria[0]!.claimIds = ["missing-claim"]
     await expect(registerHarnessContractProposal(sessionID, invalid)).rejects.toThrow(
-      "Criterion-Claim binding must be bidirectional",
+      "CONTRACT_BINDING",
     )
     expect(proposals()).toBe(0)
     expectMutationDenied(sessionID)

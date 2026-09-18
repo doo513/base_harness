@@ -1,3 +1,4 @@
+import { contractFixture } from "./contract-fixture"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtemp, mkdir, realpath, rm } from "node:fs/promises"
 import os from "node:os"
@@ -35,14 +36,14 @@ function fixture() {
   return { host, set: (value: Record<string, unknown>) => { current = { ...current, ...value } } }
 }
 
-const contract = () => ({
+const contract = () => (contractFixture({
   interpretation: { version: 1, candidates: [] },
   criteria: [{ criterionId: "criterion", claimIds: ["claim"], required: true, risk: "low" }],
   claims: [{
     claimId: "claim", criterionIds: ["criterion"], required: true,
     applicability: { status: "applicable" }, verifierPolicy: { minimumEvidenceFamilies: 1 },
   }],
-})
+}))
 
 for (const phase of ["ready", "blocked", "failure", "interrupted"]) {
   test("terminal " + phase + " presentation does not revoke Kernel admission", async () => {

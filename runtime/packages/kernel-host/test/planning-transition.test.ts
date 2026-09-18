@@ -45,6 +45,8 @@ test("an atomic direct request does not dispatch an unnecessary WorkGraph", asyn
   const { host, transitions, dispatched } = fixture()
   await host.openRun({ sessionID: "root", workspace: process.cwd(), goal: "Produce one file" })
   await host.proposeContract("root", proposal())
+  expect(() => host.assertToolAllowed("root", "write")).not.toThrow()
+  expect(() => host.assertToolAllowed("root", "bash")).toThrow("CONTRACT_RISK_EXCEEDED")
   const result = await host.acceptWorkGraph("root", {
     units: [{
       id: "unit", title: "Output", instructions: "Produce output.txt",

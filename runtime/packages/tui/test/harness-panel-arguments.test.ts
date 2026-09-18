@@ -7,7 +7,26 @@ const commands = [
   { display: "/plan discard" },
   { display: "/execute", argument: "planId", aliases: ["/run-reviewed"] },
   { display: "/harness" },
+  { display: "/domain", argument: "id" },
+  { display: "/overlay", argument: "id" },
+  { display: "/overlay off", argument: "id" },
 ]
+
+test("generic selection commands preserve opaque IDs for Host validation", () => {
+  for (const [input, display] of [
+    ["/domain Research.Custom", "/domain"],
+    ["/overlay Research.Custom", "/overlay"],
+    ["/overlay off Research.Custom", "/overlay off"],
+  ]) {
+    const result = resolveLocalSlash(input!, commands)
+    expect(result?.kind).toBe("command")
+    if (result?.kind !== "command") throw new Error("Expected selection control")
+    expect(result.command.display).toBe(display)
+    expect(result.arguments).toEqual(["Research.Custom"])
+  }
+  expect(resolveLocalSlash("/domain one two", commands)?.kind).toBe("invalid")
+  expect(resolveLocalSlash("/overlay off one two", commands)?.kind).toBe("invalid")
+})
 
 test("execute forwards one opaque plan ID without rewriting its case or spelling", () => {
   const result = resolveLocalSlash("/execute Plan-ABC_123", commands)
@@ -67,7 +86,8 @@ test("an existing session uses the Host planning preference, not the home stagin
 })
 
 for (const planningState of [
-  "contract_building", "contract_preflight", "contract_reviewing", "awaiting_input",
+  "contract_building", "contract_preparing", "contract_scanning", "contract_validate_dedupe",
+  "contract_preflight", "contract_reviewing", "awaiting_input",
   "planning_decision", "plan_building", "plan_reviewing",
 ]) {
   test("active plan-only is not advertised as the next request: " + planningState, () => {

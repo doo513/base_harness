@@ -11,7 +11,7 @@
     "dev:host": "bun run --cwd packages/base-harness dev",
     "typecheck": "turbo typecheck",
     "check:harness-boundaries": "bun run script/check-harness-boundaries.ts",
-    "test:harness": "bun test ./packages/kernel/test ./packages/kernel-host/test ./packages/coordinator/test ./packages/verification/test ./packages/workspace/test",
+    "test:harness": "bun test ./packages/domain/test ./packages/kernel/test ./packages/kernel-host/test ./packages/coordinator/test ./packages/verification/test ./packages/workspace/test",
     "postinstall": "bun run --cwd packages/core fix-node-pty",
     "build": "bun run script/build-release.ts",
     "build:release": "bun run script/build-release.ts"
@@ -22,6 +22,7 @@
       "packages/codemode",
       "packages/coordinator",
       "packages/domain",
+      "packages/domain-contracts",
       "packages/kernel",
       "packages/core",
       "packages/effect-drizzle-sqlite",

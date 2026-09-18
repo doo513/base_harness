@@ -1,3 +1,4 @@
+import { contractFixture } from "./contract-fixture"
 import { expect, test } from "bun:test"
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -73,7 +74,7 @@ async function fixture(body: (value: {
   try {
     await host.control("root", { type: "planning.plan_once" })
     await host.openRun({ sessionID: "root", workspace, goal: "Original goal" })
-    await host.proposeContract("root", {
+    await host.proposeContract("root", contractFixture({
       goal: "Original goal", interpretation: { version: 1, candidates: [] },
       criteria: [{ criterionId: "criterion", statement: "Change input", claimIds: ["claim"], required: true, risk: "low" }],
       claims: [{
@@ -81,7 +82,7 @@ async function fixture(body: (value: {
         applicability: { status: "applicable" }, verifierPolicy: { minIndependentFamilies: 1 },
         scope: { targets: ["input.ts"] },
       }],
-    })
+    }))
     await body({ host, workspace, graph, control })
   } finally {
     for (const [key, value] of previous) {

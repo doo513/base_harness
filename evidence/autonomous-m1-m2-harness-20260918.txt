@@ -1,0 +1,513 @@
+$ bun test ./packages/domain/test ./packages/kernel/test ./packages/kernel-host/test ./packages/coordinator/test ./packages/verification/test ./packages/workspace/test
+bun test v1.4.0 (34cbb9a40)
+
+packages/domain/test/execution.test.ts:
+(pass) General prepares read-only context and accepts a result path without a WorkGraph [1.05ms]
+(pass) Develop normalizes a bound WorkGraph without retaining actor objects [2.57ms]
+(pass) Hackathon composes around Develop, requires a WorkGraph, and prioritizes a demo root [1.10ms]
+(pass) execution modules are explicit, immutable registry choices and strategies are replaceable [1.99ms]
+(pass) registered strategy snapshots survive caller mutation and preserve the strategy receiver [1.42ms]
+(pass) class strategies keep prototype entry points and private configuration for Domain and Overlay [1.66ms]
+(pass) pinned class strategies fail closed when observable configuration drifts [1.23ms]
+(pass) pinned strategies fail closed when they mutate observable state during a call [0.37ms]
+
+packages/domain/test/registry.test.ts:
+(pass) legacy catalogs retain their resource shapes and return detached values [1.09ms]
+(pass) built-in policy behavior and legacy selection controls remain compatible [1.04ms]
+(pass) built-in selections carry knowledge references independently of operation policy [0.26ms]
+(pass) registry, registrations, nested snapshots and selection inputs cannot mutate a resolved policy [1.07ms]
+(pass) independent registries and cached policies keep their own revision and permissions [0.70ms]
+(pass) bounded cache eviction does not change policy values or an existing consumer snapshot [18.42ms]
+(pass) invalid selection fails with a typed diagnostic: null [0.38ms]
+(pass) invalid selection fails with a typed diagnostic: [] [0.23ms]
+(pass) invalid selection fails with a typed diagnostic: {} [0.13ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"research"} [0.12ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"","skills":[]} [0.07ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"research","skills":["brief","brief"]} [0.04ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"research","skills":[7]} [0.04ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"research","skills":[null]} [0.09ms]
+(pass) invalid selection fails with a typed diagnostic: {"domain":"research","skills":[],"ready":true} [0.04ms]
+(pass) unknown names and incompatible choices never fall back or damage valid resolutions [1.01ms]
+(pass) invalid selection control is rejected: null [0.23ms]
+(pass) invalid selection control is rejected: {"type":"execute"} [0.29ms]
+(pass) invalid selection control is rejected: {"type":"skill.set","skill":"brief","enabled":"false"} [0.16ms]
+(pass) cross-domain modifier fallback preserves earlier selections and rejects incompatible combinations [0.85ms]
+(pass) modifiers keep ordered revisions, deduplicate knowledge references, and cannot expand authority [0.90ms]
+(pass) conflicting knowledge references are diagnosed without poisoning valid selections [0.37ms]
+(pass) invalid domain metadata is rejected: schema [0.22ms]
+(pass) invalid domain metadata is rejected: identity [0.05ms]
+(pass) invalid domain metadata is rejected: revision [0.08ms]
+(pass) invalid domain metadata is rejected: operation [0.08ms]
+(pass) invalid domain metadata is rejected: sparse operation [0.08ms]
+(pass) invalid domain metadata is rejected: sparse knowledge [0.05ms]
+(pass) invalid domain metadata is rejected: duplicate operation [0.13ms]
+(pass) invalid domain metadata is rejected: planning boolean [0.06ms]
+(pass) invalid domain metadata is rejected: verification [0.12ms]
+(pass) invalid domain metadata is rejected: empty verifier templates [0.04ms]
+(pass) invalid domain metadata is rejected: measurement [0.11ms]
+(pass) invalid domain metadata is rejected: knowledge [0.15ms]
+(pass) invalid domain metadata is rejected: execution callback [0.11ms]
+(pass) duplicate registration, broken compatibility references and unknown defaults fail at construction [0.71ms]
+
+packages/kernel/test/autonomous.test.ts:
+(pass) autonomous wire contracts > strict schema rejects actor authority, Ready and nested privilege fields [2.43ms]
+(pass) autonomous wire contracts > schema accepts opaque tool JSON, but it does not define effects [2.48ms]
+(pass) autonomous wire contracts > parsing returns detached data and canonical order ignores key insertion order [0.61ms]
+(pass) autonomous wire contracts > JSON guard rejects getters without invoking them, cycles, holes and unsafe keys [0.42ms]
+(pass) autonomous wire contracts > observations cannot carry a repair/Ready directive [2.69ms]
+(pass) autonomous wire contracts > report is not an apply candidate; model cannot allocate interpretation reference [1.65ms]
+(pass) pure autonomous admission > the same failed observation allows investigation and partial completion [1.60ms]
+(pass) pure autonomous admission > rejects stale runId [0.38ms]
+(pass) pure autonomous admission > rejects stale taskId [0.32ms]
+(pass) pure autonomous admission > rejects stale taskRevision [0.36ms]
+(pass) pure autonomous admission > rejects stale intentRef [0.38ms]
+(pass) pure autonomous admission > rejects stale interpretationRef [0.35ms]
+(pass) pure autonomous admission > rejects stale authorityRef [0.23ms]
+(pass) pure autonomous admission > does not dispatch during preparing [0.54ms]
+(pass) pure autonomous admission > does not dispatch during waiting_input [0.34ms]
+(pass) pure autonomous admission > does not dispatch during closing [0.29ms]
+(pass) pure autonomous admission > does not dispatch during closed [0.24ms]
+(pass) pure autonomous admission > waiting input may end partially without restarting execution [0.62ms]
+(pass) pure autonomous admission > cross-run and invented observations cannot be cited, including assessment citations [0.73ms]
+(pass) pure autonomous admission > stale report bytes and stale effect extraction are rejected [0.74ms]
+(pass) pure autonomous admission > satisfied requires only explicit gates, partial remains possible [1.91ms]
+(pass) pure autonomous admission > empty gates, wrong subject/check/environment and newer errors cannot produce a pass [0.71ms]
+(pass) pure autonomous admission > measurement must use registered subject-compatible check and declared effects [1.04ms]
+(pass) authority and resource invariants > scope checks are segment-aware and reject uncanonical path aliases [0.28ms]
+(pass) authority and resource invariants > child authority cannot extend scope, lifetime, operations or drop exclusions [1.63ms]
+(pass) authority and resource invariants > budgets require real finite limits and explicit metering capabilities [0.70ms]
+
+packages/kernel/test/contract-pipeline.test.ts:
+(pass) Prepare copies nested input and policy; each stage exposes independent data and no authority [1.73ms]
+(pass) Validate rejects empty goal without review [0.38ms]
+(pass) Validate rejects empty ID without review [0.41ms]
+(pass) Validate rejects duplicate ID without review [0.54ms]
+(pass) Validate rejects missing statement without review [0.44ms]
+(pass) Validate rejects empty scope without review [0.33ms]
+(pass) Validate rejects unknown claim without review [0.44ms]
+(pass) Validate rejects reverse reference without review [0.24ms]
+(pass) Validate rejects duplicate reference without review [0.37ms]
+(pass) Validate rejects unknown template without review [0.23ms]
+(pass) unbound interpretation diagnostics retain all sources and targets when deduplicated [0.99ms]
+(pass) submissions cannot carry Host answers or cross-session context [0.36ms]
+
+packages/kernel/test/kernel.test.ts:
+(pass) kernel > plans only when typed signals require it [0.22ms]
+(pass) kernel > general domain is read-only [0.18ms]
+(pass) kernel > operation risk keeps low-risk structured writes while gating opaque execution [0.08ms]
+(pass) kernel > rejects blocking pass and cyclic plans [0.55ms]
+
+packages/kernel/test/preflight.test.ts:
+(pass) selective contract preflight > separates Prepare, Scan, and Validate/Dedupe before Prove [0.85ms]
+(pass) selective contract preflight > deduplicates repeated reasons and affected bindings [0.57ms]
+(pass) selective contract preflight > accepts an atomic implementation choice without meta review [0.34ms]
+(pass) selective contract preflight > requires input for a consequential ambiguity [0.23ms]
+(pass) selective contract preflight > requires meta review for high risk and strict profiles [0.23ms]
+(pass) selective contract preflight > rejects references outside the normalized contract [0.20ms]
+(pass) selective contract preflight > keeps selective review below always-review without skipping deterministic blockers [0.39ms]
+
+packages/kernel-host/test/contract-lifecycle.test.ts:
+(pass) seven decisions are asked in 3/3/1 batches, recorded per issue, and still require a new candidate [12.93ms]
+(pass) question cancel does not resolve or authorize [3.47ms]
+(pass) question empty does not resolve or authorize [3.10ms]
+(pass) question blank does not resolve or authorize [2.92ms]
+(pass) question no option does not resolve or authorize [2.45ms]
+(pass) an answer to an old revision cannot affect the current candidate [4.01ms]
+(pass) an answer to an old run cannot affect the current candidate [4.80ms]
+(pass) question binding is Host-owned and cannot be redirected to another session [6.02ms]
+(pass) revise is a contract revision requirement, never a user question [2.88ms]
+(pass) review needs_input creates a bound question without contract acceptance [2.52ms]
+(pass) a revised full candidate is checked before the second review and Runtime accepts the final body [3.09ms]
+(pass) pass cannot carry a structurally invalid replacement [2.86ms]
+(pass) revise cannot carry a structurally invalid replacement [2.45ms]
+(pass) review pass and past acceptance cannot bypass Runtime rejection or revalidation [4.54ms]
+(pass) a Question service failure is an error, while a duplicate ask cannot cancel the active batch [3.53ms]
+(pass) review pass remains non-mutating while Runtime acceptance is pending [2.24ms]
+(pass) a late answer after run cancellation is never recorded [3.10ms]
+(pass) a late answer after tool cancellation is never recorded [2.48ms]
+(pass) review receives only Host-recorded clarifications from the current Run [6.67ms]
+(pass) partially answered batches preserve the unanswered issues for the next question request [3.83ms]
+
+packages/kernel-host/test/contract-review-policy.test.ts:
+(pass) the default policy preserves the decision matrix and consequential uncertainty precedence [0.73ms]
+(pass) Host injects a replacement policy while retaining Runtime acceptance [3.59ms]
+(pass) structural failures never become policy questions, and policy errors fail closed [2.41ms]
+
+packages/kernel-host/test/domain-execution.test.ts:
+(pass) Host pins replaceable strategies and rechecks a staged proposal only after contract acceptance [6.79ms]
+(pass) rejected contracts and plan-only direct proposals never dispatch [10.41ms]
+(pass) a custom resolver cannot replace an open Run's callback using the same strategy identity [3.83ms]
+(pass) Host supports class strategies from a custom resolver without losing their receiver [3.97ms]
+(pass) Hackathon pins its overlay, rechecks a WorkGraph, and leaves execution behind the reviewed-plan gate [34.65ms]
+
+packages/kernel-host/test/domain-restoration.test.ts:
+(pass) a saved domain recipe is passive until explicit execution rebinds the same strategies [61.00ms]
+(pass) restoration rejects domain-revision drift before consuming or executing the reviewed plan [60.41ms]
+(pass) restoration rejects policy drift before consuming or executing the reviewed plan [48.20ms]
+(pass) restoration rejects skill-reference drift before consuming or executing the reviewed plan [48.31ms]
+(pass) restoration rejects overlay-revision drift before consuming or executing the reviewed plan [51.49ms]
+(pass) restoration rejects strategy drift before consuming or executing the reviewed plan [47.02ms]
+(pass) restoration rejects missing-overlay drift before consuming or executing the reviewed plan [56.17ms]
+(pass) legacy plans remain inspectable and discardable but cannot execute without a reviewed domain recipe [74.64ms]
+(pass) an execution strategy cannot rewrite reviewed instructions on explicit execute [46.48ms]
+
+packages/kernel-host/test/kernel-host.test.ts:
+(pass) KernelHost > keeps plan-only work immutable until typed execute [38.90ms]
+(pass) KernelHost > denies unclassified and mutating tools in general [1.14ms]
+
+packages/kernel-host/test/kernel-preflight-host.test.ts:
+(pass) KernelHost selective contract preflight > does not call a reviewer for a clear atomic contract [3.49ms]
+(pass) KernelHost selective contract preflight > asks for input before forwarding consequential ambiguity [1.51ms]
+(pass) KernelHost selective contract preflight > calls the reviewer once for a high-risk contract [2.41ms]
+(pass) KernelHost selective contract preflight > only a typed trigger reopens the affected contract [2.11ms]
+
+packages/kernel-host/test/meta-review-failure-boundary.test.ts:
+(pass) Host dispatch exceptions are not retried or reclassified as malformed model JSON [2.23ms]
+(pass) malformed model output gets one schema repair then a typed protocol failure [1.62ms]
+(pass) one successful schema repair accepts the contract without manufacturing evidence [1.77ms]
+(pass) a missing reviewer is a Host failure without contract acceptance [1.81ms]
+
+packages/kernel-host/test/plan-run-isolation.test.ts:
+(pass) a late pass plan reviewer cannot change a replacement Run [10.15ms]
+(pass) a late revise plan reviewer cannot change a replacement Run [10.38ms]
+(pass) a late reject plan reviewer cannot change a replacement Run [8.86ms]
+(pass) cancelled plan review cannot publish a plan even without a replacement Run [8.67ms]
+(pass) a newer contract invalidates a pending plan review in the same Run [7.45ms]
+(pass) a newer graph invalidates a pending review in the same Run [37.96ms]
+(pass) cancellation during publication retires only the old plan before new Run admission (planOnly=false) [42.35ms]
+(pass) cancellation during publication retires only the old plan before new Run admission (planOnly=true) [42.05ms]
+(pass) new Run admission notices a publication that starts during its status read [43.08ms]
+
+packages/kernel-host/test/planning-persistence-boundary.test.ts:
+(pass) a persistence failure during plan review cannot advance to plan_ready [7.64ms]
+(pass) a blocked reviewed plan is rejected before preparation or consumption and remains discardable [42.16ms]
+(pass) restoring and discarding a reviewed plan preserves the selected hackathon skill [56.39ms]
+
+packages/kernel-host/test/planning-transition.test.ts:
+(pass) typed plan-only selection moves the workspace from direct to planning [2.94ms]
+(pass) an atomic direct request does not dispatch an unnecessary WorkGraph [3.29ms]
+
+packages/kernel-host/test/real-contract-verifier.test.ts:
+(pass) real Python verifier accepts the checked contract without Evidence or Ready [489.67ms]
+(pass) real Python verifier rejects the checked contract without Evidence or Ready [408.12ms]
+
+packages/kernel-host/test/resolver-contract.test.ts:
+(pass) a domain absent from Kernel literals drives the existing Host policy and contract path [24.25ms]
+(pass) Host presentation cannot mutate the registry or change the next permission decision [3.65ms]
+(pass) unknown selections are rejected before execution and do not poison the current selection [7.40ms]
+(pass) metadata overlays without an explicitly registered execution overlay fail before a run opens [17.28ms]
+(pass) injected selection validation supports multiple modifiers without changing the signed session format [31.46ms]
+(pass) invalid selection controls cannot consume a valid previously reviewed plan [59.59ms]
+
+packages/kernel-host/test/restoration-gates.test.ts:
+(pass) accepted atomic contract reaches direct execution without a WorkGraph [2.85ms]
+(pass) rejected contract never opens direct execution or mutation [1.38ms]
+(pass) plan-only accepted contract cannot reach direct execution [1.05ms]
+(pass) missing interpretation is not silently treated as no uncertainty [0.81ms]
+(pass) an accepted contract cannot authorize a terminal run: {"phase":"blocked"} [1.37ms]
+(pass) an accepted contract cannot authorize a terminal run: {"phase":"interrupted"} [1.14ms]
+(pass) an accepted contract cannot authorize a terminal run: {"phase":"failure"} [1.82ms]
+(pass) an accepted contract cannot authorize a terminal run: {"outcome":"failure"} [4.64ms]
+
+packages/kernel-host/test/restored-planning-boundary.test.ts:
+(pass) trusted root continuation preserves the reviewed plan and original contract [65.45ms]
+(pass) a continuation for another workspace fails without resetting the accepted plan [40.54ms]
+(pass) untrusted input flags cannot grant continuation authority [36.36ms]
+(pass) caller mutation cannot replace the stored reviewed execution graph [39.47ms]
+(pass) a revised and re-reviewed graph, not the original proposal, is dispatched [39.78ms]
+(pass) invalid reviewed execution binding is rejected before dispatch: identity [10.49ms]
+(pass) invalid reviewed execution binding is rejected before dispatch: steps [7.46ms]
+(pass) invalid reviewed execution binding is rejected before dispatch: basis [7.01ms]
+(pass) execute opens a fresh run without reviewing the same plan again [36.31ms]
+(pass) concurrent execute controls cannot dispatch the same reviewed plan twice [37.49ms]
+(pass) a fresh verifier rejecting the contract prevents worker dispatch [34.99ms]
+(pass) changed planning basis is rejected before the execution run opens [29.46ms]
+(pass) Host dispatch failure is blocked instead of asking the user to resolve an internal error [36.72ms]
+(pass) an active execute rejects duplicates without waiting and does not lock another session [36.57ms]
+(pass) failed execute validation releases admission without consuming the reviewed plan [37.42ms]
+
+packages/kernel-host/test/reviewed-plan-recovery.test.ts:
+(pass) a fresh Host restores a reviewed plan without reviving execution or rerunning reviews [54.20ms]
+(pass) opaque context, provider options and credentials never enter the saved recipe [33.55ms]
+(pass) a changed basis or a different workspace cannot open an execution run [48.85ms]
+(pass) tampering with the canonical plan is not accepted as a reviewed revision [47.26ms]
+(pass) a replacement recipe cannot forge review provenance by keeping its old signature [36.90ms]
+(pass) only one process may consume a plan revision, and interruption cannot silently replay it [41.00ms]
+(pass) discarded plans and plans invalidated by a domain change stay unavailable after restart [90.93ms]
+(pass) a persistence redactor cannot silently change the reviewed contract [32.54ms]
+(pass) readStatus hydrates a cold pending plan without starting or publishing execution [40.48ms]
+(pass) an absent plan pointer is read-only and does not create a store [30.89ms]
+(pass) cold status rejects another workspace without starting a run [40.15ms]
+(pass) missing or corrupt referenced recipes cannot silently become ordinary direct work [96.02ms]
+(pass) executed and discarded plans are not displayed as pending after restart [92.69ms]
+(pass) pending revision status is read-only and requires explicit discard before another request [96.07ms]
+(pass) an ordinary atomic revision stays plan-only before the WorkGraph even without plan_once [96.34ms]
+(pass) cold domain controls invalidate the persisted plan rather than ignoring it [55.15ms]
+(pass) a discarded revision cannot be published later by its previous owner [94.60ms]
+(pass) publication and discard have exactly one durable winner [78.43ms]
+(pass) a signed publication recovers even when the latest-head cache was not updated [86.03ms]
+(pass) a cold pending preview refreshes to the published revision without executing it [108.96ms]
+(pass) legacy interrupted revision markers can be discarded but not resumed as execution [69.53ms]
+(pass) revision ownership and signed resolution integrity are both required [56.74ms]
+(pass) discarding a live reviewed plan closes its run and the next plan has fresh identity [66.56ms]
+(pass) a Windows head-cache rename retry preserves bytes until the signed revision is published [77.35ms]
+(pass) a permanently locked head cache remains intact and the signed revision remains recoverable [70.65ms]
+(pass) a failed canonical write cannot publish or execute an incomplete revision [77.60ms]
+(pass) an invalidated snapshot writer cannot be treated as a published plan [59.24ms]
+
+packages/kernel-host/test/session-history.test.ts:
+(pass) domain, skill and plan-once controls survive a cold Host without opening any run [28.79ms]
+(pass) cold history is read-only, never current authority: ready [28.56ms]
+(pass) cold history is read-only, never current authority: blocked [27.48ms]
+(pass) cold history is read-only, never current authority: failure [26.49ms]
+(pass) cold history is read-only, never current authority: interrupted [27.22ms]
+(pass) cold history is read-only, never current authority: worker_running [26.66ms]
+(pass) cold history is read-only, never current authority: direct [27.09ms]
+(pass) a new request keeps the saved domain but starts a new run, without old history authority [29.46ms]
+(pass) signed identity cannot be loaded into another workspace [17.11ms]
+(pass) tampering cannot promote selection or saved history [16.32ms]
+(pass) missing signing key does not become an empty/default session [16.25ms]
+(pass) Host state cannot be stored inside an actor workspace [4.46ms]
+(pass) redaction affects persisted history but cannot silently alter a selection [17.83ms]
+(pass) failed atomic replacement keeps the previous signed selection [17.17ms]
+(pass) concurrent controls serialize instead of losing a previously selected skill [27.63ms]
+
+packages/kernel-host/test/terminal-status.test.ts:
+(pass) terminal ready presentation does not revoke Kernel admission [6.84ms]
+(pass) terminal blocked presentation does not revoke Kernel admission [5.62ms]
+(pass) terminal failure presentation does not revoke Kernel admission [4.87ms]
+(pass) terminal interrupted presentation does not revoke Kernel admission [5.36ms]
+(pass) runtime presentation fields cannot grant Kernel admission [3.76ms]
+(pass) plan-only contract remains pending and cannot grant execution admission [5.93ms]
+
+packages/coordinator/test/autonomous-budget.test.ts:
+(pass) concurrent admissions atomically reserve the last action [1.30ms]
+(pass) same request and canonical payload replay without cost; changed payload conflicts [0.46ms]
+(pass) model Prepare and subsequent actions share cumulative reservations [0.26ms]
+(pass) cancelled/no-use actions still count and limits cannot be changed through snapshots [0.26ms]
+(pass) deadline remains active while waiting; cleanup settlement is still allowed [0.24ms]
+(pass) metering overruns latch a fault, no further paid work can be admitted [0.40ms]
+(pass) settlement is idempotent but cannot be revised to erase usage [0.28ms]
+
+packages/coordinator/test/candidate-store.test.ts:
+(pass) CandidateService contexts do not switch another instance's store [3.60ms]
+
+packages/coordinator/test/coordinator.test.ts:
+(pass) Coordinator records a model failure before contract acceptance [26.79ms]
+(pass) Coordinator binds accepted contract path authority before WorkGraph admission [42.22ms]
+(pass) a rejected replacement contract revokes the prior Run path authority [40.37ms]
+(pass) Coordinator queues a third unit while running at most two and commits only attested candidates [377.26ms]
+(pass) Coordinator reports materialization I/O as harness_error and clears completion authority [87.43ms]
+
+packages/coordinator/test/domain-execution.test.ts:
+(pass) overlay strategy identities and preparation markers must match the run binding exactly [4.13ms]
+(pass) one fixed Domain dispatcher uses each run binding and only records candidate output [71.78ms]
+(pass) cancelled and replaced runs discard late Domain results [56.74ms]
+(pass) General result admission rejects empty, changed, or unpinned adapter output [162.57ms]
+(pass) General content_equals admission rejects a report that only contains the expected value [42.95ms]
+(pass) an attached Run result is immutable after its first accepted value [43.73ms]
+
+packages/coordinator/test/execution-lifetime.test.ts:
+(pass) workers outlive the parent stream but cancel with their Coordinator run [49.64ms]
+(pass) workspace disposal aborts every in-flight worker and removes completion authority [43.69ms]
+
+packages/coordinator/test/integration-lifecycle.test.ts:
+(pass) reviewed plan execution invokes root integration even without requested merge paths [209.40ms]
+(pass) root integration missing is terminal and fails closed [163.23ms]
+(pass) root integration failure is terminal and fails closed [150.10ms]
+
+packages/coordinator/test/meta-review-failure-boundary.test.ts:
+(pass) meta review pass and child tool output cannot become verifier evidence [31.81ms]
+(pass) review failures retain their producer classification without evidence: harness_error [35.66ms]
+(pass) review failures retain their producer classification without evidence: model_provider_error [33.47ms]
+(pass) review failures retain their producer classification without evidence: model_protocol_error [32.78ms]
+(pass) review failures retain their producer classification without evidence: tool_execution_error [32.11ms]
+
+packages/coordinator/test/plan-execution-run.test.ts:
+(pass) a planned execution uses a new independent verifier run: accepted [1204.79ms]
+(pass) a planned execution uses a new independent verifier run: contract-rejected [846.98ms]
+(pass) a planned execution uses a new independent verifier run: dispatch-error [859.20ms]
+(pass) a planned execution uses a new independent verifier run: revised [1595.05ms]
+
+packages/coordinator/test/plan-persistence-port.test.ts:
+(pass) Host plan persistence delegates to the existing run-scoped gateway [0.29ms]
+
+packages/coordinator/test/promotion.test.ts:
+(pass) Coordinator public runtime API is intentionally small [0.16ms]
+(pass) unfinished persisted runs recover as interrupted instead of resuming [10.50ms]
+
+packages/coordinator/test/real-candidate-integrity.test.ts:
+(pass) real Python candidate verification attests Unicode file hashes before commit [727.79ms]
+(pass) real Python candidate verification rejects staged tampering without commit [533.05ms]
+
+packages/coordinator/test/real-parallel-repair.test.ts:
+(pass) real verifier coordinates independent workers: parallel [1058.27ms]
+(pass) real verifier coordinates independent workers: repair [1156.21ms]
+(pass) real verifier coordinates independent workers: exhausted [1121.40ms]
+(pass) real verifier coordinates independent workers: dependent-exhausted [1109.00ms]
+(pass) real verifier coordinates independent workers: provider-failure [950.27ms]
+(pass) real verifier coordinates independent workers: reopen-failure [930.48ms]
+(pass) real verifier coordinates independent workers: unverified-return [764.69ms]
+(pass) real verifier coordinates independent workers: workspace-error [750.84ms]
+(pass) real verifier coordinates independent workers: setup-error [780.62ms]
+(pass) real verifier coordinates independent workers: root-provider-failure [1037.14ms]
+(pass) real verifier coordinates independent workers: root-harness-failure [1060.12ms]
+(pass) real verifier coordinates independent workers: missing-integration [990.38ms]
+
+packages/coordinator/test/restored-settlement-boundary.test.ts:
+(pass) terminal root integration does not leave a phantom completion wait: blocked [0.27ms]
+(pass) terminal root integration does not leave a phantom completion wait: failure [0.02ms]
+(pass) terminal root integration does not leave a phantom completion wait: repair_exhausted
+(pass) terminal root integration does not leave a phantom completion wait: needs_input
+(pass) in-flight work still prevents early settlement: running [0.04ms]
+(pass) in-flight work still prevents early settlement: candidate_ready
+(pass) in-flight work still prevents early settlement: verifying
+(pass) in-flight work still prevents early settlement: committing
+(pass) in-flight work still prevents early settlement: repairing
+(pass) queued independent work remains pending while failed dependencies alone do not [0.08ms]
+(pass) successful or repairing integration remains pending until the executor actually finishes [0.04ms]
+
+packages/coordinator/test/snapshot-persistence.test.ts:
+(pass) repository failure is sticky for its run but does not poison the shared write queue [11.43ms]
+
+packages/coordinator/test/status-checkpoint.test.ts:
+(pass) initial status is not published before the durable Host checkpoint settles [15.29ms]
+(pass) checkpoint failure is latched as a Host failure, not a repairable implementation result [22.98ms]
+(pass) synthetic Ready publication waits for checkpoint and cannot escape a failed sink [27.70ms]
+
+packages/verification/test/candidate-commit.test.ts:
+(pass) candidate commit acknowledgment: matching [75.75ms]
+(pass) candidate commit acknowledgment: missing [66.36ms]
+(pass) candidate commit acknowledgment: mismatch [63.27ms]
+(pass) candidate commit acknowledgment: refused [66.83ms]
+
+packages/verification/test/client.test.ts:
+(pass) host uses contract and two-phase action before accepting Ready over protocol v4 [155.78ms]
+(pass) materialized GoalContract contains bidirectional claim links [0.12ms]
+(pass) child scope verifies assigned Claims without issuing root Ready [146.46ms]
+(pass) malformed NDJSON is fail-closed [136.46ms]
+(pass) sidecar version mismatch is fail-closed [133.33ms]
+(pass) sidecar crash is fail-closed [133.35ms]
+(pass) wrong-run sidecar response cannot be accepted [133.23ms]
+(pass) wrong-scope sidecar response cannot be accepted [134.49ms]
+(pass) clean-exit sidecar response cannot be accepted [139.51ms]
+(pass) materialization preserves each claim's predicate and verifier policy [0.54ms]
+
+packages/verification/test/failure.test.ts:
+(pass) only the host-created envelope carries the non-serializable trust brand [0.23ms]
+(pass) typed provider tag classifies Korean messages independently of wording [0.17ms]
+(pass) InvalidProviderOutput is a model protocol failure [0.04ms]
+(pass) provider codes take precedence over HTTP status and message heuristics [0.04ms]
+(pass) tool-host provenance cannot be reclassified as a model provider failure [0.04ms]
+(pass) unstructured unknown text remains low-confidence and non-retryable [0.19ms]
+
+packages/verification/test/measurement-client.test.ts:
+(pass) real Python v5 reads the bound file; observation is immutable and authenticated only by its pipe [253.67ms]
+(pass) real admitted process exit 1 produces a failed comparison, not a repair order; replay does not rerun [344.16ms]
+(pass) missing command executor returns not_run, and explicit adapter timeout is an error fact [492.03ms]
+(pass) late cancelled capture is not turned into an observation [247.01ms]
+(pass) malformed command and cross-run request are rejected before executor invocation [250.09ms]
+(pass) actual timed-out process is stopped and recorded as error, not comparison failure [377.18ms]
+(pass) corrupt wrong-run response never authenticates and latches protocol failure [244.90ms]
+(pass) corrupt wrong-subject response never authenticates and latches protocol failure [242.96ms]
+(pass) corrupt ready-field response never authenticates and latches protocol failure [241.03ms]
+(pass) corrupt wrong-environment response never authenticates and latches protocol failure [243.01ms]
+
+packages/verification/test/profile.test.ts:
+(pass) new profile and trigger fields take precedence over legacy fields [0.17ms]
+(pass) legacy manual settings normalize for one release [0.05ms]
+(pass) risk only escalates the configured profile [0.07ms]
+
+packages/verification/test/scope-status.test.ts:
+(pass) fresh and reopened scope snapshots do not inherit another rejection [66.15ms]
+(pass) a matching envelope cannot smuggle a different payload scope [65.82ms]
+
+packages/workspace/test/candidate-integrity.test.ts:
+(pass) prepared workers cannot add or change overlay writes until explicit repair [92.00ms]
+(pass) tampered overlay bytes cannot commit an attested candidate [73.52ms]
+(pass) tampered materialized bytes cannot commit an attested candidate [75.34ms]
+(pass) missing verification workspace is not treated as verified [63.67ms]
+(pass) a replaced candidate directory cannot cross a symlink or Windows junction boundary [81.30ms]
+(pass) an existing sibling staging file is neither overwritten nor deleted [91.22ms]
+
+packages/workspace/test/candidate-transaction.test.ts:
+(pass) publication copies backups and keeps every atomic rename on the workspace filesystem [58.09ms]
+(pass) a late publication failure restores original files and removes only its new file [59.59ms]
+(pass) failed rollback retains backups and reports recovery failures [60.54ms]
+(pass) failed rollback retains backups and preserves external changes [55.67ms]
+(pass) a preexisting staging file is not overwritten or deleted and no user file is published [30.18ms]
+(pass) staged bytes changed before publication are rejected and preceding files are restored [53.48ms]
+(pass) publication preserves executable mode on existing POSIX files [53.69ms]
+
+packages/workspace/test/contract-authority.test.ts:
+(pass) direct structured writes stay inside state-changing GoalContract targets [5.90ms]
+(pass) read-only claim capabilities cannot authorize a write [2.78ms]
+(pass) IDs-only registration cannot become path authority [2.88ms]
+(pass) an open root without an accepted contract has no structured write authority [3.02ms]
+(pass) WorkUnit and integration ownership cannot broaden accepted contract paths [4.83ms]
+(pass) root integration writes are the intersection of contract targets and reviewed integrationPaths [6.25ms]
+(pass) a new Run replaces rather than inherits prior path authority [5.07ms]
+(pass) opaque execution needs workspace-wide ownership without path exclusions [4.45ms]
+
+packages/workspace/test/explicit-exploration-boundary.test.ts:
+(pass) explicit discovery is read-only with policy manual [22.77ms]
+(pass) explicit discovery is read-only with policy always [19.65ms]
+(pass) same running explorer is idempotent but a concurrent child is rejected [19.13ms]
+(pass) finished exploration cannot restart: true [27.86ms]
+(pass) finished exploration cannot restart: false [25.37ms]
+(pass) accepted direct execution or planning cannot become fresh exploration [34.57ms]
+(pass) returning to direct execution does not reset exploration identity [44.35ms]
+(pass) wrong parent, scope reuse, WorkUnit binding, and busy discovery are rejected [32.59ms]
+(pass) terminal root rejects exploration: ready [19.37ms]
+(pass) terminal root rejects exploration: blocked [21.51ms]
+(pass) terminal root rejects exploration: interrupted [18.19ms]
+(pass) a new run gets a fresh exploration identity, not a reused child [27.03ms]
+
+packages/workspace/test/materialization-publication.test.ts:
+(pass) candidate commit excludes overlapping workspace copy/publication [214.07ms]
+(pass) candidate materialize excludes overlapping workspace copy/publication [219.59ms]
+(pass) typed copy failure EACCES releases the queue without becoming a verifier failure [168.53ms]
+(pass) typed copy failure ENOENT releases the queue without becoming a verifier failure [172.43ms]
+
+packages/workspace/test/meta-review-boundary.test.ts:
+(pass) meta review preserves its root planning phase: direct [28.62ms]
+(pass) meta review preserves its root planning phase: exploration [27.80ms]
+(pass) meta review preserves its root planning phase: planning [41.87ms]
+(pass) meta review only has four read-only tools and cannot create a candidate [35.73ms]
+(pass) meta review cannot reuse a scope, bind a WorkUnit or spawn a nested reviewer [29.27ms]
+
+packages/workspace/test/orchestration.test.ts:
+(pass) worker output remains isolated until matching verifier attestation commits it [101.75ms]
+(pass) mismatched attestation cannot commit a candidate [12.80ms]
+(pass) base hash conflict blocks commit without overwriting external changes [12.44ms]
+
+packages/workspace/test/persistence.test.ts:
+(pass) workspace persistence drains ordered atomic snapshots with the actual run identity [196.66ms]
+(pass) a drained store can be cleared and removed without late writes [21.35ms]
+(pass) state persistence failure is latched for its run without poisoning an independent run [26.09ms]
+
+packages/workspace/test/scheduling.test.ts:
+(pass) a verified worker frees the queue while another candidate is being verified [165.35ms]
+
+packages/workspace/test/scoped-tool-catalog.test.ts:
+(pass) workers advertise only tools already permitted at their execution boundary [5.95ms]
+(pass) patch-only model preference can fall back to scope-permitted structured editors [4.12ms]
+(pass) explore exposes only read/list/glob/grep and closed inspection has no tools [4.41ms]
+(pass) meta-review exposes only read/list/glob/grep and closed inspection has no tools [3.44ms]
+(pass) frozen workers reject calls from previously advertised schemas [5.25ms]
+(pass) listing a catalog neither edits definitions nor advances scope state [6.33ms]
+(pass) unmanaged/root catalogs retain their existing behavior [3.55ms]
+(pass) persistence failures propagate rather than becoming an empty successful catalog [3.52ms]
+
+packages/workspace/test/snapshot-persistence.test.ts:
+(pass) transient Windows rename errors retain old bytes until atomic replacement succeeds [11.63ms]
+(pass) permanent Windows failure is bounded and never removes the previous snapshot [9.55ms]
+(pass) non-retryable platform/code fails without backoff: linux/EPERM [8.93ms]
+(pass) non-retryable platform/code fails without backoff: win32/ENOSPC [12.47ms]
+(pass) generation invalidation during backoff prevents late publication [9.48ms]
+(pass) a failed workspace root remains failed while another root can persist [10.68ms]
+
+ 396 pass
+ 0 fail
+ 2483 expect() calls
+Ran 396 tests across 55 files. [34.48s]

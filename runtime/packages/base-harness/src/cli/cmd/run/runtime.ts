@@ -388,8 +388,8 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   }
 
   type MiniHarnessControl =
-    | { type: "domain.set"; domain: "develop" | "general" }
-    | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+    | { type: "domain.set"; domain: string }
+    | { type: "skill.set"; skill: string; enabled: boolean }
     | { type: "execution.discover"; adapterID: string }
     | {
         type: "execution.select"
@@ -413,6 +413,8 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     harness(input: { sessionID: string; directory?: string }): Promise<unknown>
   }
   const harnessCommands = [
+    { name: "domain", description: "Select a registered domain: /domain <id>", source: "command" as const },
+    { name: "overlay", description: "Select an overlay: /overlay <id> or /overlay off <id>", source: "command" as const },
     { name: "develop", description: "Use the develop domain", source: "command" as const },
     { name: "general", description: "Use the read-only general domain", source: "command" as const },
     { name: "hackathon", description: "Toggle the hackathon skill", source: "command" as const },
@@ -482,6 +484,22 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     if (!text.startsWith("/")) return false
     const [rawName, ...args] = text.slice(1).split(/\s+/)
     const name = rawName?.toLowerCase()
+
+    if (name === "domain") {
+      if (args.length !== 1) throw new Error("Usage: /domain <id>")
+      await controlHarness({ type: "domain.set", domain: args[0]! })
+      appendHarnessStatus(`domain ${args[0]}`)
+      return true
+    }
+
+    if (name === "overlay") {
+      const disabled = args[0] === "off"
+      if (args.length !== (disabled ? 2 : 1)) throw new Error("Usage: /overlay <id> or /overlay off <id>")
+      const skill = args[disabled ? 1 : 0]!
+      await controlHarness({ type: "skill.set", skill, enabled: !disabled })
+      appendHarnessStatus(`overlay ${skill} ${disabled ? "disabled" : "enabled"}`)
+      return true
+    }
 
     if (name === "develop" || name === "general") {
       await controlHarness({ type: "domain.set", domain: name })

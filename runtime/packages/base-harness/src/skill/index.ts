@@ -1,3 +1,4 @@
+import { contractBuiltinSkills } from "./contract-builtins"
 import { LayerNode } from "@base-harness/core/effect/layer-node"
 import path from "path"
 import { Effect, Layer, Context, Schema } from "effect"
@@ -281,6 +282,7 @@ const layer = Layer.effect(
           location: "<built-in>",
           content: CUSTOMIZE_BASE_HARNESS_SKILL_BODY,
         }
+        for (const info of contractBuiltinSkills()) s.skills[info.name] = info
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),

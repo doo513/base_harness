@@ -1,3 +1,4 @@
+import type { ClaimKind, Risk, GoalSource, Applicability, CriterionContract, ClaimContract, GoalContract, GoalContractProposal, VerificationStrength, VerifierSourceReference as SourceReference } from "@base-harness/domain-contracts"
 import { createHash } from "node:crypto"
 
 export const SIDECAR_PROTOCOL_VERSION = 4 as const
@@ -27,94 +28,7 @@ export type ClaimResult =
   | "inconclusive"
   | "not_applicable"
   | "verifier_invalid"
-export type ClaimKind = "artifact" | "execution" | "behavior" | "configuration" | "negative" | "external"
-export type VerificationStrength = "structural" | "execution" | "behavioral" | "external_oracle"
-export type Risk = "low" | "medium" | "high" | "critical"
-
-export interface GoalSource {
-  sourceId: string
-  sourceType: "user_message" | "session_title" | "harness_policy"
-  text: string
-}
-
-export interface SourceReference {
-  sourceId: string
-  sourceType: GoalSource["sourceType"]
-  sha256: string
-}
-
-export interface Applicability {
-  os: string
-  arch: string
-  runtime: string
-  provider: string
-  model: string
-  tools: Record<string, string>
-  dependencyLockHash: string
-  configHash: string
-  workspaceRevision: string
-}
-
-export interface CriterionContract {
-  criterionId: string
-  statement: string
-  verificationTemplate?: string
-  sourceRefs: SourceReference[]
-  claimIds: string[]
-  required: boolean
-  risk: Risk
-}
-
-export interface ClaimContract {
-  claimId: string
-  criterionIds: string[]
-  origin: "user" | "harness_policy" | "derived_dependency"
-  statement: string
-  kind: ClaimKind
-  scope: {
-    targets: string[]
-    capabilities: string[]
-    exclusions: string[]
-  }
-  applicability: Applicability
-  predicate: {
-    type: "command_exit" | "output_contains" | string
-    expectedExitCode?: number
-    stream?: "stdout" | "stderr"
-    value?: string
-  }
-  verifierPolicy: {
-    minimumStrength: VerificationStrength
-    allowedVerifierIds: string[]
-    minIndependentFamilies: number
-  }
-}
-
-export interface GoalContract {
-  schemaVersion: "goal-contract-v2"
-  contractId: string
-  revision: number
-  goal: string
-  sourceRefs: SourceReference[]
-  criteria: CriterionContract[]
-  claims: ClaimContract[]
-  constraints: string[]
-}
-
-export interface GoalContractProposal {
-  goal: string
-  criteria: Array<{
-    criterionId: string
-    statement: string
-    verificationTemplate?: string
-    claimIds: string[]
-    required: boolean
-    risk: Risk
-  }>
-  claims: Array<Omit<ClaimContract, "applicability"> & { applicability?: Partial<Applicability> }>
-  constraints?: string[]
-}
-
+export type { ClaimKind, Risk, GoalSource, Applicability, CriterionContract, ClaimContract, GoalContract, GoalContractProposal, VerificationStrength, VerifierSourceReference as SourceReference } from "@base-harness/domain-contracts"
 export interface ArtifactReference {
   artifactType: string
   sha256: string
@@ -209,23 +123,7 @@ export interface VerificationStatus {
   domainPolicy?: DomainPolicySnapshot
 }
 
-export interface DomainPolicySnapshot {
-  domainId: string
-  domainRevision: string
-  skillRevisions: string[]
-  allowedOperations: string[]
-  allowedSubagentTypes: string[]
-  requiresPlan: boolean
-  demoFirst: boolean
-  verification: {
-    defaultStrength: VerificationStrength
-    criterionTemplates: string[]
-  }
-  measurement: {
-    summarySchemaVersion: string
-    requiredFields: string[]
-  }
-}
+export type DomainPolicySnapshot = import("@base-harness/domain-contracts").DomainPolicySnapshot
 
 export interface ProtocolEnvelope<T = Record<string, unknown>> {
   version: typeof SIDECAR_PROTOCOL_VERSION

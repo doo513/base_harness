@@ -1,0 +1,72 @@
+Autonomous M1-M3 scoped change manifest
+Date: 2026-09-18
+
+NEW AUTONOMOUS CORE
+- runtime/packages/domain-contracts/src/autonomous.ts
+- runtime/packages/domain-contracts/src/autonomous-runtime.ts
+- runtime/packages/kernel/src/autonomous/admission.ts
+- runtime/packages/kernel/src/autonomous/schema.ts
+- runtime/packages/domain/src/autonomous-domain.ts
+- runtime/packages/coordinator/src/autonomous-budget.ts
+- runtime/packages/coordinator/src/autonomous-measurement.ts
+- runtime/packages/coordinator/src/autonomous-run.ts
+- runtime/packages/verification/src/measurement-client.ts
+- runtime/packages/verification/src/measurement-types.ts
+- runtime/packages/kernel-host/src/autonomous-host.ts
+- runtime/packages/base-harness/src/harness/autonomous-capabilities.ts
+- runtime/packages/base-harness/src/harness/autonomous-execution.ts
+- runtime/packages/base-harness/src/harness/autonomous-external.ts
+- runtime/packages/base-harness/src/harness/autonomous-model.ts
+- runtime/packages/base-harness/src/harness/autonomous-question.ts
+- runtime/packages/base-harness/src/harness/autonomous-tools.ts
+- src/harness/measurement_sidecar.py
+- src/harness/measurement_v5.py
+
+EXISTING RUNTIME BRIDGES MODIFIED
+- runtime/packages/core/src/v1/config/config.ts
+- runtime/packages/kernel/src/index.ts
+- runtime/packages/domain/src/index.ts
+- runtime/packages/coordinator/src/contracts.ts
+- runtime/packages/coordinator/src/index.ts
+- runtime/packages/verification/src/index.ts
+- runtime/packages/kernel-host/src/index.ts
+- runtime/packages/base-harness/src/cli/cmd/run/harness-output.ts
+- runtime/packages/base-harness/src/harness/coordinator-service.ts
+- runtime/packages/base-harness/src/harness/execution/backend.ts
+- runtime/packages/base-harness/src/harness/execution/backend-router.ts
+- runtime/packages/base-harness/src/session/prompt.ts
+- runtime/packages/base-harness/src/session/tools.ts
+- runtime/packages/base-harness/src/tool/read.ts
+- runtime/packages/base-harness/src/tool/registry.ts
+- runtime/package.json and affected workspace package manifests / runtime/bun.lock
+
+NEW OR EXTENDED TESTS
+- runtime/packages/kernel/test/autonomous.test.ts
+- runtime/packages/domain/test/autonomous-domain.test.ts
+- runtime/packages/coordinator/test/autonomous-budget.test.ts
+- runtime/packages/coordinator/test/autonomous-run.test.ts
+- runtime/packages/coordinator/test/autonomous-runtime.test.ts
+- runtime/packages/verification/test/measurement-client.test.ts
+- runtime/packages/verification/test/measurement-fixture.py
+- runtime/packages/kernel-host/test/autonomous-host.test.ts
+- runtime/packages/base-harness/test/harness/autonomous-external.test.ts
+- runtime/packages/base-harness/test/harness/autonomous-facade.test.ts
+- runtime/packages/base-harness/test/harness/autonomous-model.test.ts
+- runtime/packages/base-harness/test/harness/autonomous-question.test.ts
+- runtime/packages/base-harness/test/harness/autonomous-tools.test.ts
+- runtime/packages/base-harness/test/cli/run-harness-output.test.ts
+- tests/test_measurement_v5.py
+
+DESIGN AND EVIDENCE
+- docs/AUTONOMOUS_DOMAIN_CORE_DESIGN_2026-09-18.md
+- docs/AUTONOMOUS_IMPLEMENTATION_PROGRESS_2026-09-18.md
+- docs/design/autonomous-domain-core/*
+- evidence/autonomous-m1-m2-harness-20260918.txt
+- evidence/autonomous-m1-m3-components-harness-20260918.txt
+- evidence/autonomous-m3-host-questions-harness-20260918.txt
+- evidence/autonomous-m1-m3-final-20260918.txt
+
+PRESERVATION NOTE
+The checkout already contains extensive user changes and earlier GoalContract/domain-contract work.
+This manifest identifies the M1-M3 implementation surface; it does not claim unrelated dirty-tree
+content or earlier shared package files as newly authored by this stage. No unrelated files were reset.

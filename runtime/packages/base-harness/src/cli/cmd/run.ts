@@ -53,6 +53,16 @@ function resolveRunInput(value?: string, piped?: string): string | undefined {
   return value + "\n" + piped
 }
 
+export function joinRunMessage(message: readonly string[], separated: readonly string[] = []): string {
+  return [...message, ...separated].join(" ")
+}
+
+function joinCommandArguments(message: readonly string[], separated: readonly string[] = []): string {
+  return [...message, ...separated]
+    .map((argument) => (argument.includes(" ") ? `"${argument.replace(/"/g, '\\"')}"` : argument))
+    .join(" ")
+}
+
 type FilePart = {
   type: "file"
   url: string
@@ -142,10 +152,8 @@ function createRunCommand(standalone: boolean) {
   // The handler also chdirs (preserving the legacy order: chdir → file resolution).
   directory: (args) => (args.dir && !args.attach ? path.resolve(process.cwd(), args.dir) : process.cwd()),
   builder: (yargs: Argv) => {
-    if (standalone) {
-      yargs.positional("planId", { type: "string", describe: "reviewed plan ID" })
-    }
     return yargs
+      .positional("planId", { type: "string", describe: "reviewed plan ID" })
       .positional("message", {
         describe: "message to send",
         type: "string",
@@ -185,13 +193,24 @@ function createRunCommand(standalone: boolean) {
       })
       .option("domain", {
         type: "string",
-        choices: ["develop", "general"] as const,
-        describe: "kernel domain (uses the Host setting unless specified)",
+        describe: "registered domain ID (uses the Host setting unless specified)",
+      })
+      .option("overlay", {
+        type: "string",
+        array: true,
+        nargs: 1,
+        describe: "registered overlay ID to enable (repeatable)",
+      })
+      .option("disable-overlay", {
+        type: "string",
+        array: true,
+        nargs: 1,
+        describe: "registered overlay ID to disable (repeatable)",
       })
       .option("hackathon", {
         type: "boolean",
         default: false,
-        describe: "enable the hackathon develop skill",
+        describe: "enable the hackathon overlay (alias for --overlay hackathon)",
       })
       .option("plan", {
         type: "boolean",
@@ -314,9 +333,16 @@ function createRunCommand(standalone: boolean) {
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
       if (args.planId) args["execute-plan"] = args.planId
-      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
+      const rawMessage = joinRunMessage(args.message, args["--"] || [])
       const interactive = args.mini
-      assertExecutePlanOptions({ ...args, executePlan: args["execute-plan"], message: rawMessage })
+      assertExecutePlanOptions({
+        ...args,
+        disableOverlay: args["disable-overlay"],
+        executionBackend: args["execution-backend"],
+        executionModel: args["execution-model"],
+        executionEffort: args["execution-effort"],
+        executePlan: args["execute-plan"], message: rawMessage,
+      })
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
@@ -331,9 +357,12 @@ function createRunCommand(standalone: boolean) {
         throw error
       }
 
-      let message = [...args.message, ...(args["--"] || [])]
-        .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
-        .join(" ")
+      // Natural-language prompts are text, not a command line: adding shell-style
+      // quotes here changes the user's goal. Preserve grouping quotes only for the
+      // explicit --command argument string, whose downstream parser needs them.
+      let message = args.command
+        ? joinCommandArguments(args.message, args["--"] || [])
+        : rawMessage
 
       if (interactive && args.command) {
         die("--mini cannot be used with --command")
@@ -926,6 +955,7 @@ function createRunCommand(standalone: boolean) {
         const agent = await pickAgent(client)
         for (const body of headlessControls({
           domain: args.domain, hackathon: args.hackathon, plan: args.plan,
+          overlay: args.overlay, disableOverlay: args["disable-overlay"],
           executePlan: args["execute-plan"],
           executionBackend: args["execution-backend"],
           executionModel: args["execution-model"],
@@ -1136,6 +1166,9 @@ export async function runMini(input: MiniCommandInput) {
     model: input.model,
     agent: input.agent,
     domain: undefined,
+    overlay: undefined,
+    "disable-overlay": undefined,
+    disableOverlay: undefined,
     hackathon: false,
     plan: false,
     "execute-plan": undefined,

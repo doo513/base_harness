@@ -4,6 +4,13 @@ import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistenc
 import os from "node:os"
 import path from "node:path"
 import type { KernelSessionState, MetaReviewReport, PlanSpec } from "@base-harness/kernel"
+import type { DomainExecutionBinding, SkillRef } from "@base-harness/domain-contracts"
+
+/** Review provenance only. Contains no executor options, capabilities, or verification state. */
+export interface PlanDomainBinding extends Omit<DomainExecutionBinding, "schemaVersion" | "executor"> {
+  schemaVersion: "plan-domain-binding-v1"
+  skills: SkillRef[]
+}
 
 export interface PlanExecutionPolicy {
   configuredProfile: "fast" | "adaptive" | "strict"
@@ -40,6 +47,8 @@ export interface ReviewedPlanRecord {
   state: KernelSessionState
   review: MetaReviewReport
   preflight?: unknown
+  /** Absent on legacy plans, which can be inspected or revised but require a fresh review before execution. */
+  domainBinding?: PlanDomainBinding
   policy: PlanExecutionPolicy
   selection?: PlanSelection
   revisionOf?: { revision: number; digest: string }

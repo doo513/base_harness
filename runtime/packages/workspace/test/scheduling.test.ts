@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Workspace from "../src/orchestration"
+import { acceptedContract } from "./contract-fixture"
 
 test("a verified worker frees the queue while another candidate is being verified", async () => {
   const directory = await mkdtemp(join(tmpdir(), "harness-worker-phase-"))
@@ -10,7 +11,12 @@ test("a verified worker frees the queue while another candidate is being verifie
   await Workspace.withWorkspaceCandidateStore(store, async () => {
     try {
       Workspace.beginPrompt({ sessionID: "root", workspace: directory, goal: "three files", exploration: "manual" })
-      Workspace.registerContract("root", ["a", "b", "c"], ["ca", "cb", "cc"])
+      Workspace.registerContract(
+        "root",
+        ["a", "b", "c"],
+        ["ca", "cb", "cc"],
+        acceptedContract(["a", "b", "c"], ["ca", "cb", "cc"]),
+      )
       Workspace.beginPlanning("root")
       await Workspace.acceptWorkGraph("root", {
         units: ["a", "b", "c"].map((id) => ({

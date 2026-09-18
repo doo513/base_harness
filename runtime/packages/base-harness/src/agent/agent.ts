@@ -195,6 +195,7 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 "*": "deny",
+                skill: { "goal-contract-review": "allow" },
                 read: readPermission,
                 glob: "allow",
                 grep: "allow",

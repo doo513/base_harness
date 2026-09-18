@@ -1,0 +1,162 @@
+import { createHash } from "node:crypto"
+import { realpath } from "node:fs/promises"
+import { resolve } from "node:path"
+import { Effect } from "effect"
+import { builtinAutonomousDomainModules } from "@base-harness/domain"
+import { authorityAllows, canonicalJson } from "@base-harness/kernel"
+import type { AutonomousHostInput, AutonomousHostOptions } from "@base-harness/kernel-host"
+import type { AutonomousActionEffect, CheckSpec, DecisionAction, Json, Operation } from "@base-harness/domain-contracts"
+import type { CoordinatorRuntime } from "./coordinator-service"
+import { executionBridge } from "./execution-context"
+import { runUntilCancelled } from "./execution-lifetime"
+import { askAutonomousQuestions } from "./autonomous-question"
+import { autonomousNativeToolOperation } from "./autonomous-capabilities"
+
+export interface AutonomousAppPolicy {
+  timeoutMs?: number
+  maxActions?: number
+  allowExecution?: boolean
+  maxModelTokens?: number
+}
+
+const sha256 = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex")
+const json = (value: unknown): Json => JSON.parse(JSON.stringify(value))
+function context(input: AutonomousHostInput) {
+  executionBridge(input.context, input.sessionID, input.workspace)
+  const value = input.context as { agent?: string; messageID?: string; autonomousPolicy?: AutonomousAppPolicy }
+  if (!value.agent || !value.messageID) throw new Error("AUTONOMOUS_APP_CONTEXT_REQUIRED")
+  return value as Required<Pick<typeof value, "agent" | "messageID">> & typeof value
+}
+const policy = (input: AutonomousHostInput) => context(input).autonomousPolicy ?? {}
+/** Explicit app composition, dormant for legacy Runs. No model loop or session map. */
+export function autonomousExecutionOptions(runtime: CoordinatorRuntime): AutonomousHostOptions {
+  return {
+    modules: builtinAutonomousDomainModules,
+    cleanupTimeoutMs: 5000,
+    // Provider/agent runtimes do not currently promise conservative token/cost
+    // reservations across their internal retries. Hard caps fail explicitly.
+    metering: { tokens: false, cost: false },
+    limits: (input) => {
+      const configured = policy(input)
+      return { deadlineAt: new Date(Date.now() + (configured.timeoutMs ?? 300_000)).toISOString(),
+        maxActions: configured.maxActions ?? 64, maxParallelTasks: 1, maxTaskDepth: 0, maxTotalTasks: 1,
+        ...(configured.maxModelTokens === undefined ? {} : { maxModelTokens: configured.maxModelTokens }) }
+    },
+    authorize: async (input) => {
+      const ctx = context(input)
+      const [{ Permission }, { Session }, { Agent }, { SessionID }] = await Promise.all([
+        import("../permission"), import("../session/session"), import("../agent/agent"), import("../session/schema"),
+      ])
+      const workspace = (await realpath(input.workspace)).replaceAll("\\", "/")
+      const configured = structuredClone(policy(input))
+      return executionBridge(input.context, input.sessionID, input.workspace).promise(Effect.gen(function* () {
+        const permission = yield* Permission.Service
+        const session = yield* (yield* Session.Service).get(SessionID.make(input.sessionID)).pipe(Effect.orDie)
+        const agent = yield* (yield* Agent.Service).get(ctx.agent)
+        const ruleset = Permission.merge(agent.permission, session.permission ?? [])
+        const operations: Operation[] = ["read", "search", ...(configured.allowExecution ? ["execute" as const] : [])]
+        for (const key of ["read", ...(configured.allowExecution ? ["bash"] : [])]) {
+          yield* permission.ask({ sessionID: session.id, permission: key, patterns: ["*"], always: [],
+            ruleset, metadata: { runId: input.runId, workspace, semantics: "autonomous-v1", sandboxOnly: true } }).pipe(Effect.orDie)
+        }
+        return { capabilities: operations.map((operation) => ({ operation,
+          targets: [{ kind: "workspace_path" as const, selector: workspace }], exclusions: [] })),
+          provenanceRefs: [{ sourceId: "app-permission:" + input.runId, sha256: sha256({ configured, ruleset, operations, workspace }) }],
+          expiresAt: new Date(Date.now() + (configured.timeoutMs ?? 300_000)).toISOString() }
+      }))
+    },
+    ask: askAutonomousQuestions,
+    adapter: async (input) => {
+      const ctx = context(input)
+      const bridge = executionBridge(input.context, input.sessionID, input.workspace)
+      const workspace = (await realpath(input.workspace)).replaceAll("\\", "/")
+      const [{ ToolRegistry }, { Permission }, { Session }, { Agent }, { SessionID, MessageID }, { ProviderV2 }, { ModelV2 }] = await Promise.all([
+        import("../tool/registry"), import("../permission"), import("../session/session"), import("../agent/agent"),
+        import("../session/schema"), import("@base-harness/core/provider"), import("@base-harness/core/model"),
+      ])
+      const effects = async (action: DecisionAction): Promise<AutonomousActionEffect[]> => {
+        if (action.kind === "measure") {
+          const check = input.check(action.checkRef)
+          return check.requiredCapabilities.map((operation) => ({ operation, targets: [{ kind: "workspace_path", selector:
+            operation === "execute" ? workspace : input.subject(action.subject).origin ?? workspace }] }))
+        }
+        if (action.kind !== "invoke") throw new Error("AUTONOMOUS_CAPABILITY_UNSUPPORTED")
+        const operation = autonomousNativeToolOperation(action.toolId)
+        if (!operation) throw new Error("AUTONOMOUS_CAPABILITY_UNSUPPORTED")
+        const args = action.arguments as Record<string, Json>
+        if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("AUTONOMOUS_TOOL_ARGUMENTS")
+        const selected = action.toolId === "read" ? args.filePath : action.toolId === "bash" ? args.workdir : args.path
+        if (selected !== undefined && typeof selected !== "string") throw new Error("AUTONOMOUS_TOOL_PATH")
+        const target = (await realpath(resolve(workspace, selected as string ?? "."))).replaceAll("\\", "/")
+        return [{ operation, targets: [{ kind: "workspace_path", selector: target }] }]
+      }
+      const execute = async (toolId: string, args: Json, requestId: string, signal: AbortSignal) => {
+        signal.throwIfAborted()
+        const footprint = await effects({ kind: "invoke", toolId, arguments: args })
+        for (const item of footprint) if (!authorityAllows(input.snapshot().authority, item.operation, item.targets)) throw new Error("AUTONOMOUS_AUTHORITY_DENIED")
+        const canonicalArgs = { ...args as Record<string, Json>, [toolId === "read" ? "filePath" : toolId === "bash" ? "workdir" : "path"]: footprint[0]!.targets[0]!.selector }
+        return bridge.promise(runUntilCancelled(Effect.gen(function* () {
+          const registry = yield* ToolRegistry.Service
+          const permission = yield* Permission.Service
+          const session = yield* (yield* Session.Service).get(SessionID.make(input.sessionID)).pipe(Effect.orDie)
+          const agent = yield* (yield* Agent.Service).get(ctx.agent)
+          const tools = yield* registry.tools({ providerID: ProviderV2.ID.make(input.executor.providerId ?? "external"),
+            modelID: ModelV2.ID.make(input.executor.modelId ?? "external"), agent, permission: session.permission, sessionID: session.id })
+          const matches = tools.filter((item) => item.id === toolId)
+          if (matches.length !== 1) throw new Error("AUTONOMOUS_TOOL_UNREGISTERED_OR_DUPLICATE")
+          return yield* matches[0]!.execute(canonicalArgs, { sessionID: session.id, messageID: MessageID.make(ctx.messageID),
+            agent: ctx.agent, abort: signal, callID: requestId, messages: [], metadata: () => Effect.void,
+            ask: (request) => permission.ask({ ...request, sessionID: session.id,
+              ruleset: Permission.merge(agent.permission, session.permission ?? []),
+              tool: { messageID: MessageID.make(ctx.messageID), callID: requestId } }).pipe(Effect.orDie) })
+        }), signal))
+      }
+      const measurement = runtime.createAutonomousMeasurementPorts({ runId: input.runId, snapshotRoot: input.snapshotRoot,
+        subject: input.subject, check: input.check, environmentHash: sha256({ workspace, platform: process.platform, executor: input.executor }),
+        executeCommand: async (request, signal) => {
+          const params = request.check.parameters as { argv: string[]; cwd: string }
+          const startedAt = new Date().toISOString()
+          const base = { argv: params.argv, cwd: params.cwd, startedAt, stdout: "", stderr: "" }
+          try {
+            if (params.argv.length !== 3 || params.argv[0] !== "/bin/sh" || params.argv[1] !== "-lc" || params.cwd !== workspace) throw new Error("AUTONOMOUS_COMMAND_BINDING")
+            const result = await execute("bash", { command: params.argv[2]!, workdir: workspace, timeout: request.check.timeoutMs,
+              description: "Registered observation check" }, request.requestId, signal)
+            const capture = result.metadata.measurement as { stdout: string; stderr: string; exitCode: number } | undefined
+            if (!capture || !Number.isSafeInteger(capture.exitCode) || typeof capture.stdout !== "string" || typeof capture.stderr !== "string") throw new Error("AUTONOMOUS_COMMAND_CAPTURE_UNAVAILABLE")
+            return { ...base, ...capture, finishedAt: new Date().toISOString(), execution: "completed" }
+          } catch (error) {
+            const timedOut = (signal.aborted && signal.reason instanceof Error && signal.reason.name === "TimeoutError") ||
+              (error && typeof error === "object" && (error as { code?: unknown }).code === "SANDBOX_TIMEOUT")
+            if (!timedOut) signal.throwIfAborted()
+            return { ...base, finishedAt: new Date().toISOString(), execution: "error",
+              error: { code: timedOut ? "TIMEOUT" : "AUTONOMOUS_COMMAND_ERROR", message: timedOut ? "Registered command exceeded its measurement deadline" : error instanceof Error ? error.message : String(error) } }
+          }
+        },
+      })
+      return {
+        ...measurement, resolveEffects: effects,
+        invoke: async (proposal, signal) => {
+          if (proposal.action.kind !== "invoke") throw new Error("AUTONOMOUS_ACTION_BINDING")
+          return json(await execute(proposal.action.toolId, proposal.action.arguments, proposal.decisionId, signal))
+        },
+        describeCheck: (parameters, stored): Omit<CheckSpec, "schemaVersion" | "ref" | "author"> => {
+          const params = parameters as Record<string, Json>
+          if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("AUTONOMOUS_CHECK_ARGUMENTS")
+          const timeoutMs = params.timeoutMs ?? 30_000
+          if (!Number.isSafeInteger(timeoutMs) || (timeoutMs as number) <= 0 || (timeoutMs as number) > 120_000) throw new Error("AUTONOMOUS_CHECK_TIMEOUT")
+          const base = { executorId: "python-measurement", supportedSubjects: [stored.subject.kind], timeoutMs: timeoutMs as number }
+          if (params.kind === "command") {
+            if (typeof params.command !== "string" || !params.command.trim() || !Number.isSafeInteger(params.expectedExitCode) ||
+                Object.keys(params).some((key) => !["kind", "command", "expectedExitCode", "timeoutMs"].includes(key))) throw new Error("AUTONOMOUS_CHECK_ARGUMENTS")
+            return { ...base, requiredCapabilities: ["execute"], parameters: { kind: "command", argv: ["/bin/sh", "-lc", params.command], cwd: workspace, expectedExitCode: params.expectedExitCode! } }
+          }
+          if (params.kind !== "file" || !["equals", "contains", "sha256"].includes(String(params.operator)) || typeof params.expected !== "string" ||
+              Object.keys(params).some((key) => !["kind", "operator", "expected", "timeoutMs"].includes(key))) throw new Error("AUTONOMOUS_CHECK_ARGUMENTS")
+          const manifest = JSON.parse(stored.manifestJson)
+          if (manifest.files.length !== 1) throw new Error("AUTONOMOUS_CHECK_SUBJECT")
+          return { ...base, requiredCapabilities: ["read"], parameters: { kind: "file", path: manifest.files[0].path, operator: params.operator!, expected: params.expected } }
+        },
+      }
+    },
+  }
+}

@@ -1,3 +1,4 @@
+import { Coordinator } from "../../src/harness/coordinator-service"
 import { ConfigV1 } from "@base-harness/core/v1/config/config"
 import { SessionV1 } from "@base-harness/core/v1/session"
 import { Database } from "@base-harness/core/database/database"
@@ -2367,6 +2368,80 @@ it.instance("does not loop empty assistant turns for a simple reply", () =>
   }),
 )
 
+it.instance("local model execution uses General preparation, accepts a contract, and records only candidate output", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      verification: { profile: "adaptive", trigger: "manual", maxSameFailureRepairs: 2 },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "General Domain model",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const source = path.join(dir, "source.txt")
+    yield* writeText(source, "fixture observation\n")
+    const before = yield* Effect.promise(() => Bun.file(source).text())
+    yield* Effect.promise(() => Coordinator.control(
+      session.id,
+      { type: "domain.set", domain: "general" },
+      undefined,
+      dir,
+    ))
+    yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.cancel(session.id)).pipe(Effect.ignore))
+    yield* llm.tool("harness_contract", {
+      goal: "Read source.txt and report its content",
+      criteria: [{
+        criterionId: "criterion",
+        statement: "The observed file content is reported",
+        claimIds: ["claim"],
+        required: true,
+        risk: "low",
+      }],
+      claims: [{
+        claimId: "claim",
+        criterionIds: ["criterion"],
+        origin: "user",
+        statement: "source.txt contains the observed fixture text",
+        kind: "artifact",
+        scope: { targets: ["source.txt"], capabilities: ["read"], exclusions: [] },
+        applicability: {},
+        predicate: { type: "content_contains", value: "fixture observation" },
+        verifierPolicy: { minimumStrength: "structural", allowedVerifierIds: ["file"], minIndependentFamilies: 1 },
+      }],
+      constraints: [],
+      interpretation: { version: 1, candidates: [] },
+    })
+    yield* llm.text("fixture observation")
+
+    const result = yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      parts: [{ type: "text", text: "Read source.txt and report its content" }],
+    })
+    expect(result.info.role).toBe("assistant")
+    const status = Coordinator.status(session.id)
+    expect(status).toMatchObject({
+      contractStatus: "accepted",
+      readyEligible: false,
+      domainBinding: {
+        selection: { domain: "general" },
+        executor: { id: "session-model", modelId: "test-model" },
+      },
+      domainPreparation: { domainId: "general", mode: "read" },
+      domainResult: { output: "fixture observation", changedFiles: [], adapterId: "session-model" },
+    })
+    expect(status.evidenceCount).toBe(0)
+    expect(yield* Effect.promise(() => Bun.file(source).text())).toBe(before)
+    const hits = yield* llm.hits
+    expect(JSON.stringify(hits[0]?.body)).toContain("Domain preparation")
+    expect(JSON.stringify(hits[0]?.body)).toContain("do not change workspace files")
+    expect(yield* llm.calls).toBe(2)
+  }),
+  30_000,
+)
+
 it.instance("records aborted errors when prompt is cancelled mid-stream", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
@@ -2564,3 +2639,21 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+it.instance("contract authoring Skill body reaches the real model request", () => Effect.gen(function* () {
+  const { dir, llm } = yield* useServerConfig(providerCfg)
+  const skills = yield* Skill.Service
+  const body = (yield* skills.require("goal-contract-authoring")).content.trim()
+  const sessions = yield* Session.Service, prompt = yield* SessionPrompt.Service
+  const chat = yield* sessions.create({ title: "Contract authoring", permission: [{ permission: "*", pattern: "*", action: "allow" }] })
+  yield* Effect.promise(() => Coordinator.openRun({ sessionID: chat.id, workspace: dir, goal: "Create a report", trigger: "manual" }))
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.cancel(chat.id)))
+  yield* llm.hang
+  yield* user(chat.id, "Create a report")
+  const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+  yield* awaitWithTimeout(llm.wait(1), "contract authoring request missing", "10 seconds")
+  const hits = yield* llm.hits
+  expect(JSON.stringify(hits[0]?.body)).toContain(JSON.stringify(body).slice(1, -1))
+  expect(Coordinator.status(chat.id).readyEligible).toBe(false)
+  yield* Fiber.interrupt(fiber)
+}), 30000)

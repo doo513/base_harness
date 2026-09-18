@@ -4,8 +4,11 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants as fsConstants, promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import type { GoalContract, Risk, WorkGraph, WorkUnit } from "@base-harness/domain-contracts"
 import { CandidateTransactionError, publishCandidateFiles, type CandidateFileChange } from "./candidate-transaction"
 import { writeAtomicSnapshot } from "./snapshot-persistence"
+
+export type { WorkGraph, WorkUnit } from "@base-harness/domain-contracts"
 
 export type Phase =
   | "direct"
@@ -26,24 +29,6 @@ export type Phase =
   | "interrupted"
 
 export type ScopeKind = "root" | "exploration" | "meta_review" | "work_unit" | "repair" | "integration" | "legacy"
-
-export type WorkUnit = {
-  id: string
-  title: string
-  instructions: string
-  agentType?: string
-  claimIds: string[]
-  criterionIds: string[]
-  dependsOn: string[]
-  readSet: string[]
-  writeSet: string[]
-  integrationRequests: string[]
-}
-
-export type WorkGraph = {
-  units: WorkUnit[]
-  integrationPaths: string[]
-}
 
 export type ExplorationReport = {
   resolvedTargets: string[]
@@ -153,11 +138,26 @@ type RootState = {
   maxParallelWorkUnits: number
   contractClaimIds: Set<string>
   contractCriterionIds: Set<string>
+  contractAuthority?: ContractExecutionAuthority
   graph?: { units: Map<string, UnitState>; integrationPaths: string[] }
   active: Set<string>
   completed: Set<string>
   model?: { providerID: string; modelID: string; variant?: string }
   stateDirectory: string
+}
+
+type AcceptedContractAuthority = Pick<GoalContract, "claims" | "criteria">
+
+type ContractExecutionAuthority = {
+  risk: Risk
+  targetsByClaim: Map<string, { targets: string[]; exclusions: string[] }>
+}
+
+const riskRank: Readonly<Record<Risk, number>> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
 }
 
 export class WorkspaceCandidateStore {
@@ -332,6 +332,12 @@ function snapshotValue(root: RootState) {
     maxParallelWorkUnits: root.maxParallelWorkUnits,
     contractClaimIds: [...root.contractClaimIds],
     contractCriterionIds: [...root.contractCriterionIds],
+    contractAuthority: root.contractAuthority
+      ? {
+          risk: root.contractAuthority.risk,
+          targetsByClaim: [...root.contractAuthority.targetsByClaim].map(([claimId, value]) => ({ claimId, ...value })),
+        }
+      : undefined,
     activeScopeIds: [...root.active],
     completedScopeIds: [...root.completed],
     model: root.model,
@@ -501,11 +507,42 @@ export function beginDirectExecution(sessionID: string) {
   persist(root)
 }
 
-export function registerContract(sessionID: string, claimIds: string[], criterionIds: string[]) {
+const stateChangingCapabilities = new Set([
+  "write", "edit", "modify", "mutate", "create", "delete", "move", "rename", "execute", "shell",
+  "requested_behavior", "requested_execution",
+])
+
+function executionAuthority(contract: AcceptedContractAuthority): ContractExecutionAuthority {
+  let risk: Risk = "low"
+  const acceptedCriteria = new Set<string>()
+  for (const criterion of contract.criteria) {
+    if (!criterion.required) continue
+    acceptedCriteria.add(criterion.criterionId)
+    if (riskRank[criterion.risk] > riskRank[risk]) risk = criterion.risk
+  }
+  const targetsByClaim = new Map<string, { targets: string[]; exclusions: string[] }>()
+  for (const claim of contract.claims) {
+    if (!claim.criterionIds.some((criterionId) => acceptedCriteria.has(criterionId))) continue
+    if (!claim.scope.capabilities.some((capability) => stateChangingCapabilities.has(capability.toLowerCase()))) continue
+    targetsByClaim.set(claim.claimId, {
+      targets: [...new Set(claim.scope.targets)],
+      exclusions: [...new Set(claim.scope.exclusions)],
+    })
+  }
+  return { risk, targetsByClaim }
+}
+
+export function registerContract(
+  sessionID: string,
+  claimIds: string[],
+  criterionIds: string[],
+  contract?: AcceptedContractAuthority,
+) {
   const root = rootFor(sessionID)
   if (!root) return
   root.contractClaimIds = new Set(claimIds)
   root.contractCriterionIds = new Set(criterionIds)
+  root.contractAuthority = contract ? executionAuthority(structuredClone(contract)) : undefined
   persist(root)
 }
 
@@ -515,6 +552,37 @@ export function hasContract(sessionID: string) {
 
 export function canUseBeforeContract(sessionID: string, toolID: string) {
   return toolID === "task" && rootFor(sessionID)?.phase === "exploration"
+}
+
+async function authorityPaths(root: RootState, claimIds?: readonly string[]) {
+  if (!root.contractAuthority) {
+    throw new OrchestrationError(
+      "OWNERSHIP_VIOLATION",
+      "Accepted contract path authority is unavailable; register the accepted GoalContract",
+    )
+  }
+  const selected = claimIds
+    ? claimIds.map((claimId) => root.contractAuthority!.targetsByClaim.get(claimId)).filter(Boolean)
+    : [...root.contractAuthority.targetsByClaim.values()]
+  return {
+    targets: await Promise.all(selected.flatMap((entry) => entry!.targets).map((value) => canonical(root.workspace, value))),
+    exclusions: await Promise.all(selected.flatMap((entry) => entry!.exclusions).map((value) => canonical(root.workspace, value))),
+  }
+}
+
+async function assertDeclaredWriteRoot(
+  root: RootState,
+  candidate: string,
+  claimIds?: readonly string[],
+) {
+  const authority = await authorityPaths(root, claimIds)
+  if (!authority) return
+  if (!authority.targets.some((target) => inside(target, candidate))) {
+    throw new OrchestrationError("OWNERSHIP_VIOLATION", `Write ownership is outside the accepted GoalContract: ${candidate}`)
+  }
+  if (authority.exclusions.some((excluded) => overlaps(excluded, candidate))) {
+    throw new OrchestrationError("OWNERSHIP_VIOLATION", `Write ownership overlaps a GoalContract exclusion: ${candidate}`)
+  }
 }
 
 async function validateGraph(root: RootState, graph: WorkGraph) {
@@ -546,6 +614,7 @@ async function validateGraph(root: RootState, graph: WorkGraph) {
   for (const id of ids) visit(id)
 
   const integrationPaths = await Promise.all(graph.integrationPaths.map((item) => canonical(root.workspace, item)))
+  for (const integrationPath of integrationPaths) await assertDeclaredWriteRoot(root, integrationPath)
   const units = new Map<string, UnitState>()
   for (const unit of graph.units) {
     if (
@@ -556,6 +625,7 @@ async function validateGraph(root: RootState, graph: WorkGraph) {
     }
     const readRoots = await Promise.all(unit.readSet.map((item) => canonical(root.workspace, item)))
     const writeRoots = await Promise.all(unit.writeSet.map((item) => canonical(root.workspace, item)))
+    for (const writeRoot of writeRoots) await assertDeclaredWriteRoot(root, writeRoot, unit.claimIds)
     if (writeRoots.some((write) => integrationPaths.some((shared) => overlaps(write, shared)))) {
       throw new OrchestrationError("WORKGRAPH_CONFLICT", `WorkUnit ${unit.id} owns an integration-only path`)
     }
@@ -886,9 +956,59 @@ async function fileHash(filepath: string, boundary: string) {
   }
 }
 
+async function authorizeRootWrite(root: RootState, value: string) {
+  const logicalPath = await canonical(root.workspace, value)
+  if (root.graph && (root.phase === "integration" || root.phase === "repair")) {
+    if (!root.graph.integrationPaths.some((allowed) => inside(allowed, logicalPath))) {
+      throw new OrchestrationError(
+        "OWNERSHIP_VIOLATION",
+        `Root write is outside WorkGraph integrationPaths: ${logicalPath}`,
+      )
+    }
+  }
+  await assertDeclaredWriteRoot(root, logicalPath)
+  return { kind: "direct" as const, logicalPath, physicalPath: logicalPath, overlay: false as const }
+}
+
+/** Opaque processes may write anywhere below cwd, so only a workspace-wide accepted scope can contain them. */
+export async function assertOpaqueExecutionAllowed(sessionID: string) {
+  const root = rootFor(sessionID)
+  if (!root) return
+  currentStore().assertPersistenceHealthy(root)
+  const authority = await authorityPaths(root)
+  if (!authority) {
+    throw new OrchestrationError("OWNERSHIP_VIOLATION", "Opaque execution requires accepted contract path authority")
+  }
+  if (!root.contractAuthority || riskRank[root.contractAuthority.risk] < riskRank.high) {
+    throw new OrchestrationError(
+      "OWNERSHIP_VIOLATION",
+      "Opaque execution requires high-risk or critical accepted contract authority",
+    )
+  }
+  const workspace = await canonical(root.workspace, root.workspace)
+  const phaseTargets = root.graph && (root.phase === "integration" || root.phase === "repair")
+    ? root.graph.integrationPaths
+    : authority.targets
+  if (!phaseTargets.some((target) => platformPath(target) === platformPath(workspace))) {
+    throw new OrchestrationError(
+      "OWNERSHIP_VIOLATION",
+      "Opaque execution requires workspace-root ownership in the accepted execution scope",
+    )
+  }
+  if (authority.exclusions.length) {
+    throw new OrchestrationError(
+      "OWNERSHIP_VIOLATION",
+      "Opaque execution cannot enforce GoalContract path exclusions; use structured tools",
+    )
+  }
+}
+
 export async function resolveWrite(sessionID: string, workspace: string, value: string) {
   const target = await targetFor(sessionID, workspace, value)
-  if (target.kind === "direct") return target
+  if (target.kind === "direct") {
+    const root = rootFor(sessionID)
+    return root ? authorizeRootWrite(root, target.logicalPath) : target
+  }
   if (target.scope.kind === "exploration" || target.scope.kind === "meta_review") {
     throw new OrchestrationError("OWNERSHIP_VIOLATION", "Exploration and meta review are read-only")
   }

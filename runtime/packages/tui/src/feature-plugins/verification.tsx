@@ -75,8 +75,8 @@ type HarnessStatus = {
   candidateRefs: string[]
   readyEligible: boolean
   message?: string
-  domain?: "develop" | "general"
-  skills?: Array<"hackathon">
+  domain?: string
+  skills?: string[]
   planningPreference?: "auto" | "plan_once"
   planOnly?: boolean
   planningState?: string
@@ -231,7 +231,7 @@ function VerificationPanel(props: {
         {(history) => (
           <box flexDirection="column">
             <text fg="#e6b566">Past run only. Not reverified against the current workspace.</text>
-            <text fg="#a8b3c7">Current domain {props.status.domain ?? "develop"}{props.status.skills?.includes("hackathon") ? " + hackathon" : ""}</text>
+            <text fg="#a8b3c7">Current domain {props.status.domain ?? "develop"}{props.status.skills?.map((id) => " + " + id).join("")}</text>
             <text fg="#a8b3c7">{harnessLifecycleLabel(props.status)}</text>
             <text fg="#778399">{history().runId} / {history().recordedAt}</text>
             <text fg="#a8b3c7">Previous goal</text>
@@ -261,7 +261,7 @@ function VerificationPanel(props: {
       <text>{props.status.goal || "Waiting for the Host Coordinator"}</text>
       <text fg="#a8b3c7">
         Domain {props.status.domain ?? "develop"}
-        {props.status.skills?.includes("hackathon") ? " + hackathon" : ""}
+        {props.status.skills?.map((id) => " + " + id).join("")}
       </text>
       <Show when={props.status.execution}>
         {(execution) => (
@@ -411,7 +411,7 @@ const tui: TuiPlugin = async (api) => {
       setStatus((current) => ({
         ...current,
         domain: next.domain,
-        skills: next.hackathon ? ["hackathon"] : [],
+        skills: next.skills,
         planningPreference: next.planOnce ? "plan_once" : "auto",
       }))
     }
@@ -429,12 +429,12 @@ const tui: TuiPlugin = async (api) => {
     fetch: async (target) => unwrap(await client.harness(target)),
     publish: (next) => { setStatus(next) },
     reset: () => {
-      const selection = pendingHarnessSelection()
+      const selection = rootScopeId() ? undefined : pendingHarnessSelection()
       setStatus((current) => ({
         ...initialStatus(current.maxSameFailureRepairs),
-        domain: selection.domain,
-        skills: selection.hackathon ? ["hackathon"] : [],
-        planningPreference: selection.planOnce ? "plan_once" : "auto",
+        domain: selection?.domain,
+        skills: selection?.skills,
+        planningPreference: selection?.planOnce ? "plan_once" : "auto",
       }))
     },
   })
@@ -457,6 +457,9 @@ const tui: TuiPlugin = async (api) => {
       status().planningState === "plan_ready" ||
       status().planningState === "awaiting_input" ||
       status().planningState === "contract_building" ||
+      status().planningState === "contract_preparing" ||
+      status().planningState === "contract_scanning" ||
+      status().planningState === "contract_validate_dedupe" ||
       status().planningState === "contract_preflight" ||
       status().planningState === "contract_reviewing" ||
       status().planningState === "plan_building" ||
@@ -579,6 +582,39 @@ const tui: TuiPlugin = async (api) => {
   }
   const harnessCommands: HarnessCommand[] = [
     {
+      value: "harness.domain.select",
+      title: "Select registered domain",
+      description: "Request a Host-registered domain with /domain <id>",
+      slash: { name: "domain" },
+      argument: "id",
+      category: "Harness",
+      onArguments: (values) => values[0]
+        ? control({ type: "domain.set", domain: values[0] })
+        : notify("Select domain", "Use /domain <id>. The Host validates the registered ID.", "warning"),
+    },
+    {
+      value: "harness.overlay.enable",
+      title: "Enable registered overlay",
+      description: "Request a Host-registered overlay with /overlay <id>",
+      slash: { name: "overlay" },
+      argument: "id",
+      category: "Harness",
+      onArguments: (values) => values[0]
+        ? control({ type: "skill.set", skill: values[0], enabled: true })
+        : notify("Enable overlay", "Use /overlay <id>. The Host validates compatibility.", "warning"),
+    },
+    {
+      value: "harness.overlay.disable",
+      title: "Disable registered overlay",
+      description: "Disable one overlay with /overlay off <id>",
+      slash: { name: "overlay off" },
+      argument: "id",
+      category: "Harness",
+      onArguments: (values) => values[0]
+        ? control({ type: "skill.set", skill: values[0], enabled: false })
+        : notify("Disable overlay", "Use /overlay off <id>.", "warning"),
+    },
+    {
       value: "harness.domain.develop",
       title: "Develop domain",
       description: "Enable workspace development",
@@ -596,7 +632,7 @@ const tui: TuiPlugin = async (api) => {
     },
     {
       value: "harness.skill.hackathon",
-      title: "Hackathon skill",
+      title: "Hackathon overlay",
       description: "Enable demo-first develop planning",
       slash: { name: "hackathon" },
       category: "Harness",
@@ -604,7 +640,7 @@ const tui: TuiPlugin = async (api) => {
     },
     {
       value: "harness.skill.hackathon.off",
-      title: "Disable hackathon skill",
+      title: "Disable hackathon overlay",
       description: "Keep the current domain and disable demo-first planning",
       slash: { name: "hackathon off" },
       category: "Harness",
@@ -713,7 +749,7 @@ const tui: TuiPlugin = async (api) => {
           const raw = record(context.payload)?.arguments
           const args = Array.isArray(raw) ? raw : []
           if ((raw !== undefined && !Array.isArray(raw)) || args.length > 1 || args.some((value) => typeof value !== "string")) {
-            notify("Invalid control command", "Use /execute [planId].", "error")
+            notify("Invalid control command", `Use /${command.slash?.name} [${command.argument}].`, "error")
             return
           }
           return command.onArguments(args)
@@ -730,14 +766,14 @@ const tui: TuiPlugin = async (api) => {
       app_bottom: () => (
         <box paddingLeft={1} paddingRight={1}>
           <text fg="#7aa2c8">
-            HARNESS {status().domain ?? pendingSelection().domain}
-            {(status().skills?.includes("hackathon") ?? pendingSelection().hackathon) ? " + hackathon" : ""}
-            {(status().execution ?? pendingSelection().execution)?.adapterID
-              ? ` / ${(status().execution ?? pendingSelection().execution)?.adapterID}`
+            HARNESS {status().domain ?? (!rootScopeId() ? pendingSelection().domain ?? "Host default" : "loading")}
+            {(status().skills ?? (!rootScopeId() ? pendingSelection().skills : []))?.map((id) => " + " + id).join("")}
+            {(status().execution ?? (!rootScopeId() ? pendingSelection().execution : undefined))?.adapterID
+              ? ` / ${(status().execution ?? (!rootScopeId() ? pendingSelection().execution : undefined))?.adapterID}`
               : ""}
             {harnessPlanningCue(status(), pendingSelection().planOnce)
               ? ` / ${harnessPlanningCue(status(), pendingSelection().planOnce)!.label}` : ""}
-            {pendingSelection().count > 0 ? ` / ${String(pendingSelection().count)} staged` : ""}
+            {!rootScopeId() && pendingSelection().count > 0 ? ` / ${String(pendingSelection().count)} staged (Host validation pending)` : ""}
             {harnessDisplayPhase(status()) !== "inactive" ? ` / ${harnessDisplayPhase(status())}` : ""}
           </text>
         </box>

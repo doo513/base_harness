@@ -1,4 +1,10 @@
-import { afterEach, describe, expect } from "bun:test"
+import { Permission } from "../../src/permission"
+import { Coordinator } from "../../src/harness/coordinator-service"
+import { captureExecutionContext } from "../../src/harness/execution-context"
+import { ExecutionBackends } from "../../src/harness/execution/backend-router"
+import { Skill } from "../../src/skill"
+import { TestInstance } from "../fixture/fixture"
+import { afterEach, describe, expect, spyOn } from "bun:test"
 import { SessionV1 } from "@base-harness/core/v1/session"
 import { Database } from "@base-harness/core/database/database"
 import { LayerNode } from "@base-harness/core/effect/layer-node"
@@ -48,6 +54,8 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       SessionStatus.node,
       Truncate.node,
       ToolRegistry.node,
+      Skill.node,
+      Permission.node,
       Database.node,
       RuntimeFlags.node,
       Ripgrep.node,
@@ -599,7 +607,7 @@ describe("tool.task", () => {
           {
             description: "inspect bug",
             prompt: "look into the cache key path",
-            subagent_type: "reviewer",
+            subagent_type: "build",
           },
           {
             sessionID: chat.id,
@@ -615,7 +623,7 @@ describe("tool.task", () => {
 
         const child = yield* sessions.get(result.metadata.sessionId)
         expect(child.parentID).toBe(chat.id)
-        expect(child.agent).toBe("reviewer")
+        expect(child.agent).toBe("build")
         expect(child.permission).toEqual([
           {
             permission: "todowrite",
@@ -638,7 +646,8 @@ describe("tool.task", () => {
     {
       config: {
         agent: {
-          reviewer: {
+          // Keep this permission-shaping fixture within the registered Domain agent policy.
+          build: {
             mode: "subagent",
             permission: {
               task: "allow",
@@ -1099,3 +1108,55 @@ describe("tool.task", () => {
     }),
   )
 })
+
+for (const external of [false, true]) it.instance(`contract review Skill reaches the ${external ? "external" : "normal"} reviewer request`, () => Effect.gen(function* () {
+  const { chat, assistant } = yield* seed("Contract review")
+  const workspace = (yield* TestInstance).directory
+  const skill = yield* Skill.Service
+  const body = (yield* skill.require("goal-contract-review")).content.trim()
+  const response = JSON.stringify({ phase: "goal_contract", outcome: "needs_input", issues: [{
+    id: "format", kind: "ambiguity", severity: "blocking", targetIds: ["k"],
+    sourceRefs: [{ source: "user_prompt" }], statement: "Choose the output format",
+  }] })
+  let seen: string | undefined
+  const promptOps = stubOps({ text: response, onPrompt: (input) => {
+    seen = input.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+  } })
+  const context = yield* captureExecutionContext(chat.id, {
+    sessionID: chat.id, messageID: assistant.id, agent: "build", messages: [], abort: new AbortController().signal,
+    extra: { promptOps, modelSelection: ref }, metadata: () => Effect.void, ask: () => Effect.void,
+  })
+  if (external) {
+    const execute = spyOn(ExecutionBackends, "execute").mockImplementation(async (input) => {
+      seen = input.prompt
+      expect(input.phase).toBe("meta_review")
+      expect(input.runId).toBe(Coordinator.status(chat.id).runId)
+      expect(input.mutationPolicy).toBe("forbid")
+      await expect(input.routeWrite!("never.txt")).rejects.toThrow("META_REVIEW_READ_ONLY")
+      return { output: response, changedFiles: [], backendId: input.selection.backendId, modelId: input.selection.modelId, capabilityRevision: "fixture", nativeOptions: {} }
+    })
+    yield* Effect.addFinalizer(() => Effect.sync(() => execute.mockRestore()))
+  }
+  yield* (yield* TaskTool).init()
+  yield* Effect.promise(() => Coordinator.openRun({ sessionID: chat.id, workspace, goal: "Original report request", trigger: "manual", context,
+    execution: external ? { adapterID: "codex-app-server", modelID: "fixture", kind: "agent_runtime" } : undefined,
+  }))
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.cancel(chat.id)))
+  const result = yield* Effect.promise(() => Coordinator.proposeContract(chat.id, {
+    goal: "Produce a report", interpretation: { version: 1, candidates: [] },
+    criteria: [{ criterionId: "k", statement: "The report exists", claimIds: ["c"], required: true, risk: "high" }],
+    claims: [{ claimId: "c", criterionIds: ["k"], origin: "user", kind: "artifact", statement: "The report exists",
+      scope: { targets: ["report.txt"], capabilities: ["write"], exclusions: [] }, applicability: {}, predicate: { type: "exists" },
+      verifierPolicy: { minimumStrength: "structural", allowedVerifierIds: ["file"], minIndependentFamilies: 1 } }],
+  }, context))
+  expect(seen).toBeDefined()
+  const request = JSON.parse(seen!)
+  expect(request.instructions).toContain(body)
+  expect(request.originalRequest).toBe("Original report request")
+  expect(request.clarifications).toEqual([])
+  expect(request.response.outcome).toBe("pass | revise | needs_input")
+  expect(request.constraints.noEvidenceOrReadyAuthority).toBe(true)
+  expect(result.planningState).toBe("awaiting_input")
+  expect(result.evidenceCount).toBe(0)
+  expect(result.readyEligible).toBe(false)
+}), 30000)

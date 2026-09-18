@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import { harnessDisplayPhase, harnessLifecycleLabel } from "../src/harness/status-presentation"
 
 for (const planningState of [
-  "contract_building", "contract_preflight", "contract_reviewing", "awaiting_input",
+  "contract_building", "contract_preparing", "contract_scanning", "contract_validate_dedupe",
+  "contract_preflight", "contract_reviewing", "awaiting_input",
   "planning_decision", "plan_building", "plan_reviewing", "plan_ready",
 ]) {
   test("the footer exposes Kernel state instead of a stale direct phase: " + planningState, () => {

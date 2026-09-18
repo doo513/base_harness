@@ -127,6 +127,71 @@ class FakeVerifier {
   async dispose() {}
 }
 
+test("Coordinator binds accepted contract path authority before WorkGraph admission", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "base-harness-coordinator-authority-"))
+  roots.push(workspace)
+  const runtime = new CoordinatorRuntime(async (input) => new FakeVerifier(input) as unknown as ProcessVerificationClient)
+  runtimes.push({ runtime, workspace })
+  runtime.orchestration.beginPrompt({ sessionID: "authority-root", workspace, goal: "Change allowed", exploration: "manual" })
+  await runtime.openRun({ sessionID: "authority-root", workspace, goal: "Change allowed", trigger: "manual" })
+  await runtime.proposeContract("authority-root", {
+    goal: "Change allowed",
+    criteria: [{
+      criterionId: "criterion", statement: "allowed changes", claimIds: ["claim"], required: true, risk: "low",
+    }],
+    claims: [{
+      claimId: "claim", criterionIds: ["criterion"], origin: "user", statement: "allowed changes", kind: "artifact",
+      scope: { targets: ["allowed"], capabilities: ["write"], exclusions: [] },
+      predicate: { type: "exists" },
+      verifierPolicy: { minimumStrength: "structural", allowedVerifierIds: ["file"], minIndependentFamilies: 1 },
+    }],
+  })
+  runtime.beginPlanning("authority-root")
+
+  expect(runtime.orchestration.snapshot("authority-root")?.contractAuthority).toMatchObject({ risk: "low" })
+  await expect(runtime.acceptWorkGraph("authority-root", {
+    units: [{
+      id: "unit", title: "outside", instructions: "write outside", claimIds: ["claim"], criterionIds: ["criterion"],
+      dependsOn: [], readSet: [], writeSet: ["outside/file.txt"], integrationRequests: [],
+    }],
+    integrationPaths: [],
+  }, {})).rejects.toMatchObject({ code: "OWNERSHIP_VIOLATION" })
+})
+
+test("a rejected replacement contract revokes the prior Run path authority", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "base-harness-coordinator-revoke-"))
+  roots.push(workspace)
+  let proposals = 0
+  const runtime = new CoordinatorRuntime(async (input) => {
+    const verifier = new FakeVerifier(input)
+    const propose = verifier.proposeContract.bind(verifier)
+    verifier.proposeContract = async (contract) => {
+      const status = await propose(contract)
+      proposals += 1
+      return proposals === 1 ? status : { ...status, contractStatus: "missing" as const }
+    }
+    return verifier as unknown as ProcessVerificationClient
+  })
+  runtimes.push({ runtime, workspace })
+  runtime.orchestration.beginPrompt({ sessionID: "revoke-root", workspace, goal: "Change one", exploration: "manual" })
+  await runtime.openRun({ sessionID: "revoke-root", workspace, goal: "Change one", trigger: "manual" })
+  const proposal = {
+    goal: "Change one",
+    criteria: [{ criterionId: "criterion", statement: "one", claimIds: ["claim"], required: true, risk: "low" as const }],
+    claims: [{
+      claimId: "claim", criterionIds: ["criterion"], origin: "user" as const, statement: "one", kind: "artifact" as const,
+      scope: { targets: ["one.txt"], capabilities: ["write"], exclusions: [] }, predicate: { type: "exists" },
+      verifierPolicy: { minimumStrength: "structural" as const, allowedVerifierIds: ["file"], minIndependentFamilies: 1 },
+    }],
+  }
+  expect((await runtime.proposeContract("revoke-root", proposal)).contractStatus).toBe("accepted")
+  expect(runtime.orchestration.snapshot("revoke-root")?.contractAuthority).toBeDefined()
+
+  expect((await runtime.proposeContract("revoke-root", proposal)).contractStatus).toBe("missing")
+  expect(runtime.orchestration.snapshot("revoke-root")?.contractClaimIds).toEqual([])
+  expect(runtime.orchestration.snapshot("revoke-root")?.contractAuthority).toBeUndefined()
+})
+
 test("Coordinator queues a third unit while running at most two and commits only attested candidates", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "base-harness-coordinator-"))
   roots.push(workspace)

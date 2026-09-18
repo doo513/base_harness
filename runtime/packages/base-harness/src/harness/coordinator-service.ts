@@ -1,10 +1,17 @@
+import { builtinDomainExecutionRegistry, builtinDomainResolver } from "@base-harness/domain"
 import { Coordinator as RuntimeCoordinator } from "@base-harness/coordinator"
 import { KernelHost, type MetaReviewRequest } from "@base-harness/kernel-host"
+import { dispatchDomainExecution } from "./domain-execution"
+import { autonomousExecutionOptions } from "./autonomous-execution"
 
 const kernel = new KernelHost(RuntimeCoordinator, {
+  domains: builtinDomainResolver,
+  domainExecutions: builtinDomainExecutionRegistry,
   sessionState: true,
+  autonomous: autonomousExecutionOptions(RuntimeCoordinator),
   redact: (runId, value) => RuntimeCoordinator.redactForPersistence(runId, value),
 })
+RuntimeCoordinator.registerDomainExecutor(dispatchDomainExecution)
 RuntimeCoordinator.registerCompletionGate((sessionID) => kernel.canVerifyRoot(sessionID))
 RuntimeCoordinator.registerStatusCheckpoint((status) => kernel.checkpointStatus(status))
 
@@ -14,6 +21,10 @@ const runtimeStatus = async (operation: Promise<{ sessionID: string }>) => {
   const completed = await operation
   return kernel.status(completed.sessionID)
 }
+
+type AutonomousHostApi = Pick<KernelHost,
+  "submitAutonomousDecision" | "captureAutonomousSource" | "proposeAutonomousCheck" |
+  "requestAutonomousAnswers" | "reserveAutonomousModel" | "settleAutonomousModel">
 
 export const Coordinator = new Proxy(RuntimeCoordinator, {
   get(target, property, receiver) {
@@ -25,7 +36,19 @@ export const Coordinator = new Proxy(RuntimeCoordinator, {
       const offKernel = kernel.subscribe(listener)
       return () => { offRuntime(); offKernel() }
     }
+    if (property === "requestContractQuestions") return kernel.requestContractQuestions.bind(kernel)
     if (property === "proposeContract") return kernel.proposeContract.bind(kernel)
+    if (property === "stageExecutionProposal") return kernel.stageExecutionProposal.bind(kernel)
+    if (property === "acceptExecutionProposal") return kernel.acceptExecutionProposal.bind(kernel)
+    if (property === "recordExecutionResult") return kernel.recordExecutionResult.bind(kernel)
+    // Host normalizes actor output and owns source/answer provenance. In
+    // particular submitAutonomousDecision is not the raw Coordinator signature.
+    if (property === "submitAutonomousDecision") return kernel.submitAutonomousDecision.bind(kernel)
+    if (property === "captureAutonomousSource") return kernel.captureAutonomousSource.bind(kernel)
+    if (property === "proposeAutonomousCheck") return kernel.proposeAutonomousCheck.bind(kernel)
+    if (property === "requestAutonomousAnswers") return kernel.requestAutonomousAnswers.bind(kernel)
+    if (property === "reserveAutonomousModel") return kernel.reserveAutonomousModel.bind(kernel)
+    if (property === "settleAutonomousModel") return kernel.settleAutonomousModel.bind(kernel)
     if (property === "acceptWorkGraph") return kernel.acceptWorkGraph.bind(kernel)
     if (property === "status") return kernel.status.bind(kernel)
     if (property === "readStatus") return kernel.readStatus.bind(kernel)
@@ -38,16 +61,26 @@ export const Coordinator = new Proxy(RuntimeCoordinator, {
     if (property === "resolvePlan") return kernel.resolvePlan.bind(kernel)
     if (property === "preparePlanExecution") return kernel.preparePlanExecution.bind(kernel)
     if (property === "control") return kernel.control.bind(kernel)
+    if (property === "hasAcceptedContract") return kernel.hasAcceptedContract.bind(kernel)
     if (property === "assertToolAllowed") return kernel.assertToolAllowed.bind(kernel)
     if (property === "registerMetaReviewer") return kernel.registerMetaReviewer.bind(kernel)
     if (property === "revalidateContract") return kernel.revalidateContract.bind(kernel)
     const value = Reflect.get(target, property, receiver)
     return typeof value === "function" ? value.bind(target) : value
   },
-}) as typeof RuntimeCoordinator & {
+}) as unknown as Omit<typeof RuntimeCoordinator, keyof AutonomousHostApi> & AutonomousHostApi & {
   openRun(input: any): Promise<any>
   proposeContract(sessionID: string, proposal: unknown, context?: unknown): Promise<any>
+  stageExecutionProposal(sessionID: string, proposal: unknown, context?: unknown): Promise<any>
+  acceptExecutionProposal(sessionID: string, proposal: unknown, context?: unknown): Promise<any>
+  recordExecutionResult(
+    sessionID: string,
+    runId: string,
+    result: { output: string; changedFiles?: string[]; adapterId: string; modelId?: string },
+  ): Promise<any>
   acceptWorkGraph(sessionID: string, graph: unknown, context?: unknown): Promise<any>
+  requestContractQuestions: KernelHost["requestContractQuestions"]
+  hasAcceptedContract: KernelHost["hasAcceptedContract"]
   readStatus: KernelHost["readStatus"]
   resolvePlan: KernelHost["resolvePlan"]
   preparePlanExecution: KernelHost["preparePlanExecution"]
@@ -77,9 +110,15 @@ export type { MetaReviewRequest } from "./kernel-host"
 
 export type {
   CoordinatorService,
+  CoordinatorRuntime,
   GoalContractProposal,
   HarnessStatus,
   HostActionEvent,
+  DomainExecutionProposal,
+  DomainExecutionResult,
+  DomainExecutionDispatcher,
+  DomainPreparation,
+  DomainRunBinding,
   VerificationStatus,
   VerificationTarget,
   WorkGraph,

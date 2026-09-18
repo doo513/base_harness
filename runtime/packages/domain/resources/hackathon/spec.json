@@ -1,9 +1,17 @@
 {
-  "schemaVersion": "skill-spec-v1",
+  "schemaVersion": "overlay-spec-v1",
   "id": "hackathon",
   "revision": "hackathon-1",
-  "description": "Demo-first execution skill layered on the develop domain.",
+  "description": "Demo-first planning policy layered on the develop domain.",
   "defaultDomain": "develop",
-  "requiresPlan": true,
-  "demoFirst": true
+  "compatibleDomains": ["develop"],
+  "planning": {
+    "requiresPlan": true,
+    "demoFirst": true
+  },
+  "skills": [{
+    "name": "hackathon-demo",
+    "revision": "1",
+    "description": "Small demonstrable slices, explicit deferred work, and a reproducible demo."
+  }]
 }

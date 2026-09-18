@@ -4,7 +4,9 @@ import {
   applyControl,
   createKernelSessionState,
   decidePlanning,
+  minimumRiskForOperation,
   parseMetaReview,
+  riskAllowsOperation,
   validatePlanSpec,
   type PlanSpec,
 } from "../src"
@@ -45,6 +47,15 @@ describe("kernel", () => {
     expect(allowsOperation(state, "mutate", undefined, policy)).toBe(false)
     expect(allowsOperation(state, "delegate", "explore", policy)).toBe(true)
     expect(allowsOperation(state, "delegate", "general", policy)).toBe(false)
+  })
+
+  test("operation risk keeps low-risk structured writes while gating opaque execution", () => {
+    expect(minimumRiskForOperation("mutate")).toBe("low")
+    expect(minimumRiskForOperation("delegate")).toBe("medium")
+    expect(minimumRiskForOperation("execute")).toBe("high")
+    expect(riskAllowsOperation("low", "mutate")).toBe(true)
+    expect(riskAllowsOperation("low", "execute")).toBe(false)
+    expect(riskAllowsOperation("high", "execute")).toBe(true)
   })
 
   test("rejects blocking pass and cyclic plans", () => {

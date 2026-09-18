@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@base-harness/kernel": "workspace:*",
+    "@base-harness/domain-contracts": "workspace:*",
     "@base-harness/verification": "workspace:*",
     "@base-harness/workspace": "workspace:*",
     "@base-harness/security": "workspace:*"

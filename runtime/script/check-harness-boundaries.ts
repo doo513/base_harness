@@ -25,6 +25,8 @@ const roots = {
   verification: path.join(packageRoot, "verification", "src"),
   coordinator: path.join(packageRoot, "coordinator", "src"),
   kernel: path.join(packageRoot, "kernel", "src"),
+  domain: path.join(packageRoot, "domain", "src"),
+  domainContracts: path.join(packageRoot, "domain-contracts", "src"),
   kernelHost: path.join(packageRoot, "kernel-host", "src"),
   workspace: path.join(packageRoot, "workspace", "src"),
   security: path.join(packageRoot, "security", "src"),
@@ -35,11 +37,21 @@ for (const [area, root] of Object.entries(roots)) {
   for (const file of await sourceFiles(root)) {
     const source = ts.createSourceFile(file, await fs.readFile(file, "utf8"), ts.ScriptTarget.Latest, true)
     source.forEachChild((node) => {
-      if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return
+      if (!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node)) return
+      if (!node.moduleSpecifier || !ts.isStringLiteral(node.moduleSpecifier)) return
       const specifier = node.moduleSpecifier.text
       const relative = path.relative(runtimeRoot, file).replaceAll("\\", "/")
       if (["kernel", "workspace", "security"].includes(area) && /^(?:base-harness$|@base-harness\/(?:core|coordinator|kernel-host|tui|verification)(?:\/|$))/.test(specifier)) {
         errors.push(`${relative}: foundational package cannot depend on execution or policy orchestration`)
+      }
+      if (area === "kernel" && /^@base-harness\/domain(?:\/|$)/.test(specifier)) {
+        errors.push(`${relative}: Kernel accepts domain contracts, not domain implementations`)
+      }
+      if (area === "domainContracts" && !specifier.startsWith(".")) {
+        errors.push(`${relative}: domain contracts must remain dependency-free`)
+      }
+      if (area === "domain" && /^(?:base-harness$|@base-harness\/(?!domain-contracts(?:\/|$)))/.test(specifier)) {
+        errors.push(`${relative}: Domain implementations must use contracts, not runtime imports`)
       }
       if (area === "coordinator" && (specifier === "base-harness" || specifier.startsWith("@base-harness/core") || specifier.startsWith("@base-harness/tui"))) {
         errors.push(`${relative}: coordinator must use execution ports, not execution package imports`)
@@ -66,7 +78,7 @@ for (const [area, root] of Object.entries(roots)) {
   }
 }
 
-const packageNames = ["base-harness", "coordinator", "core", "verification", "tui", "kernel", "kernel-host", "workspace", "security"]
+const packageNames = ["base-harness", "coordinator", "core", "verification", "tui", "kernel", "kernel-host", "workspace", "security", "domain", "domain-contracts"]
 const graph = new Map<string, string[]>()
 for (const directory of packageNames) {
   const manifest = JSON.parse(await fs.readFile(path.join(packageRoot, directory, "package.json"), "utf8"))

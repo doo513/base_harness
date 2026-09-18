@@ -27,7 +27,8 @@ export function nextRequestPlanOnly(status: HarnessPlanningPresentation, stagedP
 }
 
 const activePlanningStates = new Set([
-  "contract_building", "contract_preflight", "contract_reviewing", "awaiting_input",
+  "contract_building", "contract_preparing", "contract_scanning", "contract_validate_dedupe",
+  "contract_preflight", "contract_reviewing", "awaiting_input",
   "planning_decision", "plan_building", "plan_reviewing",
 ])
 const terminalPhases = new Set(["ready", "blocked", "interrupted", "failure"])

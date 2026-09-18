@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import * as Workspace from "../src/orchestration"
+import { acceptedContract } from "./contract-fixture"
 
 const deferred = () => {
   let resolve!: () => void
@@ -41,7 +42,12 @@ async function fixture(action: (value: {
     }
     try {
       for (const name of ["a", "b"]) await fs.writeFile(path.join(workspace, name + ".txt"), "before")
-      Workspace.registerContract("root", ["claim-a", "claim-b"], ["criterion-a", "criterion-b"])
+      Workspace.registerContract(
+        "root",
+        ["claim-a", "claim-b"],
+        ["criterion-a", "criterion-b"],
+        acceptedContract(["claim-a", "claim-b"], ["criterion-a", "criterion-b"]),
+      )
       Workspace.beginPlanning("root")
       await Workspace.acceptWorkGraph("root", {
         units: ["a", "b"].map(id => ({

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile, symlink } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import * as Workspace from "../src/orchestration"
+import { acceptedContract } from "./contract-fixture"
 
 async function fixture(run: (value: {
   workspace: string; state: string; original: string; overlay: string;
@@ -30,7 +31,9 @@ async function fixture(run: (value: {
     try {
       const original = join(workspace, "result.txt")
       await writeFile(original, "before")
-      Workspace.registerContract("root", ["claim"], ["criterion"])
+      Workspace.registerContract(
+        "root", ["claim"], ["criterion"], acceptedContract(["claim"], ["criterion"]),
+      )
       Workspace.beginPlanning("root")
       await Workspace.acceptWorkGraph("root", {
         units: [{ id: "unit", title: "Update", instructions: "Write after",

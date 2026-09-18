@@ -1,3 +1,4 @@
+import { contractFixture } from "./contract-fixture"
 import { expect, test } from "bun:test"
 import { KernelHost } from "../src"
 
@@ -11,12 +12,12 @@ function fixture() {
     acceptWorkGraph: async () => { throw new Error("No worker dispatch during this fixture") },
     reportMetaReviewFailure: async (_sessionID, error, _phase, source) => { failures.push({ error, source }) },
   })
-  const proposal = {
+  const proposal = contractFixture({
     goal: "Inspect a high-risk contract", interpretation: { version: 1, candidates: [] },
     criteria: [{ criterionId: "criterion", statement: "Inspect", claimIds: ["claim"], required: true, risk: "high" }],
     claims: [{ claimId: "claim", criterionIds: ["criterion"], statement: "Inspect",
       scope: { targets: ["input.txt"] }, applicability: {}, verifierPolicy: { minIndependentFamilies: 1 } }],
-  }
+  })
   return { host, proposal, failures, accepted: () => accepted }
 }
 

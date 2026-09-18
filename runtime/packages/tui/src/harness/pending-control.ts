@@ -1,8 +1,8 @@
-import { normalizeSelectionControl, type DomainSelection } from "@base-harness/domain"
+import { unwrapHarnessResponse } from "./control-response"
 
 export type HarnessControl =
-  | { type: "domain.set"; domain: "develop" | "general" }
-  | { type: "skill.set"; skill: "hackathon"; enabled: boolean }
+  | { type: "domain.set"; domain: string }
+  | { type: "skill.set"; skill: string; enabled: boolean }
   | {
       type: "execution.select"
       selection?: {
@@ -17,8 +17,8 @@ export type HarnessControl =
   | { type: "planning.execute"; planId?: string }
 
 export type PendingHarnessSelection = {
-  domain: "develop" | "general"
-  hackathon: boolean
+  domain?: string
+  skills: string[]
   planOnce: boolean
   execution?: Extract<HarnessControl, { type: "execution.select" }>["selection"]
   count: number
@@ -33,11 +33,11 @@ function emit() {
 
 export function queueHarnessControl(control: HarnessControl) {
   if (control.type === "domain.set") {
-    pending = pending.filter((item) => item.type !== "domain.set" && item.type !== "skill.set")
+    pending = pending.filter((item) => item.type !== "domain.set")
     pending.push(control)
   } else if (control.type === "skill.set") {
-    pending = pending.filter((item) => item.type !== "skill.set")
-    if (control.enabled) pending.push(control)
+    pending = pending.filter((item) => item.type !== "skill.set" || item.skill !== control.skill)
+    pending.push(control)
   } else if (control.type === "execution.select") {
     pending = pending.filter((item) => item.type !== "execution.select")
     pending.push(control)
@@ -51,12 +51,17 @@ export function queueHarnessControl(control: HarnessControl) {
 }
 
 export function pendingHarnessSelection(): PendingHarnessSelection {
-  let selection: DomainSelection = { domain: "develop", skills: [] }
+  // This is unvalidated intent for the next new session, not resolved Host policy.
+  let domain: string | undefined
+  let skills: string[] = []
   let planOnce = false
   let execution: PendingHarnessSelection["execution"]
   for (const control of pending) {
-    if (control.type === "domain.set" || control.type === "skill.set") {
-      selection = normalizeSelectionControl(selection, control)
+    if (control.type === "domain.set") {
+      domain = control.domain
+    } else if (control.type === "skill.set") {
+      skills = skills.filter((id) => id !== control.skill)
+      if (control.enabled) skills.push(control.skill)
     } else if (control.type === "execution.select") {
       execution = control.selection
     } else if (control.type === "planning.plan_once") {
@@ -64,8 +69,8 @@ export function pendingHarnessSelection(): PendingHarnessSelection {
     }
   }
   return {
-    domain: selection.domain,
-    hackathon: selection.skills.includes("hackathon"),
+    domain,
+    skills,
     planOnce,
     execution,
     count: pending.length,
@@ -85,9 +90,11 @@ export async function flushPendingHarnessControls(
   emit()
   for (let index = 0; index < batch.length; index += 1) {
     try {
-      await send(batch[index]!)
+      unwrapHarnessResponse(await send(batch[index]!))
     } catch (error) {
-      pending = [...batch.slice(index), ...pending]
+      // A failed first request may create another session on retry. Replay all
+      // idempotent settings so earlier accepted controls are not silently lost.
+      pending = [...batch, ...pending]
       emit()
       throw error
     }

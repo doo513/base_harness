@@ -2,7 +2,8 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { link, lstat, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises"
 import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistence"
 import type { KernelSessionState } from "@base-harness/kernel"
-import { domainPolicy as resolveDomainPolicy } from "@base-harness/domain"
+import { builtinDomainResolver } from "@base-harness/domain"
+import type { DomainSelection } from "@base-harness/domain-contracts"
 import os from "node:os"
 import path from "node:path"
 
@@ -35,7 +36,11 @@ interface SessionSnapshot {
   lastRun?: RunHistory
 }
 
+type SelectionValidator = (selection: DomainSelection) => void
+const defaultValidator: SelectionValidator = (selection) => { builtinDomainResolver.resolve(selection) }
+
 export interface SessionStateStoreOptions {
+  validateSelection?: SelectionValidator
   directory?: string
   redact?: <T>(runId: string, value: T) => T
 }
@@ -55,16 +60,13 @@ const exactKeys = (value: Record<string, any>, allowed: string[]) =>
 const phaseName = (value: unknown) => text(value, 64) && /^[a-z_]+$/.test(value)
 const terminal = new Set(["ready", "blocked", "failure", "interrupted", "plan_ready"])
 
-function validSelection(value: unknown): value is SessionSelection {
+function validSelection(value: unknown, validate: SelectionValidator = defaultValidator): value is SessionSelection {
   if (!object(value) || !exactKeys(value, ["domain", "skills", "planningPreference", "execution"])
       || !["auto", "plan_once"].includes(value.planningPreference)
-      || !Array.isArray(value.skills) || value.skills.length > 1) return false
+      || !Array.isArray(value.skills) || value.skills.length > 64
+      || typeof value.domain !== "string" || !value.skills.every((item: unknown) => typeof item === "string")) return false
   try {
-    const policy = resolveDomainPolicy({
-      domain: value.domain as "develop" | "general",
-      skills: value.skills as Array<"hackathon">,
-    })
-    if (policy.domainId !== value.domain) return false
+    validate({ domain: value.domain, skills: value.skills })
   } catch {
     return false
   }
@@ -85,12 +87,12 @@ function validSelection(value: unknown): value is SessionSelection {
       text(key, 128) && !["__proto__", "prototype", "constructor"].includes(key) && text(value, 1024)))
 }
 
-export function sessionSelection(state: KernelSessionState): SessionSelection {
+export function sessionSelection(state: KernelSessionState, validate: SelectionValidator = defaultValidator): SessionSelection {
   const value = structuredClone({
     domain: state.domain, skills: state.skills, planningPreference: state.planningPreference,
     ...(state.execution ? { execution: state.execution } : {}),
   })
-  if (!validSelection(value)) fail("SESSION_SELECTION_INVALID")
+  if (!validSelection(value, validate)) fail("SESSION_SELECTION_INVALID")
   return value
 }
 
@@ -229,7 +231,7 @@ export class SessionStateStore {
     if (!timingSafeEqual(expected, Buffer.from(envelope.signature, "hex"))) fail("SESSION_INTEGRITY_INVALID")
     const saved = envelope.body as SessionSnapshot
     if (saved.schemaVersion !== "host-session-v1" || saved.sessionID !== sessionID || !text(saved.workspace)
-        || !validSelection(saved.selection) || (saved.lastRun !== undefined && !validHistory(saved.lastRun))) {
+        || !validSelection(saved.selection, this.options.validateSelection) || (saved.lastRun !== undefined && !validHistory(saved.lastRun))) {
       fail("SESSION_INTEGRITY_INVALID")
     }
     const originalWorkspace = await realpath(saved.workspace)
@@ -243,7 +245,7 @@ export class SessionStateStore {
     const captured = structuredClone(input)
     const prior = this.writes.get(input.sessionID) ?? Promise.resolve()
     const write = prior.catch(() => undefined).then(async () => {
-      if (!validSelection(captured.selection)
+      if (!validSelection(captured.selection, this.options.validateSelection)
           || (captured.lastRun !== undefined && !validHistory(captured.lastRun))) fail("SESSION_HISTORY_INVALID")
       const workspace = await realpath(captured.workspace)
       const root = await this.directory(workspace, true)
@@ -252,7 +254,7 @@ export class SessionStateStore {
       // Redaction must never silently change identity or permission-bearing selection.
       if (body.sessionID !== original.sessionID || body.workspace !== original.workspace
           || JSON.stringify(body.selection) !== JSON.stringify(original.selection)
-          || !validSelection(body.selection) || (body.lastRun !== undefined && !validHistory(body.lastRun))) {
+          || !validSelection(body.selection, this.options.validateSelection) || (body.lastRun !== undefined && !validHistory(body.lastRun))) {
         fail("SESSION_REDACTION_INVALID")
       }
       const signature = createHmac("sha256", await this.key(root, true)).update(JSON.stringify(body)).digest("hex")

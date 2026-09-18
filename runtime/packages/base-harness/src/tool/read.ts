@@ -9,7 +9,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
-import { Orchestration } from "../harness/coordinator-service"
+import { Coordinator, Orchestration } from "../harness/coordinator-service"
 import { consumeExplorationBudget } from "./exploration-budget"
 
 const DEFAULT_READ_LIMIT = 2000
@@ -28,6 +28,7 @@ class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
 // Schema output is identical (`type: "number"`), so the LLM view is
 // unchanged; purely CLI-facing uses must now send numbers rather than strings.
 export const Parameters = Schema.Struct({
+  snapshot: Schema.optional(Schema.Boolean).annotate({ description: "Capture immutable source bytes for an autonomous observation check" }),
   filePath: Schema.String.annotate({ description: "The absolute path to the file or directory to read" }),
   offset: Schema.optional(NonNegativeInt).annotate({
     description: "The line number to start reading from (1-indexed)",
@@ -61,6 +62,7 @@ type Metadata = {
   truncated: boolean
   loaded: string[]
   display?: Display
+  subject?: import("@base-harness/domain-contracts").SubjectRef
 }
 
 export const ReadTool = Tool.define<
@@ -266,6 +268,20 @@ export const ReadTool = Tool.define<
       })
 
       if (!stat) return yield* miss(filepath)
+      if (params.snapshot) {
+        const current = Coordinator.status(ctx.sessionID)
+        if (!current.autonomous) throw new Error("AUTONOMOUS_SNAPSHOT_REQUIRES_RUN")
+        Coordinator.assertToolAllowed(ctx.sessionID, "read")
+        if (stat.type !== "File" || stat.size > BigInt(10 * 1024 * 1024)) throw new Error("AUTONOMOUS_SNAPSHOT_FILE_LIMIT")
+        const bytes = yield* fs.readFile(filepath)
+        ctx.abort.throwIfAborted()
+        const stored = yield* Effect.promise(() => Coordinator.captureAutonomousSource(ctx.sessionID, current.runId, bytes, logicalFilepath))
+        let preview = ""
+        try { preview = new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(0, MAX_BYTES)) }
+        catch { preview = "(binary snapshot)" }
+        return { title, output: JSON.stringify({ subject: stored.subject, preview, byteLength: bytes.length }),
+          metadata: { preview: preview.slice(0, 2000), truncated: bytes.length > MAX_BYTES, loaded: [], subject: stored.subject } }
+      }
 
       if (stat.type === "Directory") {
         const items = yield* list(filepath)
