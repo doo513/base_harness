@@ -4,6 +4,9 @@ const nativeToolOperations = new Map<string, Operation>([
   ["read", "read"],
   ["glob", "search"],
   ["grep", "search"],
+  ["write", "mutate"],
+  ["edit", "mutate"],
+  ["apply_patch", "mutate"],
   ["bash", "execute"],
 ])
 

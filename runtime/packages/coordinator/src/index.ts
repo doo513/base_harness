@@ -357,6 +357,45 @@ export class CoordinatorRuntime implements CoordinatorService {
     this.executor = executor
   }
 
+  /** Reuse the installed application worker executor for an admitted
+   * autonomous Task. Task admission and the shared budget remain owned by the
+   * AutonomousRun; this method only performs the existing worker dispatch. */
+  async executeAutonomousTask(input: {
+    rootSessionID: string
+    runId: string
+    taskId: string
+    objective: string
+    readSet: string[]
+    writeSet: string[]
+    signal: AbortSignal
+    agentType?: string
+  }) {
+    const run = this.runFor(input.rootSessionID)
+    if (!run?.autonomous || run.runId !== input.runId || !this.isCurrent(run)) {
+      throw new Error("AUTONOMOUS_RUN_MISMATCH")
+    }
+    if (!this.executor || !run.context) throw new Error("AUTONOMOUS_TASK_EXECUTOR_UNAVAILABLE")
+    input.signal.throwIfAborted()
+    return this.executor({
+      rootSessionID: run.sessionID,
+      runId: run.runId,
+      context: run.context,
+      signal: input.signal,
+      unit: {
+        id: input.taskId,
+        title: input.objective,
+        instructions: input.objective,
+        claimIds: [],
+        criterionIds: [],
+        dependsOn: [],
+        readSet: [...input.readSet],
+        writeSet: [...input.writeSet],
+        integrationRequests: [],
+        ...(input.agentType ? { agentType: input.agentType } : {}),
+      },
+    })
+  }
+
   registerIntegrationExecutor(executor: IntegrationExecutor) {
     this.integrationExecutor = executor
   }
@@ -651,6 +690,7 @@ export class CoordinatorRuntime implements CoordinatorService {
     run.interrupted = true
     run.execution.abort()
     if (interrupt) this.orchestration.markInterrupted(run.sessionID)
+    else if (run.autonomous) this.orchestration.markAutonomousClosed(run.sessionID)
     for (const resolve of run.settledWaiters) resolve()
     run.settledWaiters.clear()
     await run.verifier?.dispose().catch(() => undefined)
@@ -786,6 +826,13 @@ export class CoordinatorRuntime implements CoordinatorService {
       }) : undefined
       this.orchestration.beginPrompt({ sessionID: input.sessionID, workspace: input.workspace, goal: input.goal, exploration: "manual" })
       this.orchestration.setRunIdentity(input.sessionID, runId)
+      if (autonomousInput) {
+        await this.orchestration.beginAutonomousExecution({
+          sessionID: input.sessionID,
+          taskId: autonomousInput.setup.taskId,
+          authority: autonomousInput.setup.authority,
+        })
+      }
       this.persistence.openRun(runId)
       const source = goalSource(input.goal, "session-" + input.sessionID, "user_message")
       const profile = input.configuredProfile ?? "adaptive"
@@ -1023,6 +1070,12 @@ export class CoordinatorRuntime implements CoordinatorService {
 
   registerWorkerScope(rootSessionID: string, scopeId: string, workUnitId: string) {
     const run = this.runFor(rootSessionID)
+    if (run?.autonomous) {
+      run.autonomous.bindTaskSession(workUnitId, scopeId)
+      this.scopeRoots.set(scopeId, run.sessionID)
+      void this.publish(run)
+      return
+    }
     const worker = run?.workers.get(workUnitId)
     if (!run || !worker) return
     worker.scopeId = scopeId
@@ -1122,6 +1175,11 @@ export class CoordinatorRuntime implements CoordinatorService {
     const owner = this.orchestration.snapshot(sessionID)
     const run = this.runFor(sessionID) ?? (owner ? this.runs.get(owner.sessionID) : undefined)
     if (!run || !this.isLive(run)) return
+    if (run.autonomous) {
+      await this.orchestration.finishAutonomousTask(sessionID, success)
+      await this.publish(run)
+      return
+    }
     const candidate = await this.orchestration.finishChild(sessionID, success)
     if (!this.isLive(run) || (candidate && candidate.runId !== run.runId)) return
     const worker = candidate
@@ -1595,6 +1653,7 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (run.autonomous) {
       await run.autonomous.terminate("cancelled")
       run.execution.abort()
+      this.orchestration.markInterrupted(run.sessionID)
       await this.publish(run)
       return this.snapshot(run)
     }
@@ -1627,13 +1686,13 @@ export class CoordinatorRuntime implements CoordinatorService {
   }
 
   private autonomousRun(sessionID: string, runId: string) {
-    const run = this.runs.get(sessionID)
+    const run = this.runFor(sessionID)
     if (!run?.autonomous || run.runId !== runId || !this.isCurrent(run)) throw new Error("AUTONOMOUS_RUN_MISMATCH")
     return { run, controller: run.autonomous }
   }
 
   autonomousBasis(sessionID: string, runId: string) {
-    return this.autonomousRun(sessionID, runId).controller.basis()
+    return this.autonomousRun(sessionID, runId).controller.basisForSession(sessionID)
   }
 
   async prepareAutonomous(sessionID: string, runId: string, preparation: AutonomousPreparationResult) {
@@ -1658,6 +1717,14 @@ export class CoordinatorRuntime implements CoordinatorService {
     if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
     if (!revision) throw new Error("AUTONOMOUS_INTENT_REVISION_REQUIRED")
     controller.reviseIntent(revision)
+    await this.publish(run)
+    return this.snapshot(run)
+  }
+
+  async reviseAutonomousAuthority(sessionID: string, runId: string, authority: import("@base-harness/domain-contracts").AuthorityGrant) {
+    const { run, controller } = this.autonomousRun(sessionID, runId)
+    if (run.persistenceFailed) throw new Error("STATUS_PERSISTENCE_FAILED")
+    await controller.reviseAuthority(authority)
     await this.publish(run)
     return this.snapshot(run)
   }
@@ -1729,16 +1796,46 @@ export class CoordinatorRuntime implements CoordinatorService {
   private snapshot(run: RunRecord): HarnessStatus {
     if (run.autonomous) {
       const autonomous = run.autonomous.snapshot()
+      const tasks = autonomous.tasks.filter((task) => task.parentTaskId !== undefined)
+      const workers: import("./contracts").CoordinatorWorkerStatus[] = tasks.map((task) => ({
+        workUnitId: task.taskId,
+        title: task.objective,
+        state: task.state === "pending" ? "queued"
+          : task.state === "running" || task.state === "waiting_input" ? "running"
+          : task.state === "settled" ? "completed" : "failed",
+        ...(task.sessionId ? { scopeId: task.sessionId } : {}),
+        repairCount: 0,
+      }))
+      const autonomousResult: import("@base-harness/domain-contracts").AutonomousProductResult = {
+        schemaVersion: "autonomous-product-result-v1",
+        lifecycle: autonomous.lifecycle,
+        runtimeReason: autonomous.completion?.reason ?? null,
+        assessment: autonomous.completion?.assessment ?? null,
+        observations: structuredClone(autonomous.observations),
+        gates: structuredClone(autonomous.completion?.gates ?? []),
+        candidates: autonomous.candidates.map((candidate) => ({
+          candidate: structuredClone(candidate.candidate),
+          taskId: candidate.taskId,
+          state: candidate.state,
+        })),
+        unresolvedEffects: structuredClone(autonomous.completion?.unresolvedEffects ?? []),
+      }
       return {
         ...this.snapshotOrInactive(run.sessionID), sessionID: run.sessionID, runId: run.runId,
-        workspace: run.workspace, goal: run.goal, phase: run.persistenceFailed ? "blocked" : "autonomous", autonomous,
+        workspace: run.workspace, goal: run.goal, phase: run.persistenceFailed ? "blocked" : "autonomous",
+        autonomous, autonomousResult,
         ...(run.persistenceFailed ? { outcome: "failure" as const, verificationState: "failure" as const,
           failureKind: run.verification.failureKind, message: run.verification.message } : {}),
-        activeCount: autonomous.pendingDecisionIds.length,
+        workers,
+        activeCount: workers.filter((worker) => worker.state === "running").length,
+        queuedCount: workers.filter((worker) => worker.state === "queued").length,
+        candidateCount: autonomous.candidates.length,
         execution: run.executionSelection ? structuredClone(run.executionSelection) : undefined,
         domainBinding: run.domainBinding ? structuredClone(run.domainBinding) : undefined,
         domainPolicy: run.domainPolicy ? structuredClone(run.domainPolicy) : undefined,
-        metrics: { observedActions: autonomous.budget.actions, workers: 0, activeWorkers: 0, repairs: 0, evidence: 0, sandboxRuns: run.sandboxRuns },
+        metrics: { observedActions: autonomous.budget.actions, workers: workers.length,
+          activeWorkers: workers.filter((worker) => worker.state === "running").length,
+          repairs: 0, evidence: 0, sandboxRuns: run.sandboxRuns },
       }
     }
     const orchestration = this.orchestration.snapshot(run.sessionID)

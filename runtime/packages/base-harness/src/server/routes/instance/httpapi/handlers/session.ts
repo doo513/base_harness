@@ -40,7 +40,7 @@ import {
 } from "../groups/session"
 import { Coordinator } from "../../../../../harness/coordinator-service"
 import { ExecutionBackends } from "../../../../../harness/execution/backend-router"
-import { InvalidRequestError, PermissionNotFoundError } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -241,7 +241,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const harnessResponse = (value: unknown): unknown => JSON.parse(JSON.stringify(value))
 
     const harnessPlan = Effect.fn("SessionHttpApi.harnessPlan")(function* (ctx: { params: { planID: string } }) {
-      const plan = yield* Effect.promise(() => Coordinator.resolvePlan(ctx.params.planID))
+      const plan = yield* Effect.tryPromise({
+        try: () => Coordinator.resolvePlan(ctx.params.planID),
+        catch: () => notFound("Reviewed plan not found."),
+      })
       yield* requireSession(SessionID.make(plan.sessionID))
       return plan
     })
@@ -276,9 +279,39 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof HarnessControlPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      const control = ctx.payload
-      if (control.type === "execution.discover") {
-        return harnessResponse(yield* Effect.promise(() => ExecutionBackends.discover(control.adapterID)))
+      const discoverExecution = (adapterID: string) => Effect.tryPromise({
+        try: () => ExecutionBackends.discover(adapterID),
+        catch: (error) => {
+          const rawCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined
+          const kind = typeof rawCode === "string" && /^[A-Z0-9_]{1,80}$/.test(rawCode)
+            ? rawCode : "BACKEND_CAPABILITY_UNAVAILABLE"
+          return new InvalidRequestError({ kind, message: "Execution backend capability discovery failed." })
+        },
+      })
+      const requested = ctx.payload
+      if (requested.type === "execution.discover") {
+        return harnessResponse(yield* discoverExecution(requested.adapterID))
+      }
+      let control: import("@base-harness/kernel").HarnessControl = requested
+      if (requested.type === "execution.select" && requested.selection) {
+        const selection = requested.selection
+        const capabilities = yield* discoverExecution(selection.adapterID)
+        if (selection.modelID && !capabilities.models.includes(selection.modelID)) {
+          return yield* Effect.fail(new InvalidRequestError({
+            kind: "BACKEND_MODEL_UNAVAILABLE",
+            message: "Selected execution model is not reported by the backend.",
+          }))
+        }
+        control = {
+          ...requested,
+          selection: {
+            ...selection,
+            capabilityRevision: capabilities.revision,
+            kind: capabilities.kind,
+            backendId: capabilities.backendId,
+            connectionId: capabilities.backendId,
+          },
+        }
       }
       if (control.type === "planning.execute") {
         // A reviewed plan may arrive before the planning stream has finished; never overlap both runs.

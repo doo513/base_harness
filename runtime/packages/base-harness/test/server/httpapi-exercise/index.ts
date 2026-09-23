@@ -1165,6 +1165,67 @@ const scenarios: Scenario[] = [
     .seeded((ctx) => ctx.session({ title: "Status session" }))
     .json(200, object),
   http.protected
+    .get("/session/harness/plan/{planID}", "session.harnessPlan")
+    .at((ctx) => ({
+      path: route("/session/harness/plan/{planID}", { planID: "missing-plan" }),
+      headers: ctx.headers(),
+    }))
+    .status(404, undefined, "status"),
+  http.protected
+    .get("/session/{sessionID}/harness", "session.harness")
+    .seeded((ctx) => ctx.session({ title: "Harness status" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/harness", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.id, "harness status should bind the requested root session")
+      check(body.phase === "inactive", "a seeded session should have no active execution")
+      check(body.readyEligible === false, "inactive status cannot be Ready")
+    }),
+  http.protected
+    .post("/session/{sessionID}/harness/verify", "session.harnessVerify")
+    .seeded((ctx) => ctx.session({ title: "Harness verify" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/harness/verify", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { reason: "manual" },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.id && body.phase === "inactive", "verify should preserve inactive Host state")
+      check(body.readyEligible === false, "verify cannot create Ready without a Run")
+    }),
+  http.protected
+    .post("/session/{sessionID}/harness/cancel", "session.harnessCancel")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Harness cancel" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/harness/cancel", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.id && body.phase === "inactive", "cancel should return current inactive Host state")
+      check(body.readyEligible === false, "cancel cannot create Ready")
+    }),
+  http.protected
+    .post("/session/{sessionID}/harness/control", "session.harnessControl")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Harness control" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/harness/control", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { type: "domain.set", domain: "general" },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.id && body.domain === "general", "control should return the updated Host selection")
+      check(body.readyEligible === false, "selection control cannot create Ready")
+    }),
+  http.protected
     .post("/session", "session.create")
     .mutating()
     .at((ctx) => ({ path: "/session", headers: ctx.headers(), body: { title: "Created session" } }))

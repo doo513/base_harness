@@ -97,6 +97,79 @@ for (const phase of ["ready", "blocked", "failure", "interrupted", "worker_runni
   })
 }
 
+test("autonomous history preserves runtime reason, model assessment, observations, gates, and Candidate disposition", async () => {
+  const history = summarizeRun({
+    ...terminalStatus("autonomous"),
+    evidenceCount: 0,
+    evidenceRefs: [],
+    candidateCount: 1,
+    autonomous: {
+      lifecycle: "closed",
+      observations: [
+        { result: { execution: "completed" } },
+        { result: { execution: "error" } },
+      ],
+      candidates: [{ candidate: { id: "candidate-1", revision: 1 }, state: "retained" }],
+      completion: {
+        reason: "requested",
+        assessment: { status: "partial", summary: "Useful result with uncertainty" },
+        gates: [{ gateId: "apply", state: "unknown" }],
+        candidateDispositions: [{ candidate: { id: "candidate-1", revision: 1 }, state: "retained" }],
+        unresolvedEffects: ["remote cancellation not confirmed"],
+      },
+    },
+  })
+  expect(history).toMatchObject({
+    phase: "autonomous_closed",
+    semantics: "autonomous-v1",
+    autonomous: {
+      runtimeReason: "requested",
+      assessmentStatus: "partial",
+      observationCounts: { completed: 1, notRun: 0, error: 1 },
+      gateCounts: { met: 0, unmet: 0, unknown: 1 },
+      candidates: [{ id: "candidate-1", revision: 1, state: "retained" }],
+      unresolvedEffects: ["remote cancellation not confirmed"],
+    },
+  })
+  const store = new SessionStateStore({ directory: location() })
+  await store.save({ sessionID: "session", workspace, selection: selection(), lastRun: history })
+  expect((await store.load("session", workspace))!.lastRun).toEqual(history)
+})
+
+test("a cold Host presents an in-flight autonomous Run as interrupted and never resumes it", async () => {
+  const first = runtimeFixture()
+  const a = host(first.runtime)
+  await a.checkpointStatus({
+    ...terminalStatus("autonomous"),
+    evidenceCount: 0,
+    evidenceRefs: [],
+    autonomous: {
+      lifecycle: "active",
+      observations: [{ result: { execution: "not_run" } }],
+      candidates: [{ candidate: { id: "candidate-pending", revision: 1 }, state: "sealed" }],
+    },
+  })
+  const second = runtimeFixture()
+  const b = host(second.runtime)
+  const status = await b.readStatus("session", workspace)
+  expect(status).toMatchObject({
+    phase: "inactive",
+    runId: "",
+    readyEligible: false,
+    history: {
+      phase: "interrupted",
+      semantics: "autonomous-v1",
+      autonomous: {
+        runtimeReason: "interrupted",
+        assessmentStatus: null,
+        observationCounts: { completed: 0, notRun: 1, error: 0 },
+        candidates: [{ id: "candidate-pending", revision: 1, state: "sealed" }],
+      },
+    },
+  })
+  expect(second.calls()).toBe(0)
+})
+
 test("a new request keeps the saved domain but starts a new run, without old history authority", async () => {
   const first = runtimeFixture(), a = host(first.runtime)
   await a.control("session", { type: "domain.set", domain: "general" }, undefined, workspace)

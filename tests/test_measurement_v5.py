@@ -126,7 +126,10 @@ class MeasurementTests(unittest.TestCase):
     def test_symlink_target_is_not_read(self):
         payload = self.payload()
         (self.root / "input.txt").rename(self.root / "actual.txt")
-        (self.root / "input.txt").symlink_to(self.root / "actual.txt")
+        try:
+            (self.root / "input.txt").symlink_to(self.root / "actual.txt")
+        except OSError:
+            self.skipTest("symlinks require elevated privileges on Windows")
         self.assertEqual(self.measure(payload)["result"]["execution"], "error")
 
     def test_hardlinked_input_is_rejected(self):

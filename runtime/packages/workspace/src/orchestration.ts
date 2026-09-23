@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants as fsConstants, promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import type { GoalContract, Risk, WorkGraph, WorkUnit } from "@base-harness/domain-contracts"
+import type { AuthorityGrant, GoalContract, Risk, VersionRef, WorkGraph, WorkUnit } from "@base-harness/domain-contracts"
 import { CandidateTransactionError, publishCandidateFiles, type CandidateFileChange } from "./candidate-transaction"
 import { writeAtomicSnapshot } from "./snapshot-persistence"
 
@@ -25,10 +25,11 @@ export type Phase =
   | "root_verifying"
   | "repair"
   | "ready"
+  | "autonomous_closed"
   | "blocked"
   | "interrupted"
 
-export type ScopeKind = "root" | "exploration" | "meta_review" | "work_unit" | "repair" | "integration" | "legacy"
+export type ScopeKind = "root" | "autonomous_direct" | "autonomous_task" | "exploration" | "meta_review" | "work_unit" | "repair" | "integration" | "legacy"
 
 export type ExplorationReport = {
   resolvedTargets: string[]
@@ -54,7 +55,7 @@ export type WorkUnitResult = {
   candidateId: string
   revision: number
   patchHash: string
-  files: Array<{ path: string; beforeHash: string | null; afterHash: string }>
+  files: Array<{ path: string; beforeHash: string | null; afterHash: string | null }>
   integrationRequests: string[]
   scopeVerified: boolean
 }
@@ -65,7 +66,7 @@ export type CandidateManifest = {
   scopeId: string
   workUnitId: string
   revision: number
-  files: Array<{ path: string; beforeHash: string | null; afterHash: string }>
+  files: Array<{ path: string; beforeHash: string | null; afterHash: string | null }>
   patchHash: string
   overlayRoot: string
   candidateWorkspace?: string
@@ -139,6 +140,13 @@ type RootState = {
   contractClaimIds: Set<string>
   contractCriterionIds: Set<string>
   contractAuthority?: ContractExecutionAuthority
+  autonomousAuthority?: {
+    ref: VersionRef
+    readRoots: string[]
+    readExclusions: string[]
+    writeRoots: string[]
+    writeExclusions: string[]
+  }
   graph?: { units: Map<string, UnitState>; integrationPaths: string[] }
   active: Set<string>
   completed: Set<string>
@@ -260,6 +268,9 @@ const readOnlyTools = new Set([
 ])
 const inspectionTools = new Set(["read", "list", "glob", "grep"])
 const workerTools = new Set(["read", "glob", "grep", "edit", "write", "lsp", "question", "invalid"])
+const autonomousDirectTools = new Set([
+  "read", "glob", "grep", "edit", "write", "apply_patch", "bash", "task", "lsp", "question", "invalid",
+])
 
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex")
 const canonicalJSON = (value: unknown): string => {
@@ -338,6 +349,7 @@ function snapshotValue(root: RootState) {
           targetsByClaim: [...root.contractAuthority.targetsByClaim].map(([claimId, value]) => ({ claimId, ...value })),
         }
       : undefined,
+    autonomousAuthority: root.autonomousAuthority ? structuredClone(root.autonomousAuthority) : undefined,
     activeScopeIds: [...root.active],
     completedScopeIds: [...root.completed],
     model: root.model,
@@ -429,7 +441,7 @@ export function beginPrompt(input: {
   }
 
   const prior = roots.get(input.sessionID)
-  if (prior && prior.phase !== "ready" && prior.phase !== "blocked" && prior.phase !== "interrupted") {
+  if (prior && !["ready", "autonomous_closed", "blocked", "interrupted"].includes(prior.phase)) {
     return { explore: false, instruction: instruction(prior) }
   }
 
@@ -505,6 +517,123 @@ export function beginDirectExecution(sessionID: string) {
   }
   root.phase = "direct"
   persist(root)
+}
+
+/** Bind the autonomous root task to the existing Overlay/Candidate store.
+ * The grant is only projected into canonical path ownership; it is not stored as
+ * a second permission source and every publication is rechecked by Coordinator.
+ */
+async function projectAutonomousAuthority(root: RootState, authority: AuthorityGrant) {
+  const project = async (operations: ReadonlySet<string>) => {
+    const capabilities = authority.capabilities.filter((item) => operations.has(item.operation))
+    const roots = await Promise.all(capabilities.flatMap((item) => item.targets)
+      .filter((item) => item.kind === "workspace_path").map((item) => canonical(root.workspace, item.selector)))
+    const exclusions = await Promise.all(capabilities.flatMap((item) => item.exclusions)
+      .filter((item) => item.kind === "workspace_path").map((item) => canonical(root.workspace, item.selector)))
+    return { roots: [...new Set(roots)], exclusions: [...new Set(exclusions)] }
+  }
+  const readable = await project(new Set(["read", "search", "execute"]))
+  const writable = await project(new Set(["mutate", "publish"]))
+  return { readable, writable }
+}
+
+export async function beginAutonomousExecution(input: {
+  sessionID: string
+  taskId: string
+  authority: AuthorityGrant
+}) {
+  const root = roots.get(input.sessionID)
+  const scope = scopes.get(input.sessionID)
+  if (!root || !scope || root.sessionID !== input.sessionID || scope.kind !== "root" ||
+      root.graph || root.active.size || !input.taskId.trim() || input.authority.runId !== root.runId) {
+    throw new OrchestrationError("PHASE_VIOLATION", "Autonomous execution requires a fresh root scope")
+  }
+  const { readable, writable } = await projectAutonomousAuthority(root, input.authority)
+  const unit: UnitState = {
+    id: input.taskId,
+    title: "Autonomous root task",
+    instructions: root.goal,
+    claimIds: [],
+    criterionIds: [],
+    dependsOn: [],
+    readSet: readable.roots,
+    writeSet: writable.roots,
+    integrationRequests: [],
+    readRoots: readable.roots,
+    writeRoots: writable.roots,
+    status: "running",
+    sessionID: input.sessionID,
+  }
+  root.autonomousAuthority = {
+    ref: structuredClone(input.authority.ref),
+    readRoots: readable.roots,
+    readExclusions: readable.exclusions,
+    writeRoots: writable.roots,
+    writeExclusions: writable.exclusions,
+  }
+  root.graph = { units: new Map([[unit.id, unit]]), integrationPaths: [] }
+  root.phase = "implementation"
+  root.active.add(input.sessionID)
+  scope.kind = "autonomous_direct"
+  scope.workUnitId = input.taskId
+  scope.status = "running"
+  persist(root)
+  return snapshotValue(root)
+}
+
+export async function reviseAutonomousAuthority(sessionID: string, authority: AuthorityGrant) {
+  const root = rootFor(sessionID)
+  if (!root?.autonomousAuthority || authority.runId !== root.runId ||
+      authority.ref.id !== root.autonomousAuthority.ref.id ||
+      authority.ref.revision !== root.autonomousAuthority.ref.revision + 1) {
+    throw new OrchestrationError("PHASE_VIOLATION", "Autonomous authority revision does not match the active Run")
+  }
+  const { readable, writable } = await projectAutonomousAuthority(root, authority)
+  const unit = root.graph?.units.get(root.sessionID)
+  if (!unit) throw new OrchestrationError("PHASE_VIOLATION", "Autonomous root task is unavailable")
+  root.autonomousAuthority = {
+    ref: structuredClone(authority.ref), readRoots: readable.roots, readExclusions: readable.exclusions,
+    writeRoots: writable.roots, writeExclusions: writable.exclusions,
+  }
+  unit.readSet = readable.roots
+  unit.readRoots = readable.roots
+  unit.writeSet = writable.roots
+  unit.writeRoots = writable.roots
+  persist(root)
+  return snapshotValue(root)
+}
+
+export async function registerAutonomousTask(input: {
+  rootSessionID: string
+  taskId: string
+  parentTaskId: string
+  objective: string
+  readSet: string[]
+  writeSet: string[]
+  dependsOn: string[]
+}) {
+  const root = roots.get(input.rootSessionID)
+  if (!root?.autonomousAuthority || !root.graph || !root.graph.units.has(input.parentTaskId) ||
+      root.graph.units.has(input.taskId) || !input.taskId.trim() || !input.objective.trim()) {
+    throw new OrchestrationError("WORKGRAPH_INVALID", "Autonomous task registration is not valid for the active Run")
+  }
+  const readRoots = await Promise.all(input.readSet.map((item) => canonical(root.workspace, item)))
+  const writeRoots = await Promise.all(input.writeSet.map((item) => canonical(root.workspace, item)))
+  if (readRoots.some((item) => !root.autonomousAuthority!.readRoots.some((allowed) => inside(allowed, item)) ||
+      root.autonomousAuthority!.readExclusions.some((excluded) => overlaps(excluded, item))) ||
+      writeRoots.some((item) => !root.autonomousAuthority!.writeRoots.some((allowed) => inside(allowed, item)) ||
+      root.autonomousAuthority!.writeExclusions.some((excluded) => overlaps(excluded, item)))) {
+    throw new OrchestrationError("OWNERSHIP_VIOLATION", "Autonomous child task exceeds the current authority projection")
+  }
+  const unit: UnitState = {
+    id: input.taskId, title: input.objective, instructions: input.objective,
+    claimIds: [], criterionIds: [], dependsOn: [...input.dependsOn],
+    readSet: [...input.readSet], writeSet: [...input.writeSet], integrationRequests: [],
+    readRoots, writeRoots, status: "pending",
+  }
+  root.graph.units.set(unit.id, unit)
+  persist(root)
+  return snapshotValue(root)
 }
 
 const stateChangingCapabilities = new Set([
@@ -748,6 +877,28 @@ export function startChild(input: {
 
   if (prior?.status === "running") return assignment(prior, root)
 
+  const autonomousUnit = input.workUnitId && root.autonomousAuthority
+    ? root.graph?.units.get(input.workUnitId) : undefined
+  const autonomousParent = scopes.get(input.parentSessionID)
+  if (autonomousUnit && autonomousParent && autonomousParent.rootSessionID === root.sessionID &&
+      ["autonomous_direct", "autonomous_task"].includes(autonomousParent.kind)) {
+    if (autonomousUnit.status !== "pending" && autonomousUnit.status !== "queued") {
+      throw new OrchestrationError("PHASE_VIOLATION", `Autonomous task ${autonomousUnit.id} cannot start from ${autonomousUnit.status}`)
+    }
+    autonomousUnit.status = "running"
+    autonomousUnit.sessionID = input.sessionID
+    const scope: ScopeState = {
+      sessionID: input.sessionID, rootSessionID: root.sessionID, kind: "autonomous_task",
+      workUnitId: autonomousUnit.id, status: "running", candidateRevision: prior?.candidateRevision ?? 0,
+      files: new Map(), model: input.model,
+    }
+    scopes.set(input.sessionID, scope)
+    root.active.add(input.sessionID)
+    root.phase = "worker_running"
+    persist(root)
+    return assignment(scope, root)
+  }
+
   // Other workers may be preparing, verifying or committing while a queue slot opens.
   // Their transient phase is not a run-wide execution lock.
   if (!["scheduling", "implementation", "worker_running", "candidate_ready", "scope_verifying", "committing", "repair"].includes(root.phase)) {
@@ -842,6 +993,12 @@ export function assertToolAllowed(sessionID: string, toolID: string, args?: unkn
     }
     return
   }
+  if (scope.kind === "autonomous_direct" || scope.kind === "autonomous_task") {
+    if (scope.status !== "running" || !autonomousDirectTools.has(toolID)) {
+      throw new OrchestrationError("PHASE_VIOLATION", `Autonomous Candidate scope cannot use ${toolID} while ${scope.status}`)
+    }
+    return
+  }
   if (root.phase === "direct" || root.phase === "integration" || root.phase === "repair") return
   if (root.phase === "exploration" && (readOnlyTools.has(toolID) || toolID === "task")) return
   if (root.phase === "planning" && readOnlyTools.has(toolID)) return
@@ -890,7 +1047,9 @@ export async function resolveRead(sessionID: string, workspace: string, value: s
     return { logicalPath: target.logicalPath, physicalPath: target.logicalPath, overlay: false }
   }
   const unit = target.scope.workUnitId ? target.root.graph?.units.get(target.scope.workUnitId) : undefined
-  if (!unit || ![...unit.readRoots, ...unit.writeRoots].some((root) => inside(root, target.logicalPath))) {
+  const readRoots = target.scope.kind === "autonomous_direct" || target.scope.kind === "autonomous_task" ? unit?.readRoots : unit ? [...unit.readRoots, ...unit.writeRoots] : undefined
+  if (!unit || !readRoots?.some((root) => inside(root, target.logicalPath)) ||
+      (["autonomous_direct", "autonomous_task"].includes(target.scope.kind) && target.root.autonomousAuthority?.readExclusions.some((root) => overlaps(root, target.logicalPath)))) {
     throw new OrchestrationError("OWNERSHIP_VIOLATION", `Read is outside WorkUnit ownership: ${target.logicalPath}`)
   }
   const mapped = target.scope.files.get(platformPath(target.logicalPath))
@@ -1016,7 +1175,8 @@ export async function resolveWrite(sessionID: string, workspace: string, value: 
     throw new OrchestrationError("PHASE_VIOLATION", "Prepared candidate writes require an explicit repair reopen")
   }
   const unit = target.scope.workUnitId ? target.root.graph?.units.get(target.scope.workUnitId) : undefined
-  if (!unit || !unit.writeRoots.some((root) => inside(root, target.logicalPath))) {
+  if (!unit || !unit.writeRoots.some((root) => inside(root, target.logicalPath)) ||
+      (["autonomous_direct", "autonomous_task"].includes(target.scope.kind) && target.root.autonomousAuthority?.writeExclusions.some((root) => overlaps(root, target.logicalPath)))) {
     throw new OrchestrationError("OWNERSHIP_VIOLATION", `Write is outside WorkUnit ownership: ${target.logicalPath}`)
   }
   const key = platformPath(target.logicalPath)
@@ -1046,7 +1206,7 @@ const candidateHashPayload = (candidate: Omit<CandidateManifest, "candidateId" |
 
 export async function prepareCandidate(sessionID: string): Promise<CandidateManifest | undefined> {
   const scope = scopes.get(sessionID)
-  if (!scope?.workUnitId || (scope.kind !== "work_unit" && scope.kind !== "repair")) return
+  if (!scope?.workUnitId || !["work_unit", "repair", "autonomous_direct", "autonomous_task"].includes(scope.kind)) return
   const root = roots.get(scope.rootSessionID)
   const unit = root?.graph?.units.get(scope.workUnitId)
   if (!root || !unit) return
@@ -1054,9 +1214,31 @@ export async function prepareCandidate(sessionID: string): Promise<CandidateMani
   scope.status = "candidate_ready"
   await currentStore().flushPersistence(root)
   const files: CandidateManifest["files"] = []
-  for (const entry of scope.files.values()) {
-    const content = await readCandidateFile(entry.physical, root.stateDirectory)
-    files.push({ path: entry.logical, beforeHash: entry.beforeHash, afterHash: hash(content) })
+  for (const [key, entry] of scope.files) {
+    let afterHash: string | null
+    try { afterHash = hash(await readCandidateFile(entry.physical, root.stateDirectory)) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      afterHash = null
+    }
+    if (afterHash === entry.beforeHash) {
+      scope.files.delete(key)
+      continue
+    }
+    // Creating and then deleting a file is no workspace change.
+    if (afterHash === null && entry.beforeHash === null) {
+      scope.files.delete(key)
+      continue
+    }
+    files.push({ path: entry.logical, beforeHash: entry.beforeHash, afterHash })
+  }
+  if (["autonomous_direct", "autonomous_task"].includes(scope.kind) && files.length === 0) {
+    scope.status = "running"
+    unit.status = "running"
+    root.phase = "implementation"
+    root.active.add(sessionID)
+    persist(root)
+    return
   }
   const revision = scope.candidateRevision + 1
   const payload = candidateHashPayload({
@@ -1082,6 +1264,39 @@ export async function prepareCandidate(sessionID: string): Promise<CandidateMani
   candidates.set(candidateId, { ...manifest, scope, root })
   persist(root)
   return structuredClone(manifest)
+}
+
+/** Reopen the autonomous root overlay for another model-selected edit. Any
+ * previously sealed revision becomes stale, while its recorded artifact may be
+ * retained by the Host as historical candidate data.
+ */
+export async function beginAutonomousMutation(sessionID: string): Promise<string[]> {
+  const scope = scopes.get(sessionID)
+  const root = scope ? roots.get(scope.rootSessionID) : undefined
+  const unit = scope?.workUnitId ? root?.graph?.units.get(scope.workUnitId) : undefined
+  if (!scope || !root || !unit || !["autonomous_direct", "autonomous_task"].includes(scope.kind)) {
+    throw new OrchestrationError("PHASE_VIOLATION", "Autonomous mutation requires the bound root Candidate scope")
+  }
+  if (scope.status === "committing") throw new OrchestrationError("PHASE_VIOLATION", "Candidate publication is already running")
+  const superseded: string[] = []
+  for (const [candidateId, candidate] of [...candidates]) {
+    if (candidate.scopeId !== sessionID) continue
+    if (candidate.candidateWorkspace) {
+      const destination = candidate.candidateWorkspace
+      if (!inside(path.resolve(root.stateDirectory), path.resolve(destination))) {
+        throw new OrchestrationError("OWNERSHIP_VIOLATION", "Candidate workspace escaped the run state directory")
+      }
+      await fs.rm(destination, { recursive: true, force: true })
+    }
+    candidates.delete(candidateId)
+    superseded.push(candidateId)
+  }
+  scope.status = "running"
+  unit.status = "running"
+  root.phase = "implementation"
+  root.active.add(sessionID)
+  persist(root)
+  return superseded
 }
 
 export function markCandidateVerifying(candidateId: string) {
@@ -1116,9 +1331,16 @@ export async function assertCandidateIntegrity(candidateId: string): Promise<voi
       }
       const relative = path.relative(platformPath(candidate.root.workspace), platformPath(file.path))
       const observed = path.join(candidate.candidateWorkspace!, relative)
-      const staged = await readCandidateFile(entry.physical, candidate.root.stateDirectory)
-      const checked = await readCandidateFile(observed, candidate.root.stateDirectory)
-      if (hash(staged) !== file.afterHash || hash(checked) !== file.afterHash) {
+      const observedHash = async (filename: string, boundary: string) => {
+        try { return hash(await readCandidateFile(filename, boundary)) }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+          throw error
+        }
+      }
+      const staged = await observedHash(entry.physical, candidate.root.stateDirectory)
+      const checked = await observedHash(observed, candidate.root.stateDirectory)
+      if (staged !== file.afterHash || checked !== file.afterHash) {
         throw new OrchestrationError("WORKSPACE_CONFLICT", "Verified candidate bytes no longer match the manifest: " + file.path)
       }
     }
@@ -1198,13 +1420,24 @@ async function materializeCandidateLocked(candidateId: string): Promise<string> 
     if (!inside(destination, target)) {
       throw new OrchestrationError("OWNERSHIP_VIOLATION", `Candidate file escaped materialized workspace: ${entry.logical}`)
     }
-    const content = await readCandidateFile(entry.physical, candidate.root.stateDirectory)
-    const expected = candidate.files.find((file) => file.path === entry.logical)?.afterHash
-    if (!expected || hash(content) !== expected) {
-      throw new OrchestrationError("WORKSPACE_CONFLICT", `Candidate changed during materialization: ${entry.logical}`)
+    const manifestEntry = candidate.files.find((file) => file.path === entry.logical)
+    if (!manifestEntry) throw new OrchestrationError("WORKSPACE_CONFLICT", `Candidate manifest lost a file: ${entry.logical}`)
+    if (manifestEntry.afterHash === null) {
+      try {
+        await readCandidateFile(entry.physical, candidate.root.stateDirectory)
+        throw new OrchestrationError("WORKSPACE_CONFLICT", `Deleted Candidate file reappeared: ${entry.logical}`)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      }
+      await fs.rm(target, { force: true })
+    } else {
+      const content = await readCandidateFile(entry.physical, candidate.root.stateDirectory)
+      if (hash(content) !== manifestEntry.afterHash) {
+        throw new OrchestrationError("WORKSPACE_CONFLICT", `Candidate changed during materialization: ${entry.logical}`)
+      }
+      await fs.mkdir(path.dirname(target), { recursive: true })
+      await fs.writeFile(target, content)
     }
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, content)
   }
   candidate.candidateWorkspace = destination
   await assertCandidateIntegrity(candidateId)
@@ -1230,6 +1463,42 @@ export function commitCandidate(
   attestation: CandidateAttestation,
 ): Promise<WorkUnitResult> {
   return withWorkspacePublication(() => commitCandidateLocked(candidateId, attestation))
+}
+
+/** Autonomous publication uses the same transaction and lock as legacy worker
+ * Candidates, but an integrity receipt is not treated as verifier authority.
+ */
+export function commitAutonomousCandidate(input: {
+  candidateId: string
+  candidateRevision: number
+  patchHash: string
+  authorityRef: VersionRef
+}): Promise<WorkUnitResult> {
+  return withWorkspacePublication(async () => {
+    const candidate = candidates.get(input.candidateId)
+    const authority = candidate?.root.autonomousAuthority
+    if (!candidate || !["autonomous_direct", "autonomous_task"].includes(candidate.scope.kind) || !authority ||
+        authority.ref.id !== input.authorityRef.id || authority.ref.revision !== input.authorityRef.revision ||
+        authority.ref.sha256 !== input.authorityRef.sha256) {
+      throw new OrchestrationError("PHASE_VIOLATION", "Autonomous Candidate authority is stale")
+    }
+    const result = await commitCandidateLocked(input.candidateId, {
+      candidateId: input.candidateId,
+      candidateRevision: input.candidateRevision,
+      patchHash: input.patchHash,
+    })
+    const { scope, root } = candidate
+    const unit = root.graph?.units.get(candidate.workUnitId)
+    scope.files.clear()
+    scope.overlayRoot = undefined
+    scope.status = "running"
+    if (unit) unit.status = "running"
+    root.completed.delete(scope.sessionID)
+    root.active.add(scope.sessionID)
+    root.phase = "implementation"
+    persist(root)
+    return result
+  })
 }
 
 async function commitCandidateLocked(
@@ -1272,8 +1541,15 @@ async function commitCandidateLocked(
   try {
     const changes: CandidateFileChange[] = []
     for (const entry of entries) {
-      const after = await readCandidateFile(entry.physical, root.stateDirectory)
-      if (hash(after) !== candidate.files.find((item) => item.path === entry.logical)?.afterHash) {
+      const expectedAfter = candidate.files.find((item) => item.path === entry.logical)?.afterHash
+      if (expectedAfter === undefined) throw new OrchestrationError("WORKSPACE_CONFLICT", "Candidate manifest lost a file: " + entry.logical)
+      let after: Buffer | null
+      try { after = await readCandidateFile(entry.physical, root.stateDirectory) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        after = null
+      }
+      if ((after === null ? null : hash(after)) !== expectedAfter) {
         throw new OrchestrationError("WORKSPACE_CONFLICT", "Candidate content changed after verification: " + entry.logical)
       }
       const before = entry.beforeHash === null ? null : await readCandidateFile(entry.logical, root.workspace)
@@ -1415,6 +1691,44 @@ export function markInterrupted(sessionID: string) {
   const root = rootFor(sessionID)
   if (!root) return
   root.phase = "interrupted"
+  root.active.clear()
+  const scope = scopes.get(sessionID)
+  if (scope) scope.kind = "root"
+  persist(root)
+}
+
+/** Child model/process completion is separate from Candidate publication. Any
+ * sealed Candidate stays materialized and is retained until explicit apply or
+ * the normal retention policy removes it. */
+export async function finishAutonomousTask(sessionID: string, success: boolean) {
+  const scope = scopes.get(sessionID)
+  const root = scope ? roots.get(scope.rootSessionID) : undefined
+  const unit = scope?.workUnitId ? root?.graph?.units.get(scope.workUnitId) : undefined
+  if (!scope || !root || scope.kind !== "autonomous_task" || !unit) return
+  root.active.delete(sessionID)
+  if (scope.status === "running" && scope.files.size) {
+    // A task that exits without going through an admitted seal cannot smuggle
+    // unregistered bytes into completion.
+    scope.status = "failed"
+    unit.status = "failed"
+  } else if (scope.status === "running") {
+    scope.status = success ? "completed" : "failed"
+    unit.status = success ? "completed" : "failed"
+  } else if (!success && !["candidate_ready", "completed"].includes(scope.status)) {
+    scope.status = "failed"
+    unit.status = "failed"
+  }
+  root.phase = "implementation"
+  persist(root)
+}
+
+export function markAutonomousClosed(sessionID: string) {
+  const root = rootFor(sessionID)
+  if (!root) return
+  root.phase = "autonomous_closed"
+  root.active.clear()
+  const scope = scopes.get(sessionID)
+  if (scope) scope.kind = "root"
   persist(root)
 }
 

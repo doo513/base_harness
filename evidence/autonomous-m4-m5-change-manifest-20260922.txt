@@ -1,0 +1,55 @@
+# Autonomous M4–M5 scoped change manifest — 2026-09-22
+
+## Contracts and admission
+
+- `runtime/packages/domain-contracts/src/autonomous-runtime.ts`
+- `runtime/packages/kernel/src/autonomous/*`
+- `runtime/packages/kernel-host/src/autonomous-host.ts`
+- `runtime/packages/kernel-host/src/index.ts`
+- `runtime/packages/kernel-host/src/session-state-store.ts`
+
+## Coordinator and Workspace
+
+- `runtime/packages/coordinator/src/autonomous-run.ts`
+- `runtime/packages/coordinator/src/index.ts`
+- `runtime/packages/coordinator/src/run-repository.ts`
+- `runtime/packages/workspace/src/orchestration.ts`
+- `runtime/packages/workspace/src/candidate-transaction.ts`
+
+## App adapters and products
+
+- `runtime/packages/base-harness/src/harness/autonomous-{execution,external,tools,capabilities}.ts`
+- `runtime/packages/base-harness/src/harness/execution/{backend-router,antigravity-cli,codex-app-server}.ts`
+- `runtime/packages/base-harness/src/session/{prompt,tools}.ts`
+- `runtime/packages/base-harness/src/tool/{write,edit,apply_patch,shell,task}.ts` and `tool/shell/prompt.ts`
+- `runtime/packages/base-harness/src/cli/cmd/run.ts` and `run/harness-output.ts`
+- `runtime/packages/base-harness/src/server/routes/instance/httpapi/handlers/session.ts`
+- `runtime/packages/tui/src/feature-plugins/verification.tsx`
+- `runtime/packages/core/src/v1/config/config.ts`
+
+## Verification and containment
+
+- `runtime/packages/security/src/sandbox.ts`
+- `runtime/packages/verification/src/types.ts`
+- `src/harness/verification_v2.py`
+
+## Tests
+
+- Coordinator autonomous run/budget/delegation/runtime tests
+- Base Harness autonomous candidate/model/external/tools/question/facade tests
+- controlled built-in Antigravity test
+- CLI result policy tests
+- KernelHost session history tests
+- HTTP exerciser Harness route scenarios and auth fixture correction
+- TUI presentation/full regression
+- Python verified sidecar and measurement v5 tests
+
+## Documentation
+
+- `AGENTS.md`
+- `README.md`
+- `docs/AUTONOMOUS_IMPLEMENTATION_PROGRESS_2026-09-18.md`
+- `evidence/autonomous-m4-m5-final-20260922.txt`
+- `evidence/autonomous-m4-m5-change-manifest-20260922.txt`
+
+Existing user changes and `net_monitor.py` were not reset or cleaned.

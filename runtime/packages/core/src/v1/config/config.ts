@@ -59,14 +59,19 @@ export const Isolation = Schema.Struct({
 
 export const Kernel = Schema.Struct({
   executionSemantics: Schema.optional(Schema.Literals(["legacy", "autonomous-v1"])).annotate({
-    description: "Explicit opt-in Run semantics. Default remains legacy during migration",
+    description: "Run semantics. New ordinary Runs default to autonomous-v1; set legacy for the GoalContract Ready pipeline",
   }),
   autonomous: Schema.optional(Schema.Struct({
     timeoutMs: Schema.optional(PositiveInt),
     maxActions: Schema.optional(PositiveInt),
     allowExecution: Schema.optional(Schema.Boolean),
+    allowMutation: Schema.optional(Schema.Boolean),
+    allowDelegation: Schema.optional(Schema.Boolean),
+    maxParallelTasks: Schema.optional(PositiveInt),
+    maxTaskDepth: Schema.optional(NonNegativeInt),
+    maxTotalTasks: Schema.optional(PositiveInt),
     maxModelTokens: Schema.optional(PositiveInt),
-  })).annotate({ description: "Autonomous root limits and sandbox-command opt-in; unsupported hard caps are rejected" }),
+  })).annotate({ description: "Autonomous authority and cumulative Run limits; unsupported hard caps are rejected" }),
   defaultDomain: Schema.optional(Schema.Literals(["develop", "general"])).annotate({
     description: "Default Kernel domain for a new session",
   }),

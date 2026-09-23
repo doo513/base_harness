@@ -9,7 +9,7 @@ import { writeAtomicSnapshot } from "@base-harness/workspace/snapshot-persistenc
 const ref = (id: string) => ({ id, revision: 1, sha256: "a".repeat(64) })
 async function fixture(persistent = false, deadlineMs = 60_000, configure?: (setup: AutonomousRunSetup, ports: AutonomousRunPorts) => void,
   repository?: RunRepository<any>) {
-  const root = await mkdtemp(join(tmpdir(), "autonomous-runtime-"))
+  const root = (await mkdtemp(join(tmpdir(), "autonomous-runtime-"))).replaceAll("\\", "/")
   let legacyStarts = 0
   let invokes = 0
   const runtime = new CoordinatorRuntime(async () => { legacyStarts++; throw new Error("legacy verifier must not start") }, {
@@ -27,7 +27,7 @@ async function fixture(persistent = false, deadlineMs = 60_000, configure?: (set
       metering: { tokens: false, cost: false }, cleanupTimeoutMs: 1000, checks: [], gates: [], subjects: [{ ...ref("report"), kind: "report" }], gateEvidence: {},
     }
     const ports: AutonomousRunPorts = {
-      resolveEffects: async () => [{ operation: "read", targets: [{ kind: "workspace_path", selector: join(root, "file") }] }],
+      resolveEffects: async () => [{ operation: "read", targets: [{ kind: "workspace_path", selector: join(root, "file").replaceAll("\\", "/") }] }],
       invoke: async () => { invokes++; return "read result" },
       measure: async () => { throw new Error("no registered check") }, authenticates: () => false,
       revise: ({ basedOnRef, ...value }) => ({ ...value, ref: { ...ref(basedOnRef.id), revision: basedOnRef.revision + 1 } }),
@@ -67,6 +67,15 @@ test("Coordinator owns the new lifecycle, dispatches only after Prepare, and nev
     expect(f.runtime.status("session").readyEligible).toBe(false)
     expect((await f.submit("session", opened.runId, "finish", finish)).accepted).toBe(true)
     expect(f.runtime.status("session").autonomous?.completion?.assessment?.status).toBe("partial")
+    expect(f.runtime.status("session").autonomousResult).toMatchObject({
+      schemaVersion: "autonomous-product-result-v1",
+      lifecycle: "closed",
+      runtimeReason: "requested",
+      assessment: { status: "partial" },
+      observations: [],
+      candidates: [],
+      unresolvedEffects: [],
+    })
   } finally { await f.cleanup() }
 })
 
@@ -127,6 +136,10 @@ test("v2 history keeps completion meaning and startup never restores execution",
     const completedBefore = JSON.parse(await readFile(join(history, done.runId + ".json"), "utf8"))
     expect(completedBefore.schemaVersion).toBe("coordinator-run-v2")
     expect(completedBefore).not.toHaveProperty("outcome")
+    expect(completedBefore.result).toMatchObject({
+      schemaVersion: "autonomous-product-result-v1", lifecycle: "closed",
+      runtimeReason: "requested", assessment: { status: "partial" },
+    })
     const restarted = new RunRepository({ persistent: true, stateDirectory: history })
     await restarted.initialize()
     expect(restarted.runs.size).toBe(0)
@@ -135,6 +148,10 @@ test("v2 history keeps completion meaning and startup never restores execution",
     expect(closed.autonomous.completion).toEqual(completedBefore.autonomous.completion)
     const stopped = JSON.parse(await readFile(join(history, interrupted.runId + ".json"), "utf8"))
     expect(stopped.autonomous.recovery).toEqual({ reason: "interrupted", processesResumed: false })
+    expect(stopped.result).toMatchObject({
+      lifecycle: "closed", runtimeReason: "interrupted", assessment: null,
+      unresolvedEffects: ["Execution was interrupted by process restart; no worker, permit, or external effect was resumed."],
+    })
   } finally { await f.cleanup() }
 })
 

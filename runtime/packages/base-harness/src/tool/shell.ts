@@ -650,15 +650,24 @@ export const ShellTool = Tool.define(
                       cwd,
                       config: { ...cfg.isolation, timeoutMs: Math.min(timeout, cfg.isolation?.timeoutMs ?? timeout) },
                       signal: ctx.abort,
+                      captureChanges: params.mutation === "capture",
                     })
                     await Coordinator.recordIsolation(ctx.sessionID, result.provenance)
                     const combined = result.stdout + result.stderr
                     const output = combined || "(no output)"
-                    await ctx.metadata({ metadata: { output: preview(output), exit: result.exitCode, sandbox: result.provenance } })
+                    const capturedChanges = result.changes?.map((item) => ({
+                      path: item.path,
+                      beforeHash: item.beforeHash,
+                      afterHash: item.afterHash,
+                      ...(item.after ? { afterBase64: Buffer.from(item.after).toString("base64") } : {}),
+                    }))
+                    await ctx.metadata({ metadata: { output: preview(output), exit: result.exitCode, sandbox: result.provenance,
+                      ...(capturedChanges ? { capturedChanges } : {}) } })
                     return {
                       title: params.command,
                       metadata: { output: preview(output), exit: result.exitCode, truncated: false, sandbox: result.provenance,
-                        measurement: { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode } },
+                        measurement: { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode },
+                        ...(capturedChanges ? { capturedChanges } : {}) },
                       output: `${output}\n\n<sandbox_metadata>\nbackend=${result.provenance.backend}\nnetwork=${result.provenance.network}\n</sandbox_metadata>`,
                     }
                   } catch (error) {

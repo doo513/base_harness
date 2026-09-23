@@ -56,7 +56,7 @@ async function fixture(action: (value: {
 test("publication copies backups and keeps every atomic rename on the workspace filesystem", async () => {
   await fixture(async ({ changes, options, rename, renames }) => {
     await publishCandidateFiles(changes, options, { ...fs, rename })
-    for (const entry of changes) expect(await fs.readFile(entry.path)).toEqual(Buffer.from(entry.after))
+    for (const entry of changes) expect(await fs.readFile(entry.path)).toEqual(Buffer.from(entry.after!))
     expect(renames).toHaveLength(3)
     expect(await fs.stat(options.journal).catch(() => null)).toBeNull()
   })

@@ -20,6 +20,7 @@ const antigravityBackend: ExecutionBackend = {
       backendId: capabilities.adapterID,
       kind: "agent_runtime",
       reasoningOption: "reasoning_effort",
+      autonomousDecision: { protocol: "autonomous-decision-v1", resourceUsage: "reported-v1" },
     } satisfies BackendCapabilities
   },
   async execute(input: BackendExecutionInput): Promise<BackendExecutionResult> {
@@ -42,6 +43,7 @@ const antigravityBackend: ExecutionBackend = {
       backendId: AntigravityCli.id,
       modelId: input.selection.modelId,
       nativeOptions: input.selection.nativeOptions,
+      ...(result.resourceUsage ? { resourceUsage: result.resourceUsage } : {}),
     }
   },
 }

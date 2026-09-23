@@ -42,7 +42,7 @@ export interface CandidateManifest {
   scopeId: string
   workUnitId: string
   revision: number
-  files: Array<{ path: string; beforeHash: string | null; afterHash: string }>
+  files: Array<{ path: string; beforeHash: string | null; afterHash: string | null }>
   patchHash: string
   overlayRoot: string
   candidateWorkspace?: string

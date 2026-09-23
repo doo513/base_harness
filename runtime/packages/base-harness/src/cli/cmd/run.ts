@@ -979,16 +979,25 @@ function createRunCommand(standalone: boolean) {
             process.exitCode = 1
           })
           async function finish() {
+            streamAbort.abort()
             const error = await completed
             if (error) process.exitCode = 1
-            const status = unwrapHarnessStatus(planOnly
-              ? await kernelClient.harness({ sessionID, directory: cwd })
-              : await kernelClient.harnessVerify({ sessionID, directory: cwd, reason: "completion" }))
-            if (harnessExitCode(status, planOnly) !== 0) {
+            const current = unwrapHarnessStatus(await kernelClient.harness({ sessionID, directory: cwd }))
+            const status = planOnly || current.autonomous
+              ? current
+              : unwrapHarnessStatus(await kernelClient.harnessVerify({ sessionID, directory: cwd, reason: "completion" }))
+            const exitCode = harnessExitCode(status, planOnly)
+            if (exitCode !== 0) {
               emit("harness_result", { status })
-              console.error("base-harness did not reach " + (planOnly ? "plan_ready" : "Ready")
-                + ": " + String(status.failureKind ?? status.phase))
-              process.exitCode = 1
+              const autonomous = status.autonomousResult
+                ? { reason: status.autonomousResult.runtimeReason, assessment: status.autonomousResult.assessment }
+                : status.autonomous?.completion
+              console.error(autonomous
+                ? "base-harness autonomous result: " + String(autonomous.reason ?? "missing_completion")
+                  + " / " + String(autonomous.assessment?.status ?? "no_assessment")
+                : "base-harness did not reach " + (planOnly ? "plan_ready" : "Ready")
+                  + ": " + String(status.failureKind ?? status.phase))
+              process.exitCode = exitCode
               return
             }
             if (planOnly) {
@@ -1000,7 +1009,10 @@ function createRunCommand(standalone: boolean) {
               return
             }
             if (!emit("harness_result", { status })) {
-              console.log("Ready (" + String(status.assuranceLevel ?? status.effectiveProfile ?? "unknown") + ")")
+              if (status.autonomous) console.log("Autonomous satisfied (model assessment; "
+                + String(status.autonomousResult?.observations?.length ?? status.autonomous.observations?.length ?? 0)
+                + " observations)")
+              else console.log("Ready (" + String(status.assuranceLevel ?? status.effectiveProfile ?? "unknown") + ")")
             }
           }
 

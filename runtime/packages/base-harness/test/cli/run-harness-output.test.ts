@@ -72,13 +72,25 @@ test("only the root Host status event controls headless completion", () => {
   expect(harnessSettled(status({ phase: "worker_running", outcome: "repair_exhausted" }), false)).toBe(false)
 })
 
-test("plan-ready is not Ready and failed or incomplete runs exit nonzero", () => {
+test("headless exit codes distinguish legacy Ready, model satisfaction, partial results, and runtime failure", () => {
   expect(harnessExitCode(status(), true)).toBe(0)
   expect(harnessExitCode(status(), false)).toBe(1)
   expect(harnessExitCode(status({ phase: "ready", outcome: "ready", readyEligible: true }), false)).toBe(0)
   expect(harnessExitCode(status({ phase: "direct", outcome: "ready", readyEligible: true }), false)).toBe(1)
   expect(harnessExitCode(status({ phase: "ready", outcome: "ready" }), false)).toBe(1)
-  expect(harnessExitCode(status({ phase: "autonomous", autonomous: { lifecycle: "closed" } }), false)).toBe(1)
+  expect(harnessExitCode(status({ phase: "autonomous", autonomous: { lifecycle: "closed",
+    completion: { reason: "requested", assessment: { status: "satisfied" } } } }), false)).toBe(0)
+  for (const assessment of ["partial", "unsolved", "not_assessed"] as const) {
+    expect(harnessExitCode(status({ phase: "autonomous", autonomous: { lifecycle: "closed",
+      completion: { reason: "requested", assessment: { status: assessment } } } }), false)).toBe(2)
+  }
+  expect(harnessExitCode(status({ phase: "autonomous", autonomousResult: {
+    lifecycle: "closed", runtimeReason: "requested", assessment: { status: "partial" }, observations: [],
+  } }), false)).toBe(2)
+  for (const reason of ["cancelled", "budget_exhausted", "deadline_exceeded", "runtime_fault", "interrupted"] as const) {
+    expect(harnessExitCode(status({ phase: "autonomous", autonomous: { lifecycle: "closed",
+      completion: { reason, assessment: null } } }), false)).toBe(1)
+  }
   for (const phase of ["blocked", "interrupted", "failure"]) {
     expect(harnessExitCode(status({ phase }), true)).toBe(1)
     expect(harnessExitCode(status({ phase }), false)).toBe(1)

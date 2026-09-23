@@ -11,7 +11,8 @@ import {
 type JsonObject = Record<string, unknown>
 
 const id = "codex-app-server"
-const command = () => process.env.BASE_HARNESS_CODEX_BINARY ?? "codex"
+const defaultCodexBinary = () => process.env.BASE_HARNESS_CODEX_APP_SERVER_PATH?.trim() || "codex"
+const command = () => process.env.BASE_HARNESS_CODEX_BINARY ?? defaultCodexBinary()
 const timeoutMs = 25 * 60 * 1000
 
 function record(value: unknown): JsonObject | undefined {
@@ -21,6 +22,31 @@ function record(value: unknown): JsonObject | undefined {
 function errorText(value: unknown) {
   const item = record(value)
   return typeof item?.message === "string" ? item.message : String(value)
+}
+
+function reportedTokens(value: unknown, depth = 0): number | undefined {
+  if (depth > 6 || !value || typeof value !== "object") return
+  if (Array.isArray(value)) {
+    const totals = value.flatMap((item) => {
+      const total = reportedTokens(item, depth + 1)
+      return total === undefined ? [] : [total]
+    })
+    return totals.length ? Math.max(...totals) : undefined
+  }
+  const item = value as Record<string, unknown>
+  for (const key of ["total_tokens", "totalTokens", "totalTokenCount"]) {
+    const total = item[key]
+    if (Number.isSafeInteger(total) && (total as number) >= 0) return total as number
+  }
+  const parts = ["input_tokens", "inputTokens", "output_tokens", "outputTokens",
+    "reasoning_tokens", "reasoningTokens", "cached_input_tokens", "cachedInputTokens"]
+    .map((key) => item[key]).filter((part): part is number => Number.isSafeInteger(part) && (part as number) >= 0)
+  if (parts.length) return parts.reduce((sum, part) => sum + part, 0)
+  const nested = Object.values(item).flatMap((child) => {
+    const total = reportedTokens(child, depth + 1)
+    return total === undefined ? [] : [total]
+  })
+  return nested.length ? Math.max(...nested) : undefined
 }
 
 function modelsFrom(result: JsonObject) {
@@ -151,7 +177,8 @@ async function capabilities(): Promise<BackendCapabilities> {
     const result = await response(reader, 2)
     const modelDetails = modelsFrom(result)
     if (!modelDetails.length) throw new BackendExecutionError("BACKEND_AUTH_REQUIRED", "Codex returned no available models")
-    const raw = JSON.stringify(modelDetails)
+    const autonomousDecision = { protocol: "autonomous-decision-v1" as const, resourceUsage: "reported-v1" as const }
+    const raw = JSON.stringify({ modelDetails, autonomousDecision })
     return {
       adapterID: id,
       backendId: id,
@@ -161,11 +188,23 @@ async function capabilities(): Promise<BackendCapabilities> {
       reasoningEfforts: [...new Set(modelDetails.flatMap((model) => model.reasoningEfforts))],
       reasoningOption: "reasoning_effort",
       modelDetails,
+      autonomousDecision,
     }
   } finally {
     await reader.cancel().catch(() => undefined)
     handle.kill()
   }
+}
+
+async function hostWorkspacePath(p: string): Promise<string> {
+  if (process.platform === "linux" && command().endsWith(".exe")) {
+    try {
+      const proc = Bun.spawn(["wslpath", "-w", p])
+      const out = await new Response(proc.stdout).text()
+      if (out.trim()) return out.trim()
+    } catch {}
+  }
+  return p
 }
 
 async function execute(input: BackendExecutionInput): Promise<BackendExecutionResult> {
@@ -174,7 +213,7 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
     throw new BackendExecutionError("BACKEND_CAPABILITY_STALE", "Codex model capabilities changed after selection")
   }
   const model = discovered.modelDetails?.find((item) => item.modelId === input.selection.modelId)
-  if (!model) throw new BackendExecutionError("BACKEND_MODEL_UNAVAILABLE", "Selected Codex model is unavailable")
+  if (!model) throw new BackendExecutionError("BACKEND_MODEL_UNAVAILABLE", "Selected Codex model is unavailable: " + input.selection.modelId)
   const effort = input.selection.nativeOptions.reasoning_effort
   if (effort && model.reasoningEfforts.length && !model.reasoningEfforts.includes(effort)) {
     throw new BackendExecutionError("BACKEND_OPTION_UNSUPPORTED", "Selected Codex reasoning effort is unsupported: " + effort)
@@ -184,6 +223,7 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
   }
 
   const managed = await createManagedWorkspace(input.sessionID, input.workspace)
+  const hostCwd = await hostWorkspacePath(managed.root)
   const handle = await start()
   const reader = lineReader(handle.stdout)
   const timeout = setTimeout(() => handle.kill(), timeoutMs)
@@ -195,7 +235,7 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
       id: 2,
       method: "thread/start",
       params: {
-        cwd: managed.root,
+        cwd: hostCwd,
         model: input.selection.modelId,
       },
     })
@@ -215,29 +255,41 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
       method: "turn/start",
       params: {
           threadId: resolvedThreadID,
-          cwd: managed.root,
+          cwd: hostCwd,
           model: input.selection.modelId,
           effort,
           input: [{ type: "text", text: input.prompt }],
           sandboxPolicy: {
             type: "workspaceWrite",
-            writableRoots: [managed.root],
+            writableRoots: [hostCwd],
             networkAccess: process.env.BASE_HARNESS_CODEX_NETWORK === "1",
           },
         },
     })
     await response(reader, 3, input.signal)
     let output = ""
+    let modelTokens: number | undefined
     while (true) {
       const event = await reader.next()
       if (!event) throw new BackendExecutionError("BACKEND_RUN_FAILED", "Codex app-server closed during execution")
       if (event.error) throw new BackendExecutionError("BACKEND_RUN_FAILED", errorText(event.error), event.error)
       const method = typeof event.method === "string" ? event.method : ""
       const params = record(event.params)
+      const observedTokens = reportedTokens(event)
+      if (observedTokens !== undefined) modelTokens = Math.max(modelTokens ?? 0, observedTokens)
       const delta = typeof params?.delta === "string" ? params.delta : typeof params?.text === "string" ? params.text : ""
       if (method.includes("agentMessage") && delta) output += delta
-      if (method === "turn/completed" || method === "turn/complete") break
+      if (method === "turn/completed" || method === "turn/complete") {
+        const turn = record(params?.turn)
+        if (turn?.status === "failed" || turn?.error) {
+          throw new BackendExecutionError("BACKEND_RUN_FAILED", errorText(turn.error ?? turn))
+        }
+        break
+      }
       if (method === "turn/failed" || method === "turn/error") throw new BackendExecutionError("BACKEND_RUN_FAILED", errorText(params))
+    }
+    if (input.phase === "autonomous_decision" && modelTokens === undefined) {
+      throw new BackendExecutionError("BACKEND_PROTOCOL_ERROR", "Codex autonomous execution did not report token usage")
     }
     const changedFiles = input.mutationPolicy === "forbid" ? [] : await managed.captureChanges(input.routeWrite)
     return {
@@ -247,6 +299,7 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
       backendId: id,
       modelId: input.selection.modelId,
       nativeOptions: input.selection.nativeOptions,
+      ...(modelTokens === undefined ? {} : { resourceUsage: { modelTokens, costMinorUnits: 0 } }),
     }
   } finally {
     clearTimeout(timeout)
@@ -261,6 +314,20 @@ async function execute(input: BackendExecutionInput): Promise<BackendExecutionRe
 export const CodexAppServer: ExecutionBackend = {
   id,
   kind: "agent_runtime",
+  selectionFromEnvironment() {
+    const envBackend = process.env.BASE_HARNESS_EXECUTION_BACKEND
+    if (envBackend && envBackend !== id) return undefined
+    const modelId = process.env.BASE_HARNESS_EXECUTION_MODEL ?? process.env.BASE_HARNESS_MODEL
+    const effort = process.env.BASE_HARNESS_EXECUTION_EFFORT
+    if (modelId) {
+      return {
+        adapterID: id,
+        modelID: modelId,
+        options: effort ? { reasoning_effort: effort } : undefined,
+      }
+    }
+    return undefined
+  },
   discover: capabilities,
   execute,
 }

@@ -410,6 +410,26 @@ def test_child_scope_verifies_claim_subset_without_ready(tmp_path: Path) -> None
     assert root["readyEligible"] is True
 
 
+def test_auto_unittest_observes_without_creating_package_files(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tests = workspace / "tests"
+    tests.mkdir(parents=True)
+    (tests / "test_sample.py").write_text(
+        "import unittest\nclass Sample(unittest.TestCase):\n    def test_ok(self): self.assertTrue(True)\n",
+        encoding="utf-8",
+    )
+    write_config(workspace, [])
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    open_run(sidecar, workspace)
+
+    spec = sidecar._verifiers(sidecar.runs["run-1"])["auto-unittest"]
+    result = sidecar._run_verifier(sidecar.runs["run-1"], spec)
+
+    assert result["exitCode"] != 0
+    assert result["error"] == "auto-unittest did not discover any tests"
+    assert not (tests / "__init__.py").exists()
+
+
 def test_candidate_manifest_hash_and_scope_binding_are_enforced(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -429,6 +449,44 @@ def test_candidate_manifest_hash_and_scope_binding_are_enforced(tmp_path: Path) 
     candidate["patchHash"] = "0" * 64
     with pytest.raises(ProtocolError, match="patchHash"):
         sidecar.handle(message("candidate.attach", {"candidate": candidate}, scope_id="child"))
+
+
+def test_deleted_candidate_file_is_bound_as_an_absent_after_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "remove.txt"
+    target.write_text("remove me\n", encoding="utf-8")
+    sidecar = VerifiedSidecar(tmp_path / "state")
+    open_run(sidecar, workspace)
+    sidecar.handle(message("scope.open", {
+        "parentScopeId": "root", "kind": "work_unit", "assignedClaimIds": [],
+    }, scope_id="child"))
+    candidate_workspace = sidecar.state_root / "candidate-delete" / "workspace"
+    candidate_workspace.mkdir(parents=True)
+    before_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+    payload = {
+        "runId": "run-1", "scopeId": "child", "workUnitId": "delete-unit", "revision": 1,
+        "files": [{"path": str(target), "beforeHash": before_hash, "afterHash": None}],
+    }
+    candidate = {
+        "candidateId": "delete-candidate", **payload,
+        "patchHash": hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "overlayRoot": "/host-owned-overlay",
+        "candidateWorkspace": str(candidate_workspace),
+    }
+    sidecar.handle(message("candidate.attach", {"candidate": candidate}, scope_id="child"))
+
+    observed = sidecar._assert_candidate_binding(
+        sidecar.runs["run-1"], candidate, workspace=workspace,
+    )
+
+    assert len(observed) == 1
+    assert observed[0]["path"] == str(target)
+    assert observed[0]["deleted"] is True
+    assert observed[0]["baseIdentity"] is not None
+    assert target.read_text(encoding="utf-8") == "remove me\n"
 
 
 def test_fast_ready_records_assurance_in_status_artifact_and_manifest(tmp_path: Path) -> None:

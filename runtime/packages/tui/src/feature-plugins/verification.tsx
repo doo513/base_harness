@@ -47,6 +47,16 @@ type HarnessStatus = {
     referencesTruncated: boolean
     repairCount: number
     assuranceLevel?: "fast" | "adaptive" | "strict"
+    semantics?: "autonomous-v1"
+    autonomous?: {
+      runtimeReason: string
+      assessmentStatus: "satisfied" | "partial" | "unsolved" | "not_assessed" | null
+      assessmentSummary: string
+      observationCounts: { completed: number; notRun: number; error: number }
+      gateCounts: { met: number; unmet: number; unknown: number }
+      candidates: Array<{ id: string; revision: number; state: string }>
+      unresolvedEffects: string[]
+    }
   }
   execution?: {
     adapterID: string
@@ -132,6 +142,36 @@ type HarnessStatus = {
       targetIds?: string[]
     }>
   }
+  autonomous?: {
+    lifecycle: "preparing" | "active" | "waiting_input" | "closing" | "closed"
+    observations: Array<{
+      observationId: string
+      result: { execution: "completed" | "not_run" | "error" }
+    }>
+    candidates: Array<{
+      candidate: { id: string; revision: number }
+      taskId: string
+      state: "editing" | "sealed" | "applying" | "applied" | "retained" | "discarded" | "recovery_required"
+    }>
+    tasks: Array<{ taskId: string; depth: number; state: string; objective: string }>
+    completion?: {
+      reason: "requested" | "cancelled" | "budget_exhausted" | "deadline_exceeded" | "runtime_fault" | "interrupted"
+      assessment: { status: "satisfied" | "partial" | "unsolved" | "not_assessed"; summary: string; uncertainties: string[] } | null
+      gates: Array<{ gateId: string; state: "met" | "unmet" | "unknown" }>
+      candidateDispositions: Array<{ candidate: { id: string; revision: number }; state: string }>
+      unresolvedEffects: string[]
+    }
+  }
+  autonomousResult?: {
+    schemaVersion: "autonomous-product-result-v1"
+    lifecycle: "preparing" | "active" | "waiting_input" | "closing" | "closed"
+    runtimeReason: string | null
+    assessment: { status: "satisfied" | "partial" | "unsolved" | "not_assessed"; summary: string; uncertainties: string[] } | null
+    observations: unknown[]
+    gates: Array<{ gateId: string; state: "met" | "unmet" | "unknown" }>
+    candidates: Array<{ candidate: { id: string; revision: number }; taskId: string; state: string }>
+    unresolvedEffects: string[]
+  }
   metrics?: {
     observedActions: number
     workers: number
@@ -176,6 +216,9 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
 
 const outcomeColor = (status: HarnessStatus): string => {
+  if (status.autonomous?.completion?.reason && status.autonomous.completion.reason !== "requested") return "#e06c75"
+  if (status.autonomous?.completion?.assessment?.status &&
+      status.autonomous.completion.assessment.status !== "satisfied") return "#e6b566"
   if (status.outcome === "ready" || status.phase === "ready") return "#78c091"
   if (status.phase === "repair" || status.outcome === "repair" || status.outcome === "repair_exhausted") return "#e6b566"
   if (status.phase === "blocked" || status.phase === "interrupted" || status.outcome === "failure") return "#e06c75"
@@ -214,6 +257,14 @@ function VerificationPanel(props: {
     untrack(() => { if (scroll) scroll.scrollBy(-scroll.scrollTop) })
   })
   const title = () => {
+    if (props.status.autonomousResult) {
+      const value = "AUTONOMOUS " + props.status.autonomousResult.lifecycle.toUpperCase()
+      return props.overlay ? clip(value, layout().contentWidth) : value
+    }
+    if (props.status.autonomous) {
+      const value = "AUTONOMOUS " + props.status.autonomous.lifecycle.toUpperCase()
+      return props.overlay ? clip(value, layout().contentWidth) : value
+    }
     const phase = harnessDisplayPhase(props.status)
     if (phase.startsWith("history_")) {
       const value = "HISTORY " + props.status.history!.phase.toUpperCase()
@@ -242,6 +293,28 @@ function VerificationPanel(props: {
             </Show>
             <text fg="#a8b3c7">Past workers {history().workers.length} / Evidence {history().evidenceCount} / Candidates {history().candidateCount} / Repairs {history().repairCount}</text>
             <Show when={history().assuranceLevel}><text fg="#778399">Past assurance: {history().assuranceLevel}</text></Show>
+            <Show when={history().autonomous}>
+              {(autonomous) => (
+                <box flexDirection="column">
+                  <text fg="#a8b3c7">Autonomous runtime {autonomous().runtimeReason}</text>
+                  <text fg="#e6b566">
+                    Model assessment {autonomous().assessmentStatus ?? "none"}
+                    {autonomous().assessmentSummary ? ": " + clip(autonomous().assessmentSummary, 72) : ""}
+                  </text>
+                  <text fg="#778399">
+                    Observations {String(autonomous().observationCounts.completed)} completed /
+                    {" "}{String(autonomous().observationCounts.notRun)} not run /
+                    {" "}{String(autonomous().observationCounts.error)} error
+                  </text>
+                  <For each={autonomous().candidates}>
+                    {(candidate) => <text fg="#778399">Candidate {clip(candidate.id, 32)}@{String(candidate.revision)} [{candidate.state}]</text>}
+                  </For>
+                  <For each={autonomous().unresolvedEffects}>
+                    {(effect) => <text fg="#e06c75">Unresolved effect: {clip(effect, 72)}</text>}
+                  </For>
+                </box>
+              )}
+            </Show>
             <For each={history().workers}>
               {(worker) => <text fg="#778399">- {worker.workUnitId} [{worker.state}] {clip(worker.title, 44)}</text>}
             </For>
@@ -280,6 +353,40 @@ function VerificationPanel(props: {
           ? " / " + props.status.activePlanId + "@" + String(props.status.activePlanRevision)
           : ""}
       </text>
+      <Show when={props.status.autonomous}>
+        {(autonomous) => (
+          <box flexDirection="column">
+            <text fg="#a8b3c7">
+              Runtime {autonomous().lifecycle}
+              {autonomous().completion ? " / " + autonomous().completion!.reason : ""}
+            </text>
+            <Show when={autonomous().completion?.assessment}>
+              {(assessment) => (
+                <box flexDirection="column">
+                  <text fg="#e6b566">Model assessment {assessment().status}: {clip(assessment().summary, 80)}</text>
+                  <For each={assessment().uncertainties}>{(item) => <text fg="#778399">Uncertainty: {clip(item, 80)}</text>}</For>
+                </box>
+              )}
+            </Show>
+            <text fg="#a8b3c7">
+              Observations {String(autonomous().observations.length)} / Tasks {String(autonomous().tasks.length)}
+              {" / "}Candidates {String(autonomous().candidates.length)}
+            </text>
+            <For each={autonomous().completion?.gates ?? []}>
+              {(gate) => <text fg={gate.state === "met" ? "#78c091" : "#e6b566"}>Gate {gate.gateId}: {gate.state}</text>}
+            </For>
+            <For each={autonomous().candidates}>
+              {(candidate) => <text fg={candidate.state === "applied" ? "#78c091" : "#e6b566"}>
+                Candidate {clip(candidate.candidate.id, 32)}@{String(candidate.candidate.revision)} [{candidate.state}]
+              </text>}
+            </For>
+            <For each={autonomous().completion?.unresolvedEffects ?? []}>
+              {(effect) => <text fg="#e06c75">Unresolved effect: {clip(effect, 80)}</text>}
+            </For>
+            <text fg="#778399">Model assessment and observations are separate from legacy Verifier Ready.</text>
+          </box>
+        )}
+      </Show>
       <Show when={props.status.preflight}>
         {(preflight) => (
           <box flexDirection="column">

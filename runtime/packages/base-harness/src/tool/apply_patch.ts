@@ -58,10 +58,13 @@ export const ApplyPatchTool = Tool.define(
       // Validate file paths and check permissions
       const fileChanges: Array<{
         filePath: string
+        logicalFilePath: string
+        overlay: boolean
         oldContent: string
         newContent: string
         type: "add" | "update" | "delete" | "move"
         movePath?: string
+        logicalMovePath?: string
         diff: string
         additions: number
         deletions: number
@@ -76,9 +79,6 @@ export const ApplyPatchTool = Tool.define(
         const admitted = yield* Effect.promise(() =>
           Orchestration.resolveWrite(ctx.sessionID, instance.worktree, requestedPath),
         )
-        if (admitted.overlay) {
-          return yield* Effect.fail(new Error("apply_patch is root-only under managed orchestration"))
-        }
         const filePath = admitted.physicalPath
 
         switch (hunk.type) {
@@ -98,6 +98,8 @@ export const ApplyPatchTool = Tool.define(
 
             fileChanges.push({
               filePath,
+              logicalFilePath: admitted.logicalPath,
+              overlay: admitted.overlay,
               oldContent,
               newContent: next.text,
               type: "add",
@@ -150,22 +152,24 @@ export const ApplyPatchTool = Tool.define(
             const requestedMovePath = hunk.move_path ? path.resolve(instance.directory, hunk.move_path) : undefined
             yield* assertExternalDirectoryEffect(ctx, requestedMovePath)
             let movePath: string | undefined
+            let logicalMovePath: string | undefined
             if (requestedMovePath) {
               const admittedMove = yield* Effect.promise(() =>
                 Orchestration.resolveWrite(ctx.sessionID, instance.worktree, requestedMovePath),
               )
-              if (admittedMove.overlay) {
-                return yield* Effect.fail(new Error("apply_patch is root-only under managed orchestration"))
-              }
               movePath = admittedMove.physicalPath
+              logicalMovePath = admittedMove.logicalPath
             }
 
             fileChanges.push({
               filePath,
+              logicalFilePath: admitted.logicalPath,
+              overlay: admitted.overlay,
               oldContent,
               newContent,
               type: hunk.move_path ? "move" : "update",
               movePath,
+              logicalMovePath,
               diff,
               additions,
               deletions,
@@ -193,6 +197,8 @@ export const ApplyPatchTool = Tool.define(
 
             fileChanges.push({
               filePath,
+              logicalFilePath: admitted.logicalPath,
+              overlay: admitted.overlay,
               oldContent: contentToDelete,
               newContent: "",
               type: "delete",
@@ -210,17 +216,17 @@ export const ApplyPatchTool = Tool.define(
 
       // Build per-file metadata for UI rendering (used for both permission and result)
       const files = fileChanges.map((change) => ({
-        filePath: change.filePath,
-        relativePath: path.relative(instance.worktree, change.movePath ?? change.filePath).replaceAll("\\", "/"),
+        filePath: change.logicalFilePath,
+        relativePath: path.relative(instance.worktree, change.logicalMovePath ?? change.logicalFilePath).replaceAll("\\", "/"),
         type: change.type,
         patch: change.diff,
         additions: change.additions,
         deletions: change.deletions,
-        movePath: change.movePath,
+        movePath: change.logicalMovePath,
       }))
 
       // Check permissions if needed
-      const relativePaths = fileChanges.map((c) => path.relative(instance.worktree, c.filePath).replaceAll("\\", "/"))
+      const relativePaths = fileChanges.map((c) => path.relative(instance.worktree, c.logicalFilePath).replaceAll("\\", "/"))
       yield* ctx.ask({
         permission: "edit",
         patterns: relativePaths,
@@ -271,12 +277,12 @@ export const ApplyPatchTool = Tool.define(
           if (yield* format.file(edited)) {
             yield* Bom.syncFile(afs, edited, change.bom)
           }
-          yield* events.publish(FileSystem.Event.Edited, { file: edited })
+          if (!change.overlay) yield* events.publish(FileSystem.Event.Edited, { file: change.logicalMovePath ?? change.logicalFilePath })
         }
       }
 
       // Publish file change events
-      for (const update of updates) {
+      for (const update of fileChanges.some((change) => change.overlay) ? [] : updates) {
         yield* events.publish(Watcher.Event.Updated, update)
       }
 
@@ -291,12 +297,12 @@ export const ApplyPatchTool = Tool.define(
       // Generate output summary
       const summaryLines = fileChanges.map((change) => {
         if (change.type === "add") {
-          return `A ${path.relative(instance.worktree, change.filePath).replaceAll("\\", "/")}`
+          return `A ${path.relative(instance.worktree, change.logicalFilePath).replaceAll("\\", "/")}`
         }
         if (change.type === "delete") {
-          return `D ${path.relative(instance.worktree, change.filePath).replaceAll("\\", "/")}`
+          return `D ${path.relative(instance.worktree, change.logicalFilePath).replaceAll("\\", "/")}`
         }
-        const target = change.movePath ?? change.filePath
+        const target = change.logicalMovePath ?? change.logicalFilePath
         return `M ${path.relative(instance.worktree, target).replaceAll("\\", "/")}`
       })
       let output = `Success. Updated the following files:\n${summaryLines.join("\n")}`

@@ -133,12 +133,34 @@ export async function autonomousExternalTurn(input: {
         previous: input.previous ? json(input.previous) : null,
         history: json(input.history ?? []),
         response: {
-          structured: {
+          decisionEnvelope: {
             schemaVersion: "autonomous-backend-response-v1",
-            kind: "decision | register_check",
-            decisionResponse: "invoke | measure | ask | revise_interpretation | final",
+            kind: "decision",
+            response: { kind: "final", text: "final report text", openWork: "drain",
+              assessment: { status: "partial", summary: "assessment summary",
+                citedObservationIds: [], uncertainties: ["remaining uncertainty"] } },
+          },
+          checkEnvelope: {
+            schemaVersion: "autonomous-backend-response-v1",
+            kind: "register_check",
+            subject: "an exact SubjectRef from state",
+            parameters: "a check parameter object",
           },
           plainText: "A plain-text response is recorded as a not_assessed final report.",
+          rules: [
+            "For a structured response, return one complete envelope object with schemaVersion, kind, and response or check fields.",
+            "Do not return only the nested DecisionAction.",
+            "Do not wrap JSON in markdown.",
+            "Final openWork must be drain or cancel; assessment must be an object with status, summary, citedObservationIds, and uncertainties.",
+          ],
+          actionKinds: {
+            invoke: { kind: "invoke", toolId: "registered tool id", arguments: {} },
+            measure: { kind: "measure", checkRef: "exact VersionRef", subject: "exact SubjectRef" },
+            ask: { kind: "ask", reason: "information", questions: ["question"] },
+            delegate: { kind: "delegate", tasks: ["TaskProposal objects"] },
+            amend_tasks: { kind: "amend_tasks", expectedGraphRevision: 1, changes: ["TaskAmendment objects"] },
+            apply_candidate: { kind: "apply_candidate", candidate: "exact candidate SubjectRef" },
+          },
         },
       }),
     })
@@ -175,13 +197,21 @@ export async function autonomousExternalTurn(input: {
     const response = record(envelope.response)
     const decisionId = input.requestId + ":decision"
     if (response?.kind === "final") {
-      if (response.basedOn !== undefined && canonicalJson(response.basedOn) !== canonicalJson(basis)) {
+      const text = typeof response.text === "string" ? response.text : undefined
+      let validFinal = true
+      try { assertAutonomousSchema("finalResponse", { ...response, basedOn: basis }) }
+      catch { validFinal = false }
+      if (!validFinal && text !== undefined) {
+        // A malformed structured assessment has no authority. Preserve only its
+        // report text through the existing plain-text not_assessed path.
+        decision = await Coordinator.submitAutonomousDecision(input.sessionID, input.runId, decisionId, text)
+      } else if (response.basedOn !== undefined && canonicalJson(response.basedOn) !== canonicalJson(basis)) {
         decision = { accepted: false, code: "AUTONOMOUS_STALE_BASIS" }
       } else {
         decision = await Coordinator.submitAutonomousDecision(input.sessionID, input.runId, decisionId,
           { ...response, basedOn: basis })
       }
-      if (typeof response.text === "string") displayText = response.text
+      if (text !== undefined) displayText = text
     } else {
       decision = await Coordinator.submitAutonomousDecision(input.sessionID, input.runId, decisionId, {
         schemaVersion: "decision-v1", decisionId, basis, observationIds: [], action: envelope.response,

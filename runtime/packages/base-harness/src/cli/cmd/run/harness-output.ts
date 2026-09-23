@@ -41,7 +41,23 @@ export interface HarnessOutputStatus {
   failureKind?: string | null
   assuranceLevel?: string
   effectiveProfile?: string
-  autonomous?: { lifecycle?: string }
+  autonomous?: {
+    lifecycle?: string
+    observations?: unknown[]
+    candidates?: Array<{ state?: string }>
+    completion?: {
+      reason?: "requested" | "cancelled" | "budget_exhausted" | "deadline_exceeded" | "runtime_fault" | "interrupted"
+      assessment?: { status?: "satisfied" | "partial" | "unsolved" | "not_assessed" } | null
+      gates?: Array<{ state?: "met" | "unmet" | "unknown" }>
+      unresolvedEffects?: string[]
+    }
+  }
+  autonomousResult?: {
+    lifecycle: string
+    runtimeReason?: "requested" | "cancelled" | "budget_exhausted" | "deadline_exceeded" | "runtime_fault" | "interrupted" | null
+    assessment?: { status?: "satisfied" | "partial" | "unsolved" | "not_assessed" } | null
+    observations?: unknown[]
+  }
   [key: string]: unknown
 }
 
@@ -137,12 +153,19 @@ export function harnessSettled(status: HarnessOutputStatus, planOnly: boolean): 
   return TERMINAL_PHASES.has(status.phase)
 }
 
-export function harnessExitCode(status: HarnessOutputStatus, planOnly: boolean): 0 | 1 {
+export function harnessExitCode(status: HarnessOutputStatus, planOnly: boolean): 0 | 1 | 2 {
   // Current terminal failure state always wins over stale planning metadata.
   if (FAILURE_PHASES.has(status.phase)) return 1
 
   if (planOnly) {
     return status.planningState === "plan_ready" || status.phase === "plan_ready" ? 0 : 1
+  }
+
+  if (status.autonomousResult?.lifecycle === "closed" || status.autonomous?.lifecycle === "closed") {
+    const reason = status.autonomousResult?.runtimeReason ?? status.autonomous?.completion?.reason
+    const assessment = status.autonomousResult?.assessment ?? status.autonomous?.completion?.assessment
+    if (reason !== "requested") return 1
+    return assessment?.status === "satisfied" ? 0 : 2
   }
 
   return status.phase === "ready" && status.outcome === "ready" && status.readyEligible === true ? 0 : 1

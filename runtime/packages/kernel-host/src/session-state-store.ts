@@ -26,6 +26,16 @@ export interface RunHistory {
   referencesTruncated: boolean
   repairCount: number
   assuranceLevel?: "fast" | "adaptive" | "strict"
+  semantics?: "autonomous-v1"
+  autonomous?: {
+    runtimeReason: "requested" | "cancelled" | "budget_exhausted" | "deadline_exceeded" | "runtime_fault" | "interrupted"
+    assessmentStatus: "satisfied" | "partial" | "unsolved" | "not_assessed" | null
+    assessmentSummary: string
+    observationCounts: { completed: number; notRun: number; error: number }
+    gateCounts: { met: number; unmet: number; unknown: number }
+    candidates: Array<{ id: string; revision: number; state: string }>
+    unresolvedEffects: string[]
+  }
 }
 
 interface SessionSnapshot {
@@ -58,7 +68,7 @@ const id = (value: unknown): value is string => typeof value === "string" && /^[
 const exactKeys = (value: Record<string, any>, allowed: string[]) =>
   Object.keys(value).every(key => allowed.includes(key))
 const phaseName = (value: unknown) => text(value, 64) && /^[a-z_]+$/.test(value)
-const terminal = new Set(["ready", "blocked", "failure", "interrupted", "plan_ready"])
+const terminal = new Set(["ready", "blocked", "failure", "interrupted", "plan_ready", "autonomous_closed"])
 
 function validSelection(value: unknown, validate: SelectionValidator = defaultValidator): value is SessionSelection {
   if (!object(value) || !exactKeys(value, ["domain", "skills", "planningPreference", "execution"])
@@ -97,10 +107,32 @@ export function sessionSelection(state: KernelSessionState, validate: SelectionV
 }
 
 function validHistory(value: unknown): value is RunHistory {
+  const history = object(value) ? value : undefined
+  const autonomous = history?.autonomous
+  const validAutonomous = autonomous === undefined || (
+    history?.semantics === "autonomous-v1" && object(autonomous)
+    && exactKeys(autonomous, ["runtimeReason", "assessmentStatus", "assessmentSummary", "observationCounts",
+      "gateCounts", "candidates", "unresolvedEffects"])
+    && ["requested", "cancelled", "budget_exhausted", "deadline_exceeded", "runtime_fault", "interrupted"].includes(autonomous.runtimeReason)
+    && (autonomous.assessmentStatus === null || ["satisfied", "partial", "unsolved", "not_assessed"].includes(autonomous.assessmentStatus))
+    && text(autonomous.assessmentSummary, 4096)
+    && object(autonomous.observationCounts) && exactKeys(autonomous.observationCounts, ["completed", "notRun", "error"])
+    && [autonomous.observationCounts.completed, autonomous.observationCounts.notRun, autonomous.observationCounts.error].every(count)
+    && object(autonomous.gateCounts) && exactKeys(autonomous.gateCounts, ["met", "unmet", "unknown"])
+    && [autonomous.gateCounts.met, autonomous.gateCounts.unmet, autonomous.gateCounts.unknown].every(count)
+    && Array.isArray(autonomous.candidates) && autonomous.candidates.length <= 32
+    && autonomous.candidates.every((candidate: unknown) => object(candidate)
+      && exactKeys(candidate, ["id", "revision", "state"]) && text(candidate.id, 256)
+      && Number.isSafeInteger(candidate.revision) && candidate.revision > 0 && text(candidate.state, 64))
+    && Array.isArray(autonomous.unresolvedEffects) && autonomous.unresolvedEffects.length <= 32
+    && autonomous.unresolvedEffects.every((effect: unknown) => text(effect, 1024))
+  )
   return object(value)
     && exactKeys(value, ["runId", "recordedAt", "recordedPhase", "phase", "readOnly", "revalidated",
       "goal", "goalTruncated", "workers", "evidenceCount", "candidateCount", "evidenceRefs",
-      "candidateRefs", "referencesTruncated", "repairCount", "assuranceLevel"])
+      "candidateRefs", "referencesTruncated", "repairCount", "assuranceLevel", "semantics", "autonomous"])
+    && (value.semantics === undefined || value.semantics === "autonomous-v1")
+    && validAutonomous
     && id(value.runId) && text(value.recordedAt, 64) && Number.isFinite(Date.parse(value.recordedAt))
     && phaseName(value.recordedPhase) && value.phase === (terminal.has(value.recordedPhase) ? value.recordedPhase : "interrupted")
     && value.readOnly === true && value.revalidated === false && text(value.goal, 16384)
@@ -117,7 +149,8 @@ function validHistory(value: unknown): value is RunHistory {
 
 /** Bounded presentation data only. No contract, plan capability, attestation or Ready authority. */
 export function summarizeRun(status: any): RunHistory {
-  const recordedPhase = status.planningState === "plan_ready" ? "plan_ready" : status.phase
+  const recordedPhase = status.planningState === "plan_ready" ? "plan_ready"
+    : status.autonomous?.lifecycle === "closed" ? "autonomous_closed" : status.phase
   const refs = (values: unknown) => Array.isArray(values)
     ? values.filter((value): value is string => typeof value === "string") : []
   const evidence = refs(status.evidenceRefs), candidates = refs(status.candidateRefs)
@@ -138,6 +171,39 @@ export function summarizeRun(status: any): RunHistory {
       || [...evidence, ...candidates].some(ref => ref.length > 2048),
     repairCount: status.repairCount ?? 0,
     ...(status.assuranceLevel ? { assuranceLevel: status.assuranceLevel } : {}),
+    ...(status.autonomous ? {
+      semantics: "autonomous-v1" as const,
+      autonomous: (() => {
+        const observations = Array.isArray(status.autonomous.observations) ? status.autonomous.observations : []
+        const gates = Array.isArray(status.autonomous.completion?.gates) ? status.autonomous.completion.gates : []
+        const dispositions = Array.isArray(status.autonomous.completion?.candidateDispositions)
+          ? status.autonomous.completion.candidateDispositions
+          : Array.isArray(status.autonomous.candidates) ? status.autonomous.candidates.map((candidate: any) => ({
+              candidate: candidate.candidate, state: candidate.state,
+            })) : []
+        return {
+          runtimeReason: status.autonomous.completion?.reason ?? "interrupted",
+          assessmentStatus: status.autonomous.completion?.assessment?.status ?? null,
+          assessmentSummary: String(status.autonomous.completion?.assessment?.summary ?? "").slice(0, 4096),
+          observationCounts: {
+            completed: observations.filter((item: any) => item.result?.execution === "completed").length,
+            notRun: observations.filter((item: any) => item.result?.execution === "not_run").length,
+            error: observations.filter((item: any) => item.result?.execution === "error").length,
+          },
+          gateCounts: {
+            met: gates.filter((item: any) => item.state === "met").length,
+            unmet: gates.filter((item: any) => item.state === "unmet").length,
+            unknown: gates.filter((item: any) => item.state === "unknown").length,
+          },
+          candidates: dispositions.slice(0, 32).flatMap((item: any) =>
+            item?.candidate && typeof item.candidate.id === "string" && Number.isSafeInteger(item.candidate.revision)
+              ? [{ id: item.candidate.id.slice(0, 256), revision: item.candidate.revision, state: String(item.state).slice(0, 64) }]
+              : []),
+          unresolvedEffects: (Array.isArray(status.autonomous.completion?.unresolvedEffects)
+            ? status.autonomous.completion.unresolvedEffects : []).map(String).map((item: string) => item.slice(0, 1024)).slice(0, 32),
+        }
+      })(),
+    } : {}),
   }
   if (!validHistory(value)) fail("SESSION_HISTORY_INVALID")
   return value

@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import type {
-  AuthorityGrant, AutonomousCoordinatorPort, AutonomousDomainModule, AutonomousPreparationInput,
+  AuthorityGrant, AutonomousCandidateFile, AutonomousCoordinatorPort, AutonomousDomainModule, AutonomousPreparationInput,
   AutonomousResourceUsage, AutonomousRunPorts, AutonomousRunSetup, AutonomousRunSnapshot,
   BudgetLimits, CheckSpec, DecisionProposal, DomainExecutorSelection, IntentRecord, Json,
   SubjectRef, VersionRef, WorkingInterpretation,
@@ -36,12 +36,21 @@ export interface AutonomousHostOptions {
   cleanupTimeoutMs: number
   /** Adapter must obtain these from existing user/policy permission services. */
   authorize(input: AutonomousHostInput): Promise<Pick<AuthorityGrant, "capabilities" | "provenanceRefs" | "expiresAt">>
+  /** Re-read current policy without prompting. Used immediately before
+   * publication so an explicit permission reduction invalidates old permits. */
+  reauthorize?(input: AutonomousHostInput, current: AuthorityGrant): Promise<Pick<AuthorityGrant, "capabilities" | "provenanceRefs" | "expiresAt">>
   /** Answers are returned by the authenticated app question service, never actor JSON. */
   ask?(input: AutonomousHostInput & { questions: readonly string[]; signal: AbortSignal }): Promise<readonly (readonly string[])[]>
   adapter(input: AutonomousHostInput & {
     snapshotRoot: string
     subject(ref: SubjectRef): StoredAutonomousSubject
     check(ref: VersionRef): CheckSpec
+    registerCandidateArtifact(input: {
+      candidateId: string
+      revision: number
+      candidateWorkspace: string
+      files: AutonomousCandidateFile[]
+    }): Promise<StoredAutonomousSubject & { subject: SubjectRef & { kind: "candidate" } }>
     snapshot(): AutonomousRunSnapshot
   }): Promise<Omit<AutonomousRunPorts, "revise"> & {
     describeCheck?(parameters: Json, subject: StoredAutonomousSubject): Omit<CheckSpec, "schemaVersion" | "ref" | "author">
@@ -72,6 +81,8 @@ export class AutonomousHostRun {
   private readonly invocation = new AsyncLocalStorage<{ proposal: DecisionProposal; signal: AbortSignal; active: boolean }>()
   private describeCheck?: (parameters: Json, subject: StoredAutonomousSubject) => Omit<CheckSpec, "schemaVersion" | "ref" | "author">
   private ask?: AutonomousHostOptions["ask"]
+  private authorize?: AutonomousHostOptions["authorize"]
+  private reauthorize?: AutonomousHostOptions["reauthorize"]
   private questionRequest?: { controller: AbortController; result: Promise<import("@base-harness/domain-contracts").AutonomousPreparationResult> }
   readonly module: AutonomousDomainModule
   private constructor(
@@ -98,6 +109,8 @@ export class AutonomousHostRun {
     const root = await mkdtemp(join(directory, "run-"))
     const host = new AutonomousHostRun(input, root, pinned, runtime, current)
     host.ask = options.ask
+    host.authorize = options.authorize
+    host.reauthorize = options.reauthorize
     const original = await host.store("source", input.goal)
     const provenance = { sourceId: original.subject.id, sha256: digest(input.goal) }
     const intentBody = { schemaVersion: "intent-v1" as const, originalRequest: original.subject,
@@ -118,13 +131,14 @@ export class AutonomousHostRun {
     const setup: AutonomousRunSetup = {
       binding: { schemaVersion: "autonomous-run-binding-v1", semantics: "autonomous-v1", runId: input.runId,
         domainModule: asRef(domain.subject), executor: asRef(executor.subject), authorityRef: authority.ref, budgetId: input.runId + ":budget" },
-      taskId: input.sessionID, intent, interpretation, authority, limits, metering: { ...options.metering },
+      taskId: input.sessionID,
+      intent, interpretation, authority, limits, metering: { ...options.metering },
       cleanupTimeoutMs: options.cleanupTimeoutMs, checks: [...host.checks.values()].map((v) => structuredClone(v)),
       gates: structuredClone(options.gates ?? []), gateEvidence: structuredClone(options.gateEvidence ?? {}),
       subjects: [...host.subjects.values()].map((value) => structuredClone(value.subject)),
     }
     const adapter = await options.adapter({ ...input, snapshotRoot: root, subject: (ref) => host.subject(ref),
-      check: (ref) => host.check(ref), snapshot: current })
+      check: (ref) => host.check(ref), registerCandidateArtifact: (candidate) => host.registerCandidateArtifact(candidate), snapshot: current })
     host.describeCheck = adapter.describeCheck?.bind(adapter)
     const ports: AutonomousRunPorts = {
       ...adapter,
@@ -142,6 +156,21 @@ export class AutonomousHostRun {
         try { return await host.invocation.run(lease, () => adapter.measure(proposal, signal)) }
         finally { lease.active = false }
       },
+      ...(adapter.executeTask ? { executeTask: async (task) => {
+        const parent = current().tasks.find((item) => item.taskId === task.parentTaskId)
+        const parentSessionID = task.parentTaskId === input.sessionID ? input.sessionID : parent?.sessionId
+        if (!parentSessionID) throw new Error("AUTONOMOUS_TASK_SESSION_BINDING")
+        const basis = runtime.autonomousBasis(parentSessionID, input.runId)
+        if (basis.taskId !== task.parentTaskId) throw new Error("AUTONOMOUS_TASK_SESSION_BINDING")
+        const proposal: DecisionProposal = {
+          schemaVersion: "decision-v1", decisionId: "task-execution:" + task.taskId,
+          basis, observationIds: [],
+          action: { kind: "delegate", tasks: [structuredClone(task.proposal)] },
+        }
+        const lease = { proposal, signal: task.signal, active: true }
+        try { return await host.invocation.run(lease, () => adapter.executeTask!(task)) }
+        finally { lease.active = false }
+      } } : {}),
       revise: ({ basedOnRef, ...proposal }) => ({ ...proposal, ref: version(basedOnRef.id, basedOnRef.revision + 1, proposal) }),
     }
     return { host, setup, ports }
@@ -242,12 +271,12 @@ export class AutonomousHostRun {
     return result
   }
 
-  submit(decisionId: string, response: unknown) {
+  submit(decisionId: string, response: unknown, callerSessionID = this.input.sessionID) {
     let fingerprint: string
-    try { fingerprint = canonicalJson(response) } catch { return Promise.resolve({ accepted: false as const, code: "AUTONOMOUS_DECISION_SCHEMA" }) }
+    try { fingerprint = canonicalJson({ callerSessionID, response }) } catch { return Promise.resolve({ accepted: false as const, code: "AUTONOMOUS_DECISION_SCHEMA" }) }
     const previous = this.submissions.get(decisionId)
     if (previous) return previous.fingerprint === fingerprint ? previous.result : Promise.resolve({ accepted: false as const, code: "AUTONOMOUS_REQUEST_CONFLICT" })
-    const result = Promise.resolve().then(() => this.submitOnce(decisionId, response)).then((value) => frozen(structuredClone(value)))
+    const result = Promise.resolve().then(() => this.submitOnce(decisionId, response, callerSessionID)).then((value) => frozen(structuredClone(value)))
     this.submissions.set(decisionId, { fingerprint, result })
     return result
   }
@@ -257,14 +286,15 @@ export class AutonomousHostRun {
     const state = this.snapshot()
     const action = lease?.proposal.action
     const matches = action?.kind === "invoke" ? action.toolId === toolId : action?.kind === "measure" ?
-      ["argv", "shell", "bash"].includes(toolId) && operation === "execute" && this.check(action.checkRef).requiredCapabilities.includes("execute") : false
+      ["argv", "shell", "bash"].includes(toolId) && operation === "execute" && this.check(action.checkRef).requiredCapabilities.includes("execute") :
+      action?.kind === "delegate" ? toolId === "task" && operation === "delegate" : false
     if (!lease?.active || lease.signal.aborted || state.lifecycle === "closed" || !matches ||
         canonicalJson(lease.proposal.basis.authorityRef) !== canonicalJson(state.authority.ref)) {
       throw new Error("AUTONOMOUS_ADMISSION_REQUIRED")
     }
   }
 
-  private async submitOnce(decisionId: string, response: unknown) {
+  private async submitOnce(decisionId: string, response: unknown, callerSessionID: string) {
     this.snapshot()
     let textReport: (SubjectRef & { kind: "report" }) | undefined
     let finalBasis: import("@base-harness/domain-contracts").DecisionBasis | undefined
@@ -274,7 +304,7 @@ export class AutonomousHostRun {
       text = (response as unknown as { text: string }).text
       finalBasis = (response as unknown as import("@base-harness/domain-contracts").AutonomousFinalResponse).basedOn
     }
-    if (finalBasis && canonicalJson(finalBasis) !== canonicalJson(this.runtime.autonomousBasis(this.input.sessionID, this.input.runId))) {
+    if (finalBasis && canonicalJson(finalBasis) !== canonicalJson(this.runtime.autonomousBasis(callerSessionID, this.input.runId))) {
       return { accepted: false as const, code: "AUTONOMOUS_STALE_BASIS" }
     }
     if (text !== undefined) {
@@ -298,12 +328,37 @@ export class AutonomousHostRun {
         proposal = parseDecisionProposal(normalized)
         if (proposal.decisionId !== decisionId) return { accepted: false as const, code: "AUTONOMOUS_DECISION_BINDING" }
       } else {
-        proposal = { schemaVersion: "decision-v1", decisionId, basis: finalBasis ?? this.runtime.autonomousBasis(this.input.sessionID, this.input.runId),
+        proposal = { schemaVersion: "decision-v1", decisionId, basis: finalBasis ?? this.runtime.autonomousBasis(callerSessionID, this.input.runId),
           observationIds: [], action: parseDecisionAction(normalized) }
       }
     } catch { return { accepted: false as const, code: "AUTONOMOUS_DECISION_SCHEMA" } }
     if (finalBasis && canonicalJson(proposal.basis) !== canonicalJson(finalBasis)) return { accepted: false as const, code: "AUTONOMOUS_FINAL_BINDING" }
+    if (proposal.action.kind === "apply_candidate") await this.refreshAuthority()
     return this.runtime.submitAutonomousDecision(this.input.sessionID, this.input.runId, proposal)
+  }
+
+  /** Re-enter the existing application permission service immediately before
+   * publication. An unchanged grant keeps its revision; a changed or shortened
+   * grant invalidates the actor's old basis and Candidate receipt. */
+  async refreshAuthority(): Promise<AuthorityGrant> {
+    if (!this.authorize) throw new Error("AUTONOMOUS_AUTHORITY_SERVICE_UNAVAILABLE")
+    const state = this.snapshot()
+    const authorized = this.reauthorize
+      ? await this.reauthorize(this.input, state.authority)
+      : await this.authorize(this.input)
+    const comparable = (value: Pick<AuthorityGrant, "capabilities" | "provenanceRefs">) => canonicalJson({
+      capabilities: value.capabilities, provenanceRefs: value.provenanceRefs,
+    })
+    const shortened = Date.parse(authorized.expiresAt) < Date.parse(state.authority.expiresAt)
+    if (!shortened && comparable(authorized) === comparable(state.authority)) return structuredClone(state.authority)
+    const body = { schemaVersion: "authority-v1" as const, runId: this.input.runId,
+      capabilities: structuredClone(authorized.capabilities), provenanceRefs: structuredClone(authorized.provenanceRefs),
+      expiresAt: authorized.expiresAt }
+    const authority: AuthorityGrant = { ...body,
+      ref: version(state.authority.ref.id, state.authority.ref.revision + 1, body) }
+    validateAuthority(authority, this.input.runId, Date.now())
+    await this.runtime.reviseAutonomousAuthority(this.input.sessionID, this.input.runId, authority)
+    return structuredClone(authority)
   }
 
   async captureSource(bytes: Uint8Array, origin: string) {
@@ -349,6 +404,58 @@ export class AutonomousHostRun {
     const check = this.checks.get(ref.id)
     if (!check || canonicalJson(check.ref) !== canonicalJson(ref)) throw new Error("AUTONOMOUS_CHECK_UNKNOWN")
     return structuredClone(check)
+  }
+
+  private async registerCandidateArtifact(input: {
+    candidateId: string
+    revision: number
+    candidateWorkspace: string
+    files: AutonomousCandidateFile[]
+  }): Promise<StoredAutonomousSubject & { subject: SubjectRef & { kind: "candidate" } }> {
+    if (!input.candidateId.trim() || !Number.isSafeInteger(input.revision) || input.revision < 1) {
+      throw new Error("AUTONOMOUS_CANDIDATE_BINDING")
+    }
+    const workspace = resolve(this.input.workspace)
+    const candidateWorkspace = await realpath(input.candidateWorkspace)
+    const artifactDirectory = "candidate-" + randomUUID()
+    await mkdir(join(this.snapshotRoot, artifactDirectory), { recursive: false, mode: 0o700 })
+    const files: Array<{ path: string; sha256: string; size: number }> = []
+    let total = 0
+    for (const [index, item] of input.files.entries()) {
+      const logical = resolve(item.path)
+      const relativePath = relative(workspace, logical)
+      if (!relativePath || relativePath === ".." || relativePath.startsWith(".." + (process.platform === "win32" ? "\\" : "/")) || isAbsolute(relativePath)) {
+        throw new Error("AUTONOMOUS_CANDIDATE_PATH")
+      }
+      const source = resolve(candidateWorkspace, relativePath)
+      const fromCandidate = relative(candidateWorkspace, source)
+      if (!fromCandidate || fromCandidate === ".." || fromCandidate.startsWith(".." + (process.platform === "win32" ? "\\" : "/")) || isAbsolute(fromCandidate)) {
+        throw new Error("AUTONOMOUS_CANDIDATE_PATH")
+      }
+      if (item.afterHash === null) {
+        try { await readFile(source); throw new Error("AUTONOMOUS_CANDIDATE_DELETION") }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error }
+        continue
+      }
+      const resolvedSource = await realpath(source)
+      if (resolve(resolvedSource) !== source) throw new Error("AUTONOMOUS_CANDIDATE_LINK")
+      const data = await readFile(source)
+      if (digest(data) !== item.afterHash) throw new Error("AUTONOMOUS_CANDIDATE_DIGEST")
+      total += data.length
+      if (total > 10 * 1024 * 1024) throw new Error("AUTONOMOUS_ARTIFACT_LIMIT")
+      const artifactPath = artifactDirectory + "/" + index + ".data"
+      await writeFile(join(this.snapshotRoot, artifactPath), data, { flag: "wx", mode: 0o600 })
+      files.push({ path: artifactPath, sha256: item.afterHash, size: data.length })
+    }
+    const manifestJson = canonicalJson({ kind: "candidate", files, dependencies: [] })
+    const subject: SubjectRef & { kind: "candidate" } = {
+      kind: "candidate", id: "candidate:" + input.candidateId, revision: input.revision, sha256: digest(manifestJson),
+    }
+    if (this.subjects.has(subject.id)) throw new Error("AUTONOMOUS_CANDIDATE_DUPLICATE")
+    const stored = frozen({ subject, manifestJson, origin: candidateWorkspace })
+    this.subjects.set(subject.id, stored)
+    this.runtime.registerAutonomousSubject(this.input.sessionID, this.input.runId, subject)
+    return structuredClone(stored)
   }
 
   private async store(kind: SubjectRef["kind"], value: string | Uint8Array, origin?: string): Promise<StoredAutonomousSubject> {

@@ -29,7 +29,12 @@ export class AntigravityCliError extends Error {
     message: string,
     readonly details?: unknown,
   ) {
-    super(message)
+    const detailStr = details
+      ? typeof details === "object"
+        ? JSON.stringify(details)
+        : String(details)
+      : ""
+    super(detailStr ? `${message}: ${detailStr}` : message)
     this.name = "AntigravityCliError"
   }
 }
@@ -71,6 +76,7 @@ interface ExecuteResult {
   output: string
   changedFiles: string[]
   capabilityRevision: string
+  resourceUsage?: { modelTokens: number; costMinorUnits: number }
 }
 
 // These directories are disposable execution state, not candidate artifacts.
@@ -258,7 +264,10 @@ async function discover(): Promise<AntigravityCapabilities> {
   if (models.exitCode !== 0 || capabilities.models.length === 0) {
     throw new AntigravityCliError("AGY_AUTH_REQUIRED", "Antigravity model capabilities are unavailable; authenticate with the official CLI first")
   }
-  return capabilities
+  return {
+    ...capabilities,
+    revision: createHash("sha256").update(capabilities.revision).update("\0autonomous-decision-v1:reported-v1").digest("hex"),
+  }
 }
 
 async function captureChanges(record: ManagedWorkspace, routeWrite: ExecuteInput["routeWrite"]): Promise<string[]> {
@@ -365,6 +374,7 @@ export namespace AntigravityCli {
       throw new AntigravityCliError("AGY_RUN_FAILED", "Antigravity managed execution failed", {
         exitCode: result.exitCode,
         stderr: result.stderr.slice(0, 4000),
+        stdout: result.stdout.slice(0, 2000),
       })
     }
 
@@ -388,11 +398,24 @@ export namespace AntigravityCli {
     ) {
       throw new AntigravityCliError("AGY_RUN_FAILED", "Antigravity did not return a successful terminal result", terminal)
     }
+    const usage = terminalPayload && typeof terminalPayload === "object" && !Array.isArray(terminalPayload)
+      ? (terminalPayload as { usage?: unknown }).usage : undefined
+    const usageRecord = usage && typeof usage === "object" && !Array.isArray(usage)
+      ? usage as Record<string, unknown> : undefined
+    const totalTokens = usageRecord?.total_tokens
+    const resourceUsage = Number.isSafeInteger(totalTokens) && (totalTokens as number) >= 0
+      ? { modelTokens: totalTokens as number, costMinorUnits: 0 }
+      : undefined
+    if (input.phase === "autonomous_decision" && !resourceUsage) {
+      throw new AntigravityCliError("AGY_PROTOCOL_ERROR", "Antigravity autonomous execution did not report token usage")
+    }
     if (mutationPolicy === "forbid") {
-      return { output: terminalPayload.response, changedFiles: [], capabilityRevision: capabilities.revision }
+      return { output: terminalPayload.response, changedFiles: [], capabilityRevision: capabilities.revision,
+        ...(resourceUsage ? { resourceUsage } : {}) }
     }
     const changedFiles = await captureChanges(workspace, input.routeWrite)
-    return { output: terminalPayload.response, changedFiles, capabilityRevision: capabilities.revision }
+    return { output: terminalPayload.response, changedFiles, capabilityRevision: capabilities.revision,
+      ...(resourceUsage ? { resourceUsage } : {}) }
     }
     return executeManaged().finally(async () => {
       if (mutationPolicy === "forbid") await dispose(input.sessionID)

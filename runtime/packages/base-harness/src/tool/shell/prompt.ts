@@ -19,6 +19,9 @@ export function parameterSchema() {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
+    mutation: Schema.optional(Schema.Literal("capture")).annotate({
+      description: "Set to capture when this command is intended to change workspace files. Changes remain isolated until Candidate apply.",
+    }),
   })
 }
 

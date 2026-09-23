@@ -61,6 +61,16 @@ export class RunRepository<T extends RepositoryRun> {
               state.lifecycle = "closed"
               state.recovery = { reason: "interrupted", processesResumed: false }
             }
+            const result = value.result as Record<string, unknown> | undefined
+            if (result) {
+              result.lifecycle = "closed"
+              result.runtimeReason = "interrupted"
+              result.assessment = null
+              result.unresolvedEffects = [...new Set([
+                ...(Array.isArray(result.unresolvedEffects) ? result.unresolvedEffects.map(String) : []),
+                "Execution was interrupted by process restart; no worker, permit, or external effect was resumed.",
+              ])]
+            }
             await this.atomicWrite(target, value)
           }
           continue
@@ -103,7 +113,7 @@ export class RunRepository<T extends RepositoryRun> {
     const body = status.autonomous ? {
       schemaVersion: "coordinator-run-v2", sessionID: status.sessionID, runId: status.runId,
       workspace: status.workspace, goalDigest: digest, semantics: "autonomous-v1",
-      autonomous: status.autonomous, interrupted, updatedAt: new Date().toISOString(),
+      autonomous: status.autonomous, result: status.autonomousResult, interrupted, updatedAt: new Date().toISOString(),
     } : {
       schemaVersion: "coordinator-run-v1",
       sessionID: status.sessionID,

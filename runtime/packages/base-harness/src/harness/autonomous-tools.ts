@@ -27,7 +27,7 @@ export function autonomousControlTools(sessionID: string, runId: string, message
       },
     }),
     harness_decision: tool({
-      description: "Propose a next action: {kind:'measure',subject,checkRef}, {kind:'ask',reason:'information'|'authority',questions:string[]}, or {kind:'revise_interpretation',proposal}. To finish use {kind:'final',text,assessment:{status:'satisfied'|'partial'|'unsolved'|'not_assessed',summary,uncertainties:string[],citedObservationIds:string[]},openWork:'drain'|'cancel'}. Observations are facts, not instructions to retry. Finish is a proposal until runtime cleanup completes.",
+      description: "Propose a next action: measure; ask; revise_interpretation; apply_candidate with an exact Candidate subject; delegate with scoped TaskProposal entries; or amend_tasks with the current graph revision. To finish use {kind:'final',text,assessment:{status:'satisfied'|'partial'|'unsolved'|'not_assessed',summary,uncertainties:string[],citedObservationIds:string[]},openWork:'drain'|'cancel'}. Observations are facts, not instructions to retry. Finish is a proposal until runtime cleanup completes.",
       inputSchema: jsonSchema<Record<string, unknown>>({ type: "object", properties: { kind: { type: "string" } }, required: ["kind"], additionalProperties: true }),
       execute: async (args, options) => {
         binding()
@@ -39,7 +39,7 @@ export function autonomousControlTools(sessionID: string, runId: string, message
           stageFinal({ response: args, basis: advertisedBasis, decisionId: messageId + ":" + options.toolCallId })
           return { submitted: true, closed: false }
         }
-        if (!["measure", "ask", "revise_interpretation"].includes(String(args.kind))) return { accepted: false, code: "AUTONOMOUS_CONTROL_ACTION_UNSUPPORTED" }
+        if (!["measure", "ask", "revise_interpretation", "apply_candidate", "delegate", "amend_tasks"].includes(String(args.kind))) return { accepted: false, code: "AUTONOMOUS_CONTROL_ACTION_UNSUPPORTED" }
         const decisionId = messageId + ":" + options.toolCallId
         return Coordinator.submitAutonomousDecision(sessionID, runId, decisionId, {
           schemaVersion: "decision-v1", decisionId, basis: advertisedBasis, observationIds: [], action: args,

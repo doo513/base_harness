@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,28 @@ def _snapshot_bytes(root: Path, relative: str) -> bytes:
     supported containment adapter rather than silently losing this protection.
     """
     parts = _safe_parts(relative)
+    if sys.platform == "win32":
+        resolved_root = root.resolve()
+        target = (root / Path(*parts)).resolve()
+        try:
+            target.relative_to(resolved_root)
+        except ValueError:
+            raise OSError("snapshot must remain within root")
+        if not target.exists():
+            raise FileNotFoundError(f"snapshot file not found: {relative}")
+        curr = target
+        while curr != resolved_root and curr != curr.parent:
+            if curr.is_symlink():
+                raise OSError("symlink snapshot not permitted")
+            curr = curr.parent
+        st = target.stat(follow_symlinks=False)
+        if not stat.S_ISREG(st.st_mode) or getattr(st, "st_nlink", 1) != 1 or st.st_size > MAX_BYTES:
+            raise OSError("snapshot must be a bounded single-link regular file")
+        data = target.read_bytes()
+        after = target.stat(follow_symlinks=False)
+        if len(data) > MAX_BYTES or st.st_size != after.st_size or st.st_mtime_ns != after.st_mtime_ns:
+            raise OSError("snapshot changed during measurement")
+        return data
     if os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"):
         raise OSError("SNAPSHOT_CONTAINMENT_UNSUPPORTED")
     descriptors: list[int] = []

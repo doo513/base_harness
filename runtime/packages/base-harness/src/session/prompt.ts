@@ -1186,13 +1186,20 @@ const layer = Layer.effect(
           : input.model ?? (yield* currentModel(input.sessionID))
         const contextMessageID = input.messageID ?? MessageID.ascending()
         const planOnly = kernelStatus?.planOnly === true
+        const activeLegacyRun = Boolean(kernelStatus?.runId && !kernelStatus?.autonomous
+          && !["inactive", "ready", "blocked", "failure", "interrupted"].includes(kernelStatus.phase ?? "inactive"))
+        const executionSemantics = planOnly || kernelStatus?.planningState === "plan_ready" || activeLegacyRun
+          ? "legacy"
+          : kernelStatus?.autonomous && kernelStatus.autonomous.lifecycle !== "closed"
+            ? "autonomous-v1"
+            : cfg.kernel?.executionSemantics ?? "autonomous-v1"
         const directive = Orchestration.beginPrompt({
           sessionID: input.sessionID,
           parentSessionID: session.parentID,
           workspace: instance.directory,
           goal,
           mode: cfg.orchestration?.mode,
-          exploration: planOnly || cfg.kernel?.executionSemantics === "autonomous-v1" ? "manual" : cfg.orchestration?.exploration,
+          exploration: planOnly || executionSemantics === "autonomous-v1" ? "manual" : cfg.orchestration?.exploration,
           maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
           model: {
             providerID: selectedModel.providerID,
@@ -1235,7 +1242,7 @@ const layer = Layer.effect(
               maxParallelWorkUnits: cfg.orchestration?.maxParallelWorkUnits,
               trigger: cfg.verification?.trigger,
               defaultDomain: cfg.kernel?.defaultDomain ?? "develop",
-              semantics: kernelStatus?.autonomous && kernelStatus.autonomous.lifecycle !== "closed" ? "autonomous-v1" : cfg.kernel?.executionSemantics,
+              semantics: executionSemantics,
               context: executionContext,
               execution,
               domainExecutor: externalSelection ? {
@@ -1428,7 +1435,7 @@ const layer = Layer.effect(
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
           if (runStatus.autonomous && externalAutonomous) {
-            if (tasks.length) throw new Error("AUTONOMOUS_NESTED_TASK_UNSUPPORTED")
+            if (tasks.length) throw new Error("AUTONOMOUS_IMPLICIT_SUBTASK_UNSUPPORTED")
             step++
             const msg: SessionV1.Assistant = {
               id: MessageID.ascending(), parentID: lastUser.id, role: "assistant", mode: lastUser.agent,
@@ -1512,7 +1519,7 @@ const layer = Layer.effect(
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
 
-          if (runStatus.autonomous && task) throw new Error("AUTONOMOUS_NESTED_TASK_UNSUPPORTED")
+          if (runStatus.autonomous && task) throw new Error("AUTONOMOUS_IMPLICIT_SUBTASK_UNSUPPORTED")
           if (task?.type === "subtask") {
             yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
             continue

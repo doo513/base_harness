@@ -17,16 +17,17 @@
 ## Authority invariants
 
 1. Model, tool, MCP, plugin and subagent output is candidate data.
-2. State-changing tools require an accepted GoalContract.
-3. Tool risk cannot exceed the accepted contract risk.
+2. A state-changing action requires either an accepted legacy GoalContract or a current autonomous AuthorityGrant and Coordinator permit.
+3. Legacy tool risk cannot exceed the accepted contract risk; autonomous effects must remain inside the current operation and resource scope.
 4. The host creates FailureEnvelope values; actor-supplied envelopes are untrusted.
-5. Only the Python verifier may create trusted Evidence and Ready.
+5. Only the legacy Python verifier may create trusted Evidence and Ready. Autonomous v5 measurement creates ObservationReport facts and never Ready.
 6. Verification and protocol failures are fail-closed.
-7. Repair is criterion-scoped and bounded.
+7. Legacy repair is criterion-scoped and bounded. Autonomous follow-up work is selected by the Domain/model within the shared Run budget.
 
 ## Runtime principles
 
 - Keep the agent loop, tool registry and provider registry independent of the CLI.
+- New ordinary Runs use `autonomous-v1`; `kernel.executionSemantics: "legacy"` keeps the GoalContract and Ready pipeline.
 - Provider capabilities come from provider responses or explicit provider configuration, never model-name guessing.
 - Plugins are loaded only from explicit trusted paths.
 - MCP tools pass through the same ToolRegistry and Kernel gates as built-in tools.

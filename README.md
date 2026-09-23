@@ -8,18 +8,19 @@ with a bundled, source-derived execution Host and TUI.
 ```text
 TUI / headless CLI
     -> Host API
-    -> KernelHost: domain, contract preflight, planning, questions
-    -> Coordinator: runs, scopes, workers, repair, completion
+    -> KernelHost: domain, intent/authority binding, questions
+    -> Coordinator: runs, recursive tasks, shared budget, completion
     -> execution adapters: model gateway, files, shell, MCP
     -> Candidate / Overlay
-    -> independent Python verifier (wire protocol v4)
-    -> verified commit / scoped repair / root Ready
+    -> Python v5 measurement: immutable observations
+    -> model assessment + runtime reason + Candidate disposition
 ```
 
 The Host owns authentication, provider invocation, tool execution and verification.
 The TUI requests actions and renders the same Host status as headless execution.
-A model response, plan review or successful tool exit is not itself Ready.
-Claim-specific predicates are retained when proposals reach the verifier.
+A model assessment, observation or successful tool exit is not legacy Ready.
+Set `kernel.executionSemantics` to `legacy` to use the GoalContract, scoped
+repair and Python v4 Ready pipeline.
 
 The former minimal `runtime/src` experiment is archived under
 `runtime/experiments/minimal-v3`. It is not an alternate product runtime.
@@ -56,6 +57,14 @@ verification, orchestration and domain defaults but no credentials or assumed
 model IDs. The retired experiment's plural `providers` configuration is not
 the Host's configuration format.
 
+New ordinary Runs default to `autonomous-v1`. Develop Runs request the existing
+edit, shell and task permissions, keep changes in Candidate workspaces, and
+apply them only after an explicit admitted `apply_candidate`. Headless exit
+codes are 0 for a requested `satisfied` model assessment, 2 for requested
+`partial`, `unsolved` or `not_assessed` results, and 1 for runtime failure
+or interruption. Structured status keeps the assessment, observations, gates
+and runtime reason separate.
+
 ## Interaction and authority
 
 - Model selection, authentication and MCP management use the bundled TUI and Host.
@@ -64,8 +73,10 @@ the Host's configuration format.
 - `/goal`, `/verify`, `/evidence` and `/harness` expose Host-owned state.
 - Provider reasoning options belong to the selected provider/model capability;
   the Kernel must not guess effort names.
-- Worker changes stay in Overlay until the verifier attests the same candidate
-  ID, revision and patch hash, and all base hashes still match.
+- Autonomous direct and child changes stay in Overlay until an explicit
+  Candidate apply rechecks the current grant, exact bytes and baseline.
+- Legacy worker changes stay in Overlay until the v4 verifier attests the same
+  candidate ID, revision and patch hash.
 - A verifier, protocol or isolation failure must not produce Ready.
 
 ## Provenance and current validation

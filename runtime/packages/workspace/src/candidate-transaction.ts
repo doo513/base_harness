@@ -5,7 +5,8 @@ import path from "node:path"
 export interface CandidateFileChange {
   path: string
   before: Uint8Array | null
-  after: Uint8Array
+  /** Null is an explicit deletion. */
+  after: Uint8Array | null
   mode: number
 }
 
@@ -105,7 +106,7 @@ export async function publishCandidateFiles(
     for (const entry of entries) {
       await assertCurrent(entry.path, entry.beforeHash)
       await ensureDirectory(path.dirname(entry.path))
-      await writeExclusive(entry.temporary, entry.after, entry.mode, true)
+      if (entry.after !== null) await writeExclusive(entry.temporary, entry.after, entry.mode, true)
       if (entry.backup && entry.before) await writeExclusive(entry.backup, entry.before, 0o600)
     }
     await writeExclusive(path.join(options.journal, "manifest.json"), Buffer.from(JSON.stringify({
@@ -118,9 +119,13 @@ export async function publishCandidateFiles(
 
     for (const entry of entries) {
       await assertCurrent(entry.path, entry.beforeHash)
-      await assertCurrent(entry.temporary, entry.afterHash)
-      await io.rename(entry.temporary, entry.path)
-      temporary.delete(entry.temporary)
+      if (entry.after === null) {
+        await io.rm(entry.path)
+      } else {
+        await assertCurrent(entry.temporary, entry.afterHash)
+        await io.rename(entry.temporary, entry.path)
+        temporary.delete(entry.temporary)
+      }
       applied.push(entry)
     }
     for (const entry of entries) await assertCurrent(entry.path, entry.afterHash)

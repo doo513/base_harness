@@ -5,6 +5,7 @@ import { AutonomousRun, type AutonomousRunPorts, type AutonomousRunSetup } from 
 const ref = (id: string, revision = 1) => ({ id, revision, sha256: "a".repeat(64) })
 const report: SubjectRef & { kind: "report" } = { ...ref("report"), kind: "report" }
 const source: SubjectRef = { ...ref("source"), kind: "source" }
+const candidate: SubjectRef & { kind: "candidate" } = { ...ref("candidate"), kind: "candidate" }
 const zero = { modelTokens: 0, costMinorUnits: 0 }
 
 function fixture(options: { ports?: Partial<AutonomousRunPorts>; setup?: Partial<AutonomousRunSetup>; clock?: () => number; preparing?: boolean } = {}) {
@@ -99,6 +100,220 @@ test("explicit missing gate refuses satisfied but permits partial termination", 
   expect(run.snapshot().lifecycle).toBe("active")
   expect((await run.submit(decision("partial", finish()))).accepted).toBe(true)
   expect(run.snapshot().completion?.gates[0]?.state).toBe("unknown")
+})
+
+const candidateSeal = () => ({
+  candidate,
+  taskId: "root",
+  receipt: {
+    receiptId: "receipt",
+    runId: "run",
+    authorityRef: ref("grant"),
+    candidate,
+    baselineHash: "c".repeat(64),
+    patchHash: "d".repeat(64),
+  },
+  files: [{ path: "/work/file", beforeHash: "e".repeat(64), afterHash: "f".repeat(64) }],
+})
+
+test("a failed observation does not become an implicit apply gate", async () => {
+  const now = Date.now()
+  const { run, decision } = fixture({
+    setup: {
+      subjects: [source, report, candidate],
+      authority: { schemaVersion: "authority-v1", ref: ref("grant"), runId: "run",
+        expiresAt: new Date(now + 120_000).toISOString(),
+        provenanceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }],
+        capabilities: [
+          { operation: "read", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "publish", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+        ] },
+      checks: [{ schemaVersion: "check-spec-v1", ref: ref("candidate-check"), author: "model",
+        executorId: "python-measurement", parameters: {}, supportedSubjects: ["candidate"],
+        requiredCapabilities: ["read"], timeoutMs: 1000 }],
+    },
+    ports: {
+      resolveEffects: async (action) => action.kind === "invoke"
+        ? [{ operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work/file" }] }]
+        : action.kind === "apply_candidate"
+          ? [{ operation: "publish", targets: [{ kind: "workspace_path", selector: "/work/file" }] }]
+          : [{ operation: "read", targets: [{ kind: "workspace_path", selector: "/work/file" }] }],
+      beginMutation: async () => {},
+      sealCandidate: async () => candidateSeal(),
+      measure: async (proposal) => ({
+        schemaVersion: "observation-v1", observationId: "candidate-failed", requestId: proposal.decisionId,
+        runId: "run", taskId: "root", subject: candidate, checkRef: ref("candidate-check"),
+        environmentHash: "b".repeat(64), startedAt: new Date(now).toISOString(), finishedAt: new Date(now).toISOString(),
+        producer: { kind: "verifier", id: "python-measurement", revision: "5" }, artifacts: [], limitations: [],
+        result: { execution: "completed", findings: [{ kind: "comparison", name: "test", operator: "equals",
+          expected: 0, observed: 1, result: "fail" }] },
+      }),
+      authenticates: () => true,
+      applyCandidate: async () => ({ candidate, state: "applied", unresolvedEffects: [] }),
+    },
+  })
+  expect((await run.submit(decision("mutate", { kind: "invoke", toolId: "write", arguments: {} }))).accepted).toBe(true)
+  expect((await run.submit(decision("measure-candidate", { kind: "measure", subject: candidate,
+    checkRef: ref("candidate-check") }))).accepted).toBe(true)
+  expect((await run.submit(decision("apply-failed-observation", { kind: "apply_candidate", candidate }))).accepted).toBe(true)
+  expect(run.snapshot().candidates[0]?.state).toBe("applied")
+  await run.terminate("cancelled")
+})
+
+test("an explicit failed apply gate retains the Candidate and permits a partial finish", async () => {
+  const { run, decision, finish } = fixture({
+    setup: {
+      subjects: [source, report, candidate],
+      authority: { schemaVersion: "authority-v1", ref: ref("grant"), runId: "run",
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        provenanceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }],
+        capabilities: [
+          { operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "publish", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+        ] },
+      gates: [{ id: "apply-required", source: "explicit_user",
+        sourceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }], action: "apply_candidate",
+        checkRef: ref("candidate-check"), requiredComparisons: ["test"] }],
+      gateEvidence: { "apply-required": { subject: candidate, environmentHash: "b".repeat(64) } },
+    },
+    ports: {
+      resolveEffects: async (action) => [{
+        operation: action.kind === "apply_candidate" ? "publish" : "mutate",
+        targets: [{ kind: "workspace_path", selector: "/work/file" }],
+      }],
+      beginMutation: async () => {},
+      sealCandidate: async () => candidateSeal(),
+      applyCandidate: async () => ({ candidate, state: "applied", unresolvedEffects: [] }),
+    },
+  })
+  await run.submit(decision("mutate", { kind: "invoke", toolId: "write", arguments: {} }))
+  expect(await run.submit(decision("blocked-apply", { kind: "apply_candidate", candidate })))
+    .toEqual({ accepted: false, code: "AUTONOMOUS_GATE_UNSATISFIED" })
+  expect(run.snapshot().candidates[0]?.state).toBe("sealed")
+  expect((await run.submit(decision("partial-with-retained", finish()))).accepted).toBe(true)
+  expect(run.snapshot().completion?.candidateDispositions[0]?.state).toBe("retained")
+})
+
+test("publication recovery_required closes as runtime_fault and preserves unresolved effects", async () => {
+  const { run, decision } = fixture({
+    setup: {
+      subjects: [source, report, candidate],
+      authority: { schemaVersion: "authority-v1", ref: ref("grant"), runId: "run",
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        provenanceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }],
+        capabilities: [
+          { operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "publish", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+        ] },
+    },
+    ports: {
+      resolveEffects: async (action) => [{
+        operation: action.kind === "apply_candidate" ? "publish" : "mutate",
+        targets: [{ kind: "workspace_path", selector: "/work/file" }],
+      }],
+      beginMutation: async () => {},
+      sealCandidate: async () => candidateSeal(),
+      applyCandidate: async () => ({ candidate, state: "recovery_required", journalPath: "/state/journal.json",
+        unresolvedEffects: ["rollback incomplete for /work/file"] }),
+    },
+  })
+  await run.submit(decision("mutate", { kind: "invoke", toolId: "write", arguments: {} }))
+  expect(await run.submit(decision("apply-recovery", { kind: "apply_candidate", candidate })))
+    .toEqual({ accepted: false, code: "AUTONOMOUS_CANDIDATE_RECOVERY_REQUIRED" })
+  expect(run.snapshot()).toMatchObject({
+    lifecycle: "closed",
+    candidates: [{ state: "recovery_required", journalPath: "/state/journal.json" }],
+    completion: { reason: "runtime_fault", candidateDispositions: [{ state: "recovery_required" }],
+      unresolvedEffects: ["rollback incomplete for /work/file"] },
+  })
+})
+
+test("finish drain rejects its old basis when an admitted apply changes Candidate state", async () => {
+  let started!: () => void
+  let release!: () => void
+  const applying = new Promise<void>((resolve) => { started = resolve })
+  const { run, decision, finish } = fixture({
+    setup: {
+      subjects: [source, report, candidate],
+      authority: { schemaVersion: "authority-v1", ref: ref("grant"), runId: "run",
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        provenanceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }],
+        capabilities: [
+          { operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "publish", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+        ] },
+    },
+    ports: {
+      resolveEffects: async (action) => [{
+        operation: action.kind === "apply_candidate" ? "publish" : "mutate",
+        targets: [{ kind: "workspace_path", selector: "/work/file" }],
+      }],
+      beginMutation: async () => {},
+      sealCandidate: async () => candidateSeal(),
+      applyCandidate: async () => {
+        started()
+        await new Promise<void>((resolve) => { release = resolve })
+        return { candidate, state: "applied", unresolvedEffects: [] }
+      },
+    },
+  })
+  await run.submit(decision("mutate", { kind: "invoke", toolId: "write", arguments: {} }))
+  const apply = run.submit(decision("apply-running", { kind: "apply_candidate", candidate }))
+  await applying
+  const close = run.submit(decision("finish-during-apply", finish()))
+  await Promise.resolve()
+  expect(run.snapshot().candidates[0]?.state).toBe("applying")
+  release()
+  expect((await apply).accepted).toBe(true)
+  expect(await close).toEqual({ accepted: false, code: "FINISH_BASIS_CHANGED" })
+  expect(run.snapshot()).toMatchObject({ lifecycle: "active", candidates: [{ state: "applied" }] })
+  expect(run.snapshot().completion).toBeUndefined()
+  await run.terminate("cancelled")
+})
+
+test("cleanup timeout never records an applying Candidate as normally settled", async () => {
+  let started!: () => void
+  let release!: () => void
+  const applying = new Promise<void>((resolve) => { started = resolve })
+  const { run, decision } = fixture({
+    setup: {
+      cleanupTimeoutMs: 10,
+      subjects: [source, report, candidate],
+      authority: { schemaVersion: "authority-v1", ref: ref("grant"), runId: "run",
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        provenanceRefs: [{ sourceId: "user", sha256: "a".repeat(64) }],
+        capabilities: [
+          { operation: "mutate", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+          { operation: "publish", targets: [{ kind: "workspace_path", selector: "/work" }], exclusions: [] },
+        ] },
+    },
+    ports: {
+      resolveEffects: async (action) => [{
+        operation: action.kind === "apply_candidate" ? "publish" : "mutate",
+        targets: [{ kind: "workspace_path", selector: "/work/file" }],
+      }],
+      beginMutation: async () => {},
+      sealCandidate: async () => candidateSeal(),
+      applyCandidate: async () => {
+        started()
+        await new Promise<void>((resolve) => { release = resolve })
+        return { candidate, state: "applied", unresolvedEffects: [] }
+      },
+    },
+  })
+  await run.submit(decision("mutate", { kind: "invoke", toolId: "write", arguments: {} }))
+  const apply = run.submit(decision("apply-ignores-cancel", { kind: "apply_candidate", candidate }))
+  await applying
+  const completion = await run.terminate("cancelled")
+  expect(completion).toMatchObject({
+    reason: "runtime_fault",
+    candidateDispositions: [{ state: "recovery_required" }],
+  })
+  expect(completion.unresolvedEffects).toContain("Cleanup not confirmed: decision:apply-ignores-cancel")
+  release()
+  expect(await apply).toEqual({ accepted: false, code: "AUTONOMOUS_STALE_RESULT" })
+  expect(run.snapshot().candidates[0]?.state).toBe("recovery_required")
 })
 
 test("duplicate concurrent decisions dispatch once; changed payload is a conflict", async () => {

@@ -1,0 +1,50 @@
+# Autonomous M4–M5 final verification — 2026-09-22
+
+Environment: WSL checkout, Bun 1.4.0, Python 3.
+
+## Passing checks
+
+- `runtime/node_modules/.bin/tsc -p docs/design/autonomous-domain-core/tsconfig.json`: pass.
+- Related package typechecks: domain-contracts, domain, kernel, kernel-host, coordinator, workspace, verification, security, base-harness, tui: pass.
+- `bun run check:harness-boundaries`: `Harness module boundaries are valid.`
+- `BASE_HARNESS_PYTHON=python3 bun run test:harness`: 465 pass, 0 fail, 2,799 assertions.
+- App `bun test ./test/harness`: 69 pass, 0 fail, 305 assertions.
+- Python `pytest tests/test_verified_sidecar.py tests/test_measurement_v5.py`: 45 pass.
+- Coordinator autonomous runtime/run/delegation focused set: 45 pass after A31/A32.
+- CLI result policy: 7 pass.
+- TUI full package with isolated XDG state: 297 pass, 1 skip, 0 fail.
+- HTTP OpenAPI coverage: 213 pass, missing 0, extra 0.
+- HTTP auth: 213 pass, 0 fail.
+- HTTP Harness Effect routes: 5 pass, 0 fail.
+- Built-in controlled Antigravity process: 1 pass, capability `autonomous-decision-v1`, reported token usage.
+
+## Actual adapter and product execution
+
+- Codex app-server discovery returned models including `gpt-5.6-sol`, `gpt-6-astra`, `gpt-5.6-terra`, `gpt-5.6-luna` and advertised `autonomous-decision-v1/reported-v1`.
+- Actual headless command used the default autonomous semantics, General domain, HTTP Host route, Codex app-server and `gpt-5.6-luna`.
+- The Run closed with `runtimeReason=requested`, `assessment.status=not_assessed`, zero observations/Candidates, `readyEligible=false`, token usage 18,681, and process exit code 2.
+- A prior invocation with a missing capabilityRevision failed explicitly; the HTTP execution selection now discovers and pins the exact backend revision before opening the Run.
+- Local AGY discovery currently returns `AGY_AUTH_REQUIRED`; it does not fall back to legacy.
+
+## Product behavior exercised
+
+- direct edit → sealed Candidate → Python file measurement → explicit apply
+- write baseline conflict preserving newer user bytes
+- permission shrink invalidating pending apply
+- isolated shell mutation capture and apply
+- apply_patch update/move/delete and apply
+- actual local child and nested grandchild model mutation through the same Candidate path
+- controlled external decisions performing write/apply/final
+- plain and malformed external final normalization to not_assessed
+- explicit apply gate and ungated failed observation behavior
+- publication recovery_required, finish/apply drain race, applying cleanup timeout
+- cold restart interrupted history and no execution resume
+- CLI exit 0/1/2 policy, TUI presentation, HTTP status/control/verify/cancel/plan routes
+
+## Preserved baselines outside M4–M5
+
+- Full monorepo `turbo typecheck`: existing Core errors in `test/provider-mistral.test.ts` (ReadableStream async iterator lib) and `http-recorder/src/internal-effect.ts` (`Headers.entries` lib).
+- Full HTTP Effect: 210 pass, 3 existing unrelated failures: isolated auth-file fixture set/remove and PTY connect-token expected 404 vs observed 403.
+
+Environment-only reruns:
+- Python/Bun pipe tests and local listen tests require execution outside the managed sandbox; sandboxed runs fail with EPERM `send` or `listen`. The same commands pass outside that restriction.

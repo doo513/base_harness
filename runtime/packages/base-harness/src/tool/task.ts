@@ -258,19 +258,23 @@ export const TaskTool = Tool.define(
         (Coordinator.status(ctx.sessionID) as { execution?: ExecutionSelection }).execution ??
         AntigravityCli.selectionFromEnvironment()
       const managedSelection = params.work_unit_id ? normalizeBackendSelection(execution) : undefined
-      const msg = managedSelection
+      const coordinatorModel = ctx.extra?.coordinatorDispatch === true && ctx.extra?.modelSelection
+        ? requireExecutionModel(ctx.extra.modelSelection)
+        : undefined
+      const msg = managedSelection || coordinatorModel
         ? undefined
         : yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
             Effect.provideService(Database.Service, database),
             Effect.orDie,
           )
-      if (!managedSelection && (!msg || msg.info.role !== "assistant")) {
+      if (!managedSelection && !coordinatorModel && (!msg || msg.info.role !== "assistant")) {
         return yield* Effect.fail(new Error("Not an assistant message"))
       }
-      const variant = msg?.info.role === "assistant" ? msg.info.variant : undefined
+      const variant = msg?.info.role === "assistant" ? msg.info.variant
+        : typeof ctx.extra?.variant === "string" ? ctx.extra.variant : undefined
       const selectedModel = msg?.info.role === "assistant"
         ? { modelID: msg.info.modelID, providerID: msg.info.providerID }
-        : {
+        : coordinatorModel ?? {
             modelID: ModelV2.ID.make(managedSelection!.modelId),
             providerID: ProviderV2.ID.make(`external/${managedSelection!.backendId}`),
           }
@@ -576,7 +580,7 @@ export const TaskTool = Tool.define(
             scopeID: request.sessionID,
             phase: "meta_review",
             workspace,
-            prompt,
+            prompt: "Respond with ONLY a raw JSON object matching the base-harness-meta-review-v1 schema below. Do not wrap in markdown codeblocks and do not include commentary.\n\nCRITICAL RULES:\n1. If there are NO blocking issues (e.g. all issues are severity 'warning', or there are no issues), outcome MUST be 'pass'. Returning 'revise' without at least one 'blocking' issue is an illegal protocol violation.\n2. Predicate type 'command_exit' with expectedExitCode 0 is executed by standard harness test runners (unittest/pytest); omission of a command string in the predicate is NOT a blocking defect.\n\n" + prompt,
             selection,
             mutationPolicy: "forbid",
             routeWrite: async () => {
@@ -631,8 +635,9 @@ export const TaskTool = Tool.define(
                 "Allowed read paths (relative to the workspace): " + JSON.stringify(request.unit.readSet),
                 "Allowed write paths (relative to the workspace): " + JSON.stringify(request.unit.writeSet),
                 "Do not create, modify, delete, or rename any path outside the allowed write paths. Do not implement another WorkUnit's files, even if the user goal mentions them.",
-                "Do not install packages or create virtual environments, dependency directories, caches, or generated files (for example Python, venv, .venv, node_modules, __pycache__, or .pytest_cache) inside the workspace. Use the supplied runtime and existing dependencies; only the declared write paths may remain as output.",
-                request.repairPrompt ?? request.unit.instructions,
+                request.repairPrompt
+                  ? `${request.unit.instructions}\n\n[REPAIR REQUIRED]:\n${request.repairPrompt}`
+                  : request.unit.instructions,
               ].join("\n\n"),
               subagent_type: request.unit.agentType ?? "general",
               task_id: request.taskID,

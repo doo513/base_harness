@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 try:
     from datetime import UTC, datetime
 except ImportError:  # Python 3.10 compatibility for the bundled/local sidecar.
@@ -803,6 +803,16 @@ class VerificationEngine:
                     ("execution", "behavior"),
                 )
             )
+        tests_path = run.workspace / "tests"
+        if tests_path.is_dir() and any(tests_path.rglob("test*.py")):
+            automatic.append(
+                (
+                    "auto-unittest",
+                    (sys.executable, "-m", "unittest", "discover", "-s", "."),
+                    "behavioral",
+                    ("execution", "behavior"),
+                )
+            )
         for verifier_id, command, strength, claim_kinds in automatic:
             if verifier_id in specs:
                 continue
@@ -1288,15 +1298,28 @@ class VerificationEngine:
                         pass
                     if (base["sha256"] if base else None) != item["beforeHash"]:
                         raise CandidateIntegrityError("original workspace no longer matches candidate beforeHash")
-                observed = self._read_candidate_file(
-                    snapshot / relative, original if committed else self.state_root,
-                )
-                if observed["sha256"] != item["afterHash"]:
-                    raise CandidateIntegrityError("candidate bytes do not match manifest afterHash")
-                observations.append({
-                    "path": str(logical), **observed,
-                    "baseIdentity": base["identity"] if base else None,
-                })
+                if item["afterHash"] is None:
+                    try:
+                        self._read_candidate_file(
+                            snapshot / relative, original if committed else self.state_root,
+                        )
+                    except FileNotFoundError:
+                        observations.append({
+                            "path": str(logical), "deleted": True,
+                            "baseIdentity": base["identity"] if base else None,
+                        })
+                    else:
+                        raise CandidateIntegrityError("deleted candidate path still exists")
+                else:
+                    observed = self._read_candidate_file(
+                        snapshot / relative, original if committed else self.state_root,
+                    )
+                    if observed["sha256"] != item["afterHash"]:
+                        raise CandidateIntegrityError("candidate bytes do not match manifest afterHash")
+                    observations.append({
+                        "path": str(logical), **observed,
+                        "baseIdentity": base["identity"] if base else None,
+                    })
             return observations
         except CandidateIntegrityError:
             raise
@@ -1397,7 +1420,7 @@ class VerificationEngine:
                 shell=False,
                 check=False,
             )
-            return {
+            result = {
                 "verifierId": spec.verifier_id,
                 "methodId": spec.method_id,
                 "command": list(spec.command or ()),
@@ -1408,6 +1431,11 @@ class VerificationEngine:
                 "durationMs": round((time.monotonic() - started) * 1000),
                 "attestation": spec.attestation(),
             }
+            if spec.verifier_id == "auto-unittest":
+                discovered = re.search(r"Ran\s+(\d+)\s+tests?\b", completed.stdout + "\n" + completed.stderr)
+                if discovered is None or int(discovered.group(1)) == 0:
+                    result["error"] = "auto-unittest did not discover any tests"
+            return result
         except subprocess.TimeoutExpired as error:
             return {
                 "verifierId": spec.verifier_id,
@@ -1902,8 +1930,10 @@ class VerificationEngine:
                 after = item.get("afterHash")
                 if before is not None and (not isinstance(before, str) or not re.fullmatch(r"[0-9a-f]{64}", before)):
                     raise ProtocolError("candidate beforeHash is invalid")
-                if not isinstance(after, str) or not re.fullmatch(r"[0-9a-f]{64}", after):
+                if after is not None and (not isinstance(after, str) or not re.fullmatch(r"[0-9a-f]{64}", after)):
                     raise ProtocolError("candidate afterHash is invalid")
+                if before is None and after is None:
+                    raise ProtocolError("candidate file cannot be absent before and after")
                 normalized_files.append({"path": item["path"], "beforeHash": before, "afterHash": after})
             expected_hash = canonical_hash(
                 {
@@ -2201,7 +2231,6 @@ class VerificationEngine:
                 repairable=all(item.get("failureKind") in repairable_kinds for item in failures),
             )
 
-        verifier_specs = self._verifiers(run)
         revoked = {
             str(item)
             for item in self._verification_config(run).get("revokedVerifiers", [])
@@ -2217,10 +2246,7 @@ class VerificationEngine:
         candidate_workspace = None if is_root or scope.candidate is None else scope.candidate.get("candidateWorkspace")
         if candidate_workspace:
             run.workspace = Path(str(candidate_workspace)).resolve()
-            verifier_specs = {
-                key: replace(spec, cwd=run.workspace / spec.cwd.relative_to(original_workspace))
-                for key, spec in verifier_specs.items()
-            }
+        verifier_specs = self._verifiers(run)
         binding_failure: CandidateIntegrityError | None = None
         candidate_binding = None
         try:
@@ -2286,13 +2312,19 @@ class VerificationEngine:
                 not requested_criterion_ids
                 or criterion["criterionId"] in requested_criterion_ids
             )
-            and all(item in selected_claim_ids for item in criterion["claimIds"])
+            and (
+                all(item in selected_claim_ids for item in criterion["claimIds"])
+                if is_root else
+                any(item in selected_claim_ids for item in criterion["claimIds"])
+            )
         ]
         if not selected_criteria:
             raise ProtocolError("verification target does not cover a complete Criterion")
         current_criterion_results = []
         for criterion in selected_criteria:
-            linked = [result_by_claim[item] for item in criterion["claimIds"]]
+            linked = [result_by_claim[item] for item in criterion["claimIds"] if item in result_by_claim]
+            if not linked:
+                continue
             if all(item["result"] == "verified" and item["coverage"] == "full" for item in linked):
                 result = "verified"
                 coverage = "full"

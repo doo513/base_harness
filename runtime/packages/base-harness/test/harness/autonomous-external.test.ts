@@ -112,6 +112,63 @@ it.instance("controlled external process uses the pinned autonomous decision pro
   expect(status.readyEligible).toBe(false)
 }), { git: true }, 120000)
 
+it.instance("controlled external decisions stage and explicitly apply a Develop Candidate", () => Effect.gen(function* () {
+  const workspace = (yield* TestInstance).directory
+  const fs = yield* FSUtil.Service
+  const target = join(workspace, "external-change.txt")
+  yield* fs.writeFileString(target, "before\n")
+  yield* fs.writeFileString(join(workspace, "base-harness.jsonc"), JSON.stringify({
+    permission: { "*": "allow" },
+    kernel: { defaultDomain: "develop", autonomous: { maxActions: 12, timeoutMs: 120_000 } },
+  }))
+  let step = 0
+  const backend: ExecutionBackend = {
+    id: "autonomous-controlled-mutation", kind: "agent_runtime",
+    async discover() { return { adapterID: this.id, backendId: this.id, kind: this.kind, revision: "mutation-r1",
+      models: ["fixture-model"], reasoningEfforts: [],
+      autonomousDecision: { protocol: "autonomous-decision-v1", resourceUsage: "reported-v1" } } },
+    async execute(input) {
+      const request = JSON.parse(input.prompt)
+      let response: unknown
+      if (step++ === 0) {
+        response = { kind: "invoke", toolId: "write", arguments: { filePath: target, content: "after\n" } }
+      } else if (step === 2) {
+        const candidate = request.state.candidates[0]?.candidate
+        if (!candidate || request.state.candidates[0]?.state !== "sealed") throw new Error("sealed Candidate missing")
+        response = { kind: "apply_candidate", candidate }
+      } else if (step === 3) {
+        if (request.state.candidates[0]?.state !== "applied") throw new Error("applied Candidate missing")
+        response = { kind: "final", text: "External Candidate applied.", openWork: "drain",
+          assessment: { status: "satisfied", summary: "Candidate applied", uncertainties: [], citedObservationIds: [] } }
+      } else throw new Error("unexpected external mutation turn")
+      return { output: JSON.stringify({ schemaVersion: "autonomous-backend-response-v1", kind: "decision", response }),
+        changedFiles: [], capabilityRevision: "mutation-r1", backendId: this.id, modelId: input.selection.modelId,
+        nativeOptions: input.selection.nativeOptions, resourceUsage: { modelTokens: 5, costMinorUnits: 0 } }
+    },
+  }
+  ExecutionBackends.register(backend)
+  const session = yield* (yield* Session.Service).create({ title: "Autonomous external mutation" })
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.closeWorkspace(workspace)))
+  yield* Effect.promise(() => Coordinator.control(session.id, { type: "execution.select", selection: {
+    adapterID: backend.id, modelID: "fixture-model", capabilityRevision: "mutation-r1", kind: "agent_runtime",
+  } }, undefined, workspace))
+  const result = yield* (yield* SessionPrompt.Service).prompt({ sessionID: session.id, agent: "build",
+    parts: [{ type: "text", text: "Change external-change.txt and explicitly apply the Candidate." }] })
+  expect(result.parts.find((part) => part.type === "text")?.text).toBe("External Candidate applied.")
+  expect(yield* fs.readFileString(target)).toBe("after\n")
+  expect(Coordinator.status(session.id).autonomous?.candidates[0]).toMatchObject({ state: "applied" })
+  expect(Coordinator.status(session.id).autonomous?.completion).toMatchObject({
+    reason: "requested", assessment: { status: "satisfied" },
+  })
+  expect(Coordinator.status(session.id).autonomousResult).toMatchObject({
+    schemaVersion: "autonomous-product-result-v1",
+    lifecycle: "closed",
+    runtimeReason: "requested",
+    assessment: { status: "satisfied" },
+    candidates: [{ state: "applied" }],
+  })
+}), { git: true }, 120000)
+
 it.instance("plain external output closes as not_assessed without inferring success words", () => Effect.gen(function* () {
   const workspace = (yield* TestInstance).directory
   const fs = yield* FSUtil.Service
@@ -140,6 +197,38 @@ it.instance("plain external output closes as not_assessed without inferring succ
     reason: "requested", assessment: { status: "not_assessed" },
   })
   expect(Coordinator.status(session.id).readyEligible).toBe(false)
+}), { git: true }, 120000)
+
+it.instance("malformed structured final preserves only report text as not_assessed", () => Effect.gen(function* () {
+  const workspace = (yield* TestInstance).directory
+  const fs = yield* FSUtil.Service
+  yield* fs.writeFileString(join(workspace, "base-harness.jsonc"), JSON.stringify({
+    permission: { "*": "allow" }, kernel: { defaultDomain: "general", executionSemantics: "autonomous-v1" },
+  }))
+  const backend: ExecutionBackend = {
+    id: "autonomous-malformed-final", kind: "agent_runtime",
+    async discover() { return { adapterID: this.id, backendId: this.id, kind: this.kind, revision: "malformed-r1",
+      models: ["fixture-model"], reasoningEfforts: [],
+      autonomousDecision: { protocol: "autonomous-decision-v1", resourceUsage: "reported-v1" } } },
+    async execute(input) { return { output: JSON.stringify({
+      schemaVersion: "autonomous-backend-response-v1", kind: "decision",
+      response: { kind: "final", text: "Useful prose", assessment: "success", openWork: "later" },
+    }), changedFiles: [], capabilityRevision: "malformed-r1",
+      backendId: this.id, modelId: input.selection.modelId, nativeOptions: input.selection.nativeOptions,
+      resourceUsage: { modelTokens: 4, costMinorUnits: 0 } } },
+  }
+  ExecutionBackends.register(backend)
+  const session = yield* (yield* Session.Service).create({ title: "Malformed external final" })
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.closeWorkspace(workspace)))
+  yield* Effect.promise(() => Coordinator.control(session.id, { type: "execution.select", selection: {
+    adapterID: backend.id, modelID: "fixture-model", capabilityRevision: "malformed-r1", kind: "agent_runtime",
+  } }, undefined, workspace))
+  const result = yield* (yield* SessionPrompt.Service).prompt({ sessionID: session.id, agent: "build",
+    parts: [{ type: "text", text: "Return prose." }] })
+  expect(result.parts.find((part) => part.type === "text")?.text).toBe("Useful prose")
+  expect(Coordinator.status(session.id).autonomous?.completion).toMatchObject({
+    reason: "requested", assessment: { status: "not_assessed", summary: "Useful prose" },
+  })
 }), { git: true }, 120000)
 
 it.instance("an external response cannot replace the basis captured before execution", () => Effect.gen(function* () {

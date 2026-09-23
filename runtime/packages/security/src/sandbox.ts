@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -47,6 +47,18 @@ export interface SandboxRequest {
   cwd: string
   config?: IsolationConfig
   signal?: AbortSignal
+  /** Return an immutable diff of the throwaway workspace. The caller still has
+   * to admit every write and import it through its Candidate overlay. */
+  captureChanges?: boolean
+}
+
+export interface SandboxFileChange {
+  /** Slash-separated path relative to the sandbox workspace. */
+  path: string
+  beforeHash: string | null
+  afterHash: string | null
+  /** Present exactly when afterHash is non-null. */
+  after?: Uint8Array
 }
 
 export interface SandboxResult {
@@ -54,6 +66,7 @@ export interface SandboxResult {
   stdout: string
   stderr: string
   provenance: SandboxProvenance
+  changes?: SandboxFileChange[]
 }
 
 export class SandboxError extends Error {
@@ -200,6 +213,46 @@ exec chroot "$root" /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp/
 `
 
 const safeId = () => randomUUID().replaceAll("-", "")
+const fileDigest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
+
+async function captureWorkspaceChanges(beforeRoot: string, afterRoot: string, maxBytes: number): Promise<SandboxFileChange[]> {
+  type Entry = { hash: string; bytes: Buffer }
+  const scan = async (root: string) => {
+    const files = new Map<string, Entry>()
+    const links = new Map<string, string>()
+    let bytes = 0
+    const visit = async (directory: string): Promise<void> => {
+      for (const item of await fs.readdir(directory, { withFileTypes: true })) {
+        const target = path.join(directory, item.name)
+        const relative = path.relative(root, target).split(path.sep).join("/")
+        const stat = await fs.lstat(target)
+        if (stat.isDirectory()) await visit(target)
+        else if (stat.isSymbolicLink()) links.set(relative, await fs.readlink(target))
+        else if (stat.isFile()) {
+          if (stat.nlink !== 1) throw new SandboxError("SANDBOX_ESCAPE_ATTEMPT", `Sandbox output contains a hard-linked file: ${relative}`)
+          bytes += stat.size
+          if (bytes > maxBytes) throw new SandboxError("SANDBOX_LIMIT_EXCEEDED", "Sandbox captured output exceeds maxInputBytes")
+          const content = await fs.readFile(target)
+          files.set(relative, { hash: fileDigest(content), bytes: content })
+        } else throw new SandboxError("SANDBOX_ESCAPE_ATTEMPT", `Unsupported sandbox output entry: ${relative}`)
+      }
+    }
+    await visit(root)
+    return { files, links }
+  }
+  const [before, after] = await Promise.all([scan(beforeRoot), scan(afterRoot)])
+  if (before.links.size !== after.links.size || [...before.links].some(([key, value]) => after.links.get(key) !== value)) {
+    throw new SandboxError("SANDBOX_ESCAPE_ATTEMPT", "Sandbox commands cannot create, remove, or retarget symbolic links")
+  }
+  const paths = [...new Set([...before.files.keys(), ...after.files.keys()])].sort()
+  return paths.flatMap((relativePath) => {
+    const left = before.files.get(relativePath)
+    const right = after.files.get(relativePath)
+    if (left?.hash === right?.hash) return []
+    return [{ path: relativePath, beforeHash: left?.hash ?? null, afterHash: right?.hash ?? null,
+      ...(right ? { after: new Uint8Array(right.bytes) } : {}) }]
+  })
+}
 
 async function checked(argv: string[], timeoutMs = 30_000) {
   const result = await execute(argv, { timeoutMs, maxOutputBytes: 1024 * 1024 })
@@ -223,6 +276,7 @@ async function wslRun(request: SandboxRequest, policy: SandboxPolicy, root: stri
     throw new SandboxError("SANDBOX_ESCAPE_ATTEMPT", "Sandbox working directory is outside workspace")
   }
   const workdir = relative ? `/workspace/${relative}` : "/workspace"
+  const captured = request.captureChanges ? await fs.mkdtemp(path.join(os.tmpdir(), "base-harness-sandbox-capture-")) : undefined
   try {
     await checked([...prefix, "/bin/mkdir", "-p", workspace, mountRoot])
     await checked([...prefix, "/bin/cp", "-a", "--no-preserve=links", `${source}/.`, workspace], Math.max(30_000, policy.timeoutMs))
@@ -253,6 +307,12 @@ async function wslRun(request: SandboxRequest, policy: SandboxPolicy, root: stri
       ],
       { timeoutMs: policy.timeoutMs, maxOutputBytes: policy.maxOutputBytes, signal: request.signal },
     )
+    let changes: SandboxFileChange[] | undefined
+    if (captured) {
+      const captureTarget = await checked([...prefix, "/usr/bin/wslpath", "-a", captured])
+      await checked([...prefix, "/bin/cp", "-a", "--no-preserve=links", `${workspace}/.`, captureTarget], Math.max(30_000, policy.timeoutMs))
+      changes = await captureWorkspaceChanges(root, captured, policy.maxInputBytes)
+    }
     return {
       exitCode: result.code,
       stdout: result.stdout,
@@ -270,11 +330,13 @@ async function wslRun(request: SandboxRequest, policy: SandboxPolicy, root: stri
         maxOutputBytes: policy.maxOutputBytes,
         inputBytes,
       },
+      ...(changes ? { changes } : {}),
     }
   } finally {
     if (base.startsWith(`${home}/.local/state/base-harness/sandboxes/`)) {
       await execute([...prefix, "/bin/rm", "-rf", "--", base], { timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 }).catch(() => undefined)
     }
+    if (captured) await fs.rm(captured, { recursive: true, force: true })
   }
 }
 
@@ -317,6 +379,9 @@ async function namespaceRun(request: SandboxRequest, policy: SandboxPolicy, root
       ],
       { timeoutMs: policy.timeoutMs, maxOutputBytes: policy.maxOutputBytes, signal: request.signal },
     )
+    const changes = request.captureChanges
+      ? await captureWorkspaceChanges(root, workspace, policy.maxInputBytes)
+      : undefined
     return {
       exitCode: result.code,
       stdout: result.stdout,
@@ -333,6 +398,7 @@ async function namespaceRun(request: SandboxRequest, policy: SandboxPolicy, root
         maxOutputBytes: policy.maxOutputBytes,
         inputBytes,
       },
+      ...(changes ? { changes } : {}),
     }
   } finally {
     await fs.rm(base, { recursive: true, force: true })

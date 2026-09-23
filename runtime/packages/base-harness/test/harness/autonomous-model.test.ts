@@ -97,6 +97,144 @@ it.instance("local model uses the existing loop for native read -> Python observ
   expect(status.readyEligible).toBe(false)
 }), { git: true }, 120000)
 
+it.instance("local model delegates a mutating child through the shared Candidate apply path", () => Effect.gen(function* () {
+  const workspace = (yield* TestInstance).directory
+  const fs = yield* FSUtil.Service
+  const llm = yield* TestLLMServer
+  const target = join(workspace, "delegated.txt")
+  yield* fs.writeFileString(target, "before\n")
+  yield* fs.writeFileString(join(workspace, "base-harness.jsonc"), JSON.stringify({
+    permission: { "*": "allow" },
+    kernel: { defaultDomain: "develop", executionSemantics: "autonomous-v1", autonomous: {
+      maxActions: 24, timeoutMs: 120_000, allowMutation: true, allowDelegation: true,
+      maxParallelTasks: 1, maxTaskDepth: 1, maxTotalTasks: 2,
+    } },
+    provider: { fixture: { name: "Local fixture", id: "fixture", env: [], npm: "@ai-sdk/openai-compatible",
+      options: { apiKey: "fixture-only", baseURL: llm.url }, models: { local: { id: "local", name: "Local fixture", attachment: false,
+        reasoning: false, temperature: false, tool_call: true, release_date: "2025-01-01", limit: { context: 100000, output: 10000 },
+        cost: { input: 0, output: 0 }, options: {} } } } },
+  }))
+  let step = 0
+  yield* llm.respond(({ body }) => {
+    const output = reply().usage({ input: 8, output: 4 })
+    try {
+      switch (step++) {
+        case 0:
+          return output.tool("harness_decision", { kind: "delegate", tasks: [{
+            clientTaskKey: "edit-file", objective: "Change delegated.txt to after followed by a newline.",
+            requestedCapabilities: ["read", "mutate", "publish"],
+            requestedScopes: [{ kind: "workspace_path", selector: workspace }], dependsOn: [],
+          }] })
+        case 1: {
+          const toolNames = ((body.tools ?? []) as Array<{ function?: { name?: string } }>).map((item) => item.function?.name)
+          if (!toolNames.includes("write") || !toolNames.includes("harness_decision")) throw new Error("child mutation tools missing")
+          return output.tool("write", { filePath: target, content: "after\n" })
+        }
+        case 2: {
+          const staged = find(body, (value) => value.candidate?.kind === "candidate" && value.candidateState === "sealed")
+          if (!staged) throw new Error("child Candidate missing")
+          return output.tool("harness_decision", { kind: "apply_candidate", candidate: staged.candidate })
+        }
+        case 3:
+          return output.text("Child change applied.").tool("harness_decision", { kind: "final", text: "Child change applied.",
+            openWork: "drain", assessment: { status: "satisfied", summary: "Child applied its Candidate", uncertainties: [], citedObservationIds: [] } })
+        case 4:
+          return output.text("Delegated change complete.").tool("harness_decision", { kind: "final", text: "Delegated change complete.",
+            openWork: "drain", assessment: { status: "satisfied", summary: "Delegated Candidate applied", uncertainties: [], citedObservationIds: [] } })
+        default: throw new Error("unexpected delegated model turn")
+      }
+    } catch (error) {
+      return httpError(400, { error: { message: error instanceof Error ? error.message : String(error) } })
+    }
+  })
+  const session = yield* (yield* Session.Service).create({ title: "Autonomous delegated mutation" })
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.closeWorkspace(workspace)))
+  const result = yield* (yield* SessionPrompt.Service).prompt({ sessionID: session.id, agent: "build",
+    model: { providerID: ProviderV2.ID.make("fixture"), modelID: ModelV2.ID.make("local") },
+    parts: [{ type: "text", text: "Delegate changing delegated.txt and apply the child Candidate." }] })
+  const status = Coordinator.status(session.id)
+  const text = result.parts.find((part) => part.type === "text")?.text
+  if (!text?.includes("Delegated change complete")) throw new Error(JSON.stringify({ step, calls: yield* llm.calls,
+    phase: status.phase, autonomous: status.autonomous, info: result.info,
+    parts: result.parts.map((part) => part.type === "tool" ? { tool: part.tool, state: part.state } : part) }))
+  expect(yield* fs.readFileString(target)).toBe("after\n")
+  expect(status.autonomous?.tasks).toHaveLength(2)
+  expect(status.autonomous?.tasks[1]).toMatchObject({ state: "settled", depth: 1 })
+  expect(status.autonomous?.candidates).toMatchObject([{ state: "applied", taskId: status.autonomous?.tasks[1]?.taskId }])
+  expect(status.autonomous?.completion).toMatchObject({ reason: "requested", assessment: { status: "satisfied" } })
+  expect(yield* llm.calls).toBe(5)
+}), { git: true }, 120000)
+
+it.instance("a child model can delegate a mutating grandchild within the same Run budget and Candidate path", () => Effect.gen(function* () {
+  const workspace = (yield* TestInstance).directory
+  const fs = yield* FSUtil.Service
+  const llm = yield* TestLLMServer
+  const target = join(workspace, "nested.txt")
+  yield* fs.writeFileString(target, "before\n")
+  yield* fs.writeFileString(join(workspace, "base-harness.jsonc"), JSON.stringify({
+    permission: { "*": "allow" },
+    kernel: { defaultDomain: "develop", executionSemantics: "autonomous-v1", autonomous: {
+      maxActions: 32, timeoutMs: 120_000, allowMutation: true, allowDelegation: true,
+      maxParallelTasks: 1, maxTaskDepth: 2, maxTotalTasks: 3,
+    } },
+    provider: { fixture: { name: "Local fixture", id: "fixture", env: [], npm: "@ai-sdk/openai-compatible",
+      options: { apiKey: "fixture-only", baseURL: llm.url }, models: { local: { id: "local", name: "Local fixture", attachment: false,
+        reasoning: false, temperature: false, tool_call: true, release_date: "2025-01-01", limit: { context: 100000, output: 10000 },
+        cost: { input: 0, output: 0 }, options: {} } } } },
+  }))
+  let step = 0
+  yield* llm.respond(({ body }) => {
+    const output = reply().usage({ input: 7, output: 3 })
+    try {
+      switch (step++) {
+        case 0:
+          return output.tool("harness_decision", { kind: "delegate", tasks: [{
+            clientTaskKey: "parent", objective: "Delegate changing nested.txt to a focused grandchild.",
+            requestedCapabilities: ["read", "mutate", "publish", "delegate"],
+            requestedScopes: [{ kind: "workspace_path", selector: workspace }], dependsOn: [],
+          }] })
+        case 1:
+          return output.tool("harness_decision", { kind: "delegate", tasks: [{
+            clientTaskKey: "grandchild", objective: "Change nested.txt to nested-after followed by a newline.",
+            requestedCapabilities: ["read", "mutate", "publish"],
+            requestedScopes: [{ kind: "workspace_path", selector: workspace }], dependsOn: [],
+          }] })
+        case 2:
+          return output.tool("write", { filePath: target, content: "nested-after\n" })
+        case 3: {
+          const staged = find(body, (value) => value.candidate?.kind === "candidate" && value.candidateState === "sealed")
+          if (!staged) throw new Error("grandchild Candidate missing")
+          return output.tool("harness_decision", { kind: "apply_candidate", candidate: staged.candidate })
+        }
+        case 4:
+          return output.text("Grandchild applied.").tool("harness_decision", { kind: "final", text: "Grandchild applied.",
+            openWork: "drain", assessment: { status: "satisfied", summary: "Grandchild applied Candidate", uncertainties: [], citedObservationIds: [] } })
+        case 5:
+          return output.text("Child collected grandchild.").tool("harness_decision", { kind: "final", text: "Child collected grandchild.",
+            openWork: "drain", assessment: { status: "satisfied", summary: "Nested result collected", uncertainties: [], citedObservationIds: [] } })
+        case 6:
+          return output.text("Nested delegation complete.").tool("harness_decision", { kind: "final", text: "Nested delegation complete.",
+            openWork: "drain", assessment: { status: "satisfied", summary: "Nested Candidate applied", uncertainties: [], citedObservationIds: [] } })
+        default: throw new Error("unexpected nested model turn")
+      }
+    } catch (error) {
+      return httpError(400, { error: { message: error instanceof Error ? error.message : String(error) } })
+    }
+  })
+  const session = yield* (yield* Session.Service).create({ title: "Autonomous nested delegation" })
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.closeWorkspace(workspace)))
+  yield* (yield* SessionPrompt.Service).prompt({ sessionID: session.id, agent: "build",
+    model: { providerID: ProviderV2.ID.make("fixture"), modelID: ModelV2.ID.make("local") },
+    parts: [{ type: "text", text: "Use two levels of delegation to change nested.txt." }] })
+  expect(yield* fs.readFileString(target)).toBe("nested-after\n")
+  const status = Coordinator.status(session.id)
+  expect(status.autonomous?.tasks.map((task: { depth: number; state: string }) => ({ depth: task.depth, state: task.state })))
+    .toEqual([{ depth: 0, state: "settled" }, { depth: 1, state: "settled" }, { depth: 2, state: "settled" }])
+  expect(status.autonomous?.candidates[0]).toMatchObject({ state: "applied", taskId: status.autonomous!.tasks[2]?.taskId })
+  expect(status.autonomous?.completion).toMatchObject({ reason: "requested", assessment: { status: "satisfied" } })
+  expect(status.autonomous?.budget.actions).toBe(11)
+}), { git: true }, 120000)
+
 it.instance("plain model text is not_assessed even when it contains completion keywords", () => Effect.gen(function* () {
   const workspace = (yield* TestInstance).directory
   const fs = yield* FSUtil.Service
@@ -117,6 +255,30 @@ it.instance("plain model text is not_assessed even when it contains completion k
   expect(result.parts.find((part) => part.type === "text")?.text).toContain("Ready")
   expect(Coordinator.status(session.id).autonomous?.completion).toMatchObject({ reason: "requested", assessment: { status: "not_assessed" } })
   expect(Coordinator.status(session.id).readyEligible).toBe(false)
+}), { git: true }, 120000)
+
+it.instance("a new ordinary Run defaults to autonomous-v1 while preserving model assessment semantics", () => Effect.gen(function* () {
+  const workspace = (yield* TestInstance).directory
+  const fs = yield* FSUtil.Service
+  const llm = yield* TestLLMServer
+  yield* fs.writeFileString(join(workspace, "base-harness.jsonc"), JSON.stringify({
+    permission: { "*": "allow" }, kernel: { defaultDomain: "general" },
+    provider: { fixture: { name: "Local fixture", id: "fixture", env: [], npm: "@ai-sdk/openai-compatible",
+      options: { apiKey: "fixture-only", baseURL: llm.url }, models: { local: { id: "local", name: "Local fixture", attachment: false,
+        reasoning: false, temperature: false, tool_call: true, release_date: "2025-01-01", limit: { context: 100000, output: 10000 },
+        cost: { input: 0, output: 0 }, options: {} } } } },
+  }))
+  yield* llm.respond(() => reply().usage({ input: 3, output: 2 }).text("Unmeasured report.").stop())
+  const session = yield* (yield* Session.Service).create({ title: "Autonomous default cutover" })
+  yield* Effect.addFinalizer(() => Effect.promise(() => Coordinator.closeWorkspace(workspace)))
+  yield* (yield* SessionPrompt.Service).prompt({ sessionID: session.id, agent: "build",
+    model: { providerID: ProviderV2.ID.make("fixture"), modelID: ModelV2.ID.make("local") },
+    parts: [{ type: "text", text: "Return a report." }] })
+  const status = Coordinator.status(session.id)
+  expect(status.autonomous?.completion).toMatchObject({
+    reason: "requested", assessment: { status: "not_assessed" },
+  })
+  expect(status.readyEligible).toBe(false)
 }), { git: true }, 120000)
 
 it.instance("a model cannot replace the basis that was advertised with its tools", () => Effect.gen(function* () {

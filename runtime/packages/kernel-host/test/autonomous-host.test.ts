@@ -8,7 +8,7 @@ import { CoordinatorRuntime, RunRepository } from "../../coordinator/src"
 import { KernelHost, type AutonomousHostOptions } from "../src"
 
 async function fixture(modules: readonly AutonomousDomainModule[] = builtinAutonomousDomainModules, overrides: Partial<AutonomousHostOptions> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "autonomous-host-"))
+  const root = (await mkdtemp(join(tmpdir(), "autonomous-host-"))).replaceAll("\\", "/")
   await writeFile(join(root, "source.txt"), "actual source")
   const runtime = new CoordinatorRuntime(async () => { throw new Error("legacy verifier forbidden") }, {
     repository: new RunRepository({ persistent: false }),
@@ -29,12 +29,13 @@ async function fixture(modules: readonly AutonomousDomainModule[] = builtinAuton
       return {
         ...measurement,
         resolveEffects: async (action) => [{ operation: "read", targets: [{ kind: "workspace_path", selector:
-          action.kind === "measure" ? input.subject(action.subject).origin ?? root : join(root, "source.txt") }] }],
+          (action.kind === "measure" ? input.subject(action.subject).origin ?? root : join(root, "source.txt")).replaceAll("\\", "/") }] }],
         invoke: async (proposal) => {
           if (proposal.action.kind !== "invoke") throw new Error("wrong action")
           host.assertToolAllowed(input.sessionID, proposal.action.toolId)
-          const bytes = await readFile(join(root, "source.txt"))
-          const stored = await host.captureAutonomousSource(input.sessionID, input.runId, bytes, join(root, "source.txt"))
+          const filePath = join(root, "source.txt").replaceAll("\\", "/")
+          const bytes = await readFile(filePath)
+          const stored = await host.captureAutonomousSource(input.sessionID, input.runId, bytes, filePath)
           return JSON.parse(JSON.stringify({ text: bytes.toString(), subject: stored.subject })) as Json
         },
         describeCheck: (parameters, stored) => {

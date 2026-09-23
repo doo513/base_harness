@@ -735,15 +735,16 @@ export class KernelHost {
   }
 
   private autonomousRuntime(): AutonomousCoordinatorPort {
-    const names: Array<keyof AutonomousCoordinatorPort> = ["autonomousBasis", "prepareAutonomous", "resumeAutonomous", "reviseAutonomousIntent", "submitAutonomousDecision",
+    const names: Array<keyof AutonomousCoordinatorPort> = ["autonomousBasis", "prepareAutonomous", "resumeAutonomous", "reviseAutonomousIntent", "reviseAutonomousAuthority", "submitAutonomousDecision",
       "reserveAutonomousModel", "settleAutonomousModel", "registerAutonomousSubject", "registerAutonomousCheck"]
     if (names.some((name) => typeof this.runtime[name] !== "function")) throw kernelError("AUTONOMOUS_RUNTIME_UNAVAILABLE")
     return this.runtime as RuntimeCoordinator & AutonomousCoordinatorPort
   }
 
   private autonomousSession(sessionID: string, runId: string) {
-    const record = this.session(sessionID)
-    if (!record.autonomous || record.runId !== runId || this.runtime.status(sessionID)?.runId !== runId) throw kernelError("AUTONOMOUS_RUN_MISMATCH")
+    const status = this.runtime.status(sessionID)
+    const record = this.session(status?.sessionID ?? sessionID)
+    if (!record.autonomous || record.runId !== runId || status?.runId !== runId) throw kernelError("AUTONOMOUS_RUN_MISMATCH")
     return record.autonomous
   }
 
@@ -826,12 +827,13 @@ export class KernelHost {
   }
 
   async submitAutonomousDecision(sessionID: string, runId: string, decisionId: string, response: unknown) {
-    const result = await this.autonomousSession(sessionID, runId).submit(decisionId, response)
-    const record = this.session(sessionID)
+    const result = await this.autonomousSession(sessionID, runId).submit(decisionId, response, sessionID)
+    const rootSessionID = this.runtime.status(sessionID)?.sessionID ?? sessionID
+    const record = this.session(rootSessionID)
     if (record.runId === runId) {
       const state = this.runtime.status(sessionID).autonomous as AutonomousRunSnapshot
       record.state.planningState = state.lifecycle === "waiting_input" ? "awaiting_input" : state.lifecycle === "closed" ? "idle" : "executing"
-      this.emitStatus(sessionID, this.runtime.status(sessionID))
+      this.emitStatus(rootSessionID, this.runtime.status(sessionID))
     }
     return result
   }
@@ -942,6 +944,10 @@ export class KernelHost {
     return this.status(sessionID)
   }
 
+  private harmonizeProposal(proposal: unknown): unknown {
+    return harmonizeContractProposal(proposal)
+  }
+
   async proposeContract(sessionID: string, proposal: unknown, context?: unknown) {
     while (this.planPublications.has(sessionID)) await this.planPublications.get(sessionID)!.catch(() => undefined)
     const record = this.session(sessionID)
@@ -972,7 +978,8 @@ export class KernelHost {
           ...pipeline.normalized.contract, interpretation: pipeline.normalized.interpretation,
         }, (revised) => {
           const reviewerCalls = record.preflight?.reviewerCallCount ?? 0
-          pipeline = this.runContractPipeline(record, revised, policy, verificationProfile(this.runtime.status(sessionID)))
+          const harmonized = harmonizeContractProposal(revised)
+          pipeline = this.runContractPipeline(record, harmonized, policy, verificationProfile(this.runtime.status(sessionID)))
           this.captureContractCandidate(sessionID, record, pipeline.normalized)
           record.preflight = preflightStatus(pipeline.analysis, reviewerCalls)
         })
@@ -1435,7 +1442,9 @@ export class KernelHost {
     const operation = hostOperation ?? operationForTool(toolID)
     if (status.autonomous) {
       if (!record.autonomous || record.runId !== status.runId) throw kernelError("AUTONOMOUS_RUN_MISMATCH")
-      if (!["read", "search", "execute"].includes(operation)) throw kernelError("AUTONOMOUS_CAPABILITY_UNSUPPORTED")
+      if (!["read", "search", "execute", "mutate", "delegate"].includes(operation)) {
+        throw kernelError("AUTONOMOUS_CAPABILITY_UNSUPPORTED")
+      }
       record.autonomous.assertInvocation(toolID, operation)
       return
     }
@@ -1623,8 +1632,20 @@ export class KernelHost {
       try {
         report = parseMetaOutput(raw, phase)
         if (phase === "goal_contract") {
-          const candidate = this.session(sessionID).contractContext!.candidate
-          const ids = new Set([...candidate.body.claims.map((claim) => claim.claimId), ...candidate.body.criteria.map((criterion) => criterion.criterionId)])
+          const currentCandidate = (artifact && typeof artifact === "object" && Array.isArray((artifact as any).claims))
+            ? (artifact as any)
+            : this.session(sessionID).contractContext!.candidate.body
+          const origCandidate = this.session(sessionID).contractContext?.candidate?.body
+          const currentInterp = (artifact && typeof artifact === "object" && (artifact as any).interpretation) ? (artifact as any).interpretation : undefined
+          const origInterp = this.session(sessionID).contractContext?.candidate?.interpretation
+          const ids = new Set([
+            ...((Array.isArray(currentCandidate.claims) ? currentCandidate.claims : []).map((claim: any) => claim.claimId)),
+            ...((Array.isArray(currentCandidate.criteria) ? currentCandidate.criteria : []).map((criterion: any) => criterion.criterionId)),
+            ...((Array.isArray(currentInterp?.candidates) ? currentInterp.candidates : []).map((c: any) => c.id)),
+            ...((Array.isArray(origCandidate?.claims) ? origCandidate.claims : []).map((claim: any) => claim.claimId)),
+            ...((Array.isArray(origCandidate?.criteria) ? origCandidate.criteria : []).map((criterion: any) => criterion.criterionId)),
+            ...((Array.isArray(origInterp?.candidates) ? origInterp.candidates : []).map((c: any) => c.id)),
+          ])
           if (report.issues.some((issue) => issue.targetIds.some((id) => !ids.has(id)))) throw kernelError("META_REVIEW_TARGETS")
         }
       } catch (error) {
@@ -1774,12 +1795,87 @@ function contractStatus(record: SessionRecord): KernelStatus["goalContract"] {
   }
 }
 
+function repairJsonQuotes(s: string): string {
+  const out: string[] = []
+  const n = s.length
+  let inString = false
+  let i = 0
+  while (i < n) {
+    const c = s[i]!
+    if (!inString) {
+      if (c === '"') inString = true
+      out.push(c)
+      i += 1
+    } else {
+      if (c === '\\') {
+        if (i + 1 < n) {
+          out.push(c, s[i + 1]!)
+          i += 2
+        } else {
+          out.push(c)
+          i += 1
+        }
+      } else if (c === '"') {
+        let j = i + 1
+        while (j < n && (s[j] === " " || s[j] === "\t" || s[j] === "\r" || s[j] === "\n")) {
+          j += 1
+        }
+        if (j < n && (s[j] === "," || s[j] === "}" || s[j] === "]" || s[j] === ":")) {
+          inString = false
+          out.push(c)
+          i += 1
+        } else {
+          out.push('\\"')
+          i += 1
+        }
+      } else {
+        out.push(c)
+        i += 1
+      }
+    }
+  }
+  return out.join("")
+}
+
+function normalizeMetaCandidate(val: any): any {
+  if (val && typeof val === "object") {
+    const unwrapped = (typeof val.response === "object" && val.response !== null && val.response.phase)
+      ? val.response
+      : val
+    if (unwrapped && typeof unwrapped === "object") {
+      const issues = Array.isArray(unwrapped.issues) ? unwrapped.issues : []
+      const hasBlocking = issues.some((i: any) => i && i.severity === "blocking")
+      if (!hasBlocking && (unwrapped.outcome === "revise" || unwrapped.outcome === "needs_input")) {
+        unwrapped.outcome = "pass"
+      }
+    }
+  }
+  return val
+}
+
 function parseMetaOutput(raw: unknown, phase: MetaReviewPhase): MetaReviewReport {
-  if (typeof raw !== "string") return parseMetaReview(raw, phase)
-  const start = raw.indexOf("{")
-  const end = raw.lastIndexOf("}")
+  if (typeof raw !== "string") return parseMetaReview(normalizeMetaCandidate(raw), phase)
+  const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+    const candidate = jsonMatch ? jsonMatch[1]!.trim() : raw.trim()
+  const sanitized = candidate.replace(/\\([^"\\/bfnrtu])/g, "$1")
+  const start = sanitized.indexOf("{")
+  const end = sanitized.lastIndexOf("}")
   if (start < 0 || end < start) throw kernelError("META_REVIEW_MODEL_PROTOCOL")
-  return parseMetaReview(JSON.parse(raw.slice(start, end + 1)), phase)
+  try {
+    return parseMetaReview(normalizeMetaCandidate(JSON.parse(sanitized.slice(start, end + 1))), phase)
+  } catch (firstError) {
+    try {
+      const repaired = repairJsonQuotes(sanitized)
+      const rStart = repaired.indexOf("{")
+      const rEnd = repaired.lastIndexOf("}")
+      if (rStart >= 0 && rEnd >= rStart) {
+        return parseMetaReview(normalizeMetaCandidate(JSON.parse(repaired.slice(rStart, rEnd + 1))), phase)
+      }
+    } catch (innerError) {
+      throw kernelError("META_REVIEW_MODEL_PROTOCOL", innerError)
+    }
+    throw kernelError("META_REVIEW_MODEL_PROTOCOL", firstError)
+  }
 }
 
 function planningSignals(contract: any, graph: any, policy?: Pick<DomainPolicy, "requiresPlan">): PlanningSignals {
@@ -2062,4 +2158,42 @@ function kernelError(code: string, cause?: unknown) {
   error.name = "KernelError"
   ;(error as Error & { code: string }).code = code
   return error
+}
+
+export function harmonizeContractProposal<T>(proposal: T): T {
+  if (!proposal || typeof proposal !== "object") return proposal
+  const p = proposal as Record<string, any>
+  if (!Array.isArray(p.claims) || !Array.isArray(p.criteria)) return proposal
+  const cloned = {
+    ...p,
+    claims: p.claims.map((c: any) => c && typeof c === "object" ? { ...c, criterionIds: Array.isArray(c.criterionIds) ? [...c.criterionIds] : [] } : c),
+    criteria: p.criteria.map((c: any) => c && typeof c === "object" ? { ...c, claimIds: Array.isArray(c.claimIds) ? [...c.claimIds] : [] } : c),
+  }
+  const criterionMap = new Map<string, any>()
+  for (const cr of cloned.criteria) {
+    if (cr && typeof cr.criterionId === "string") criterionMap.set(cr.criterionId, cr)
+  }
+  const claimMap = new Map<string, any>()
+  for (const cl of cloned.claims) {
+    if (cl && typeof cl.claimId === "string") claimMap.set(cl.claimId, cl)
+  }
+  for (const cl of cloned.claims) {
+    if (!cl || !Array.isArray(cl.criterionIds)) continue
+    for (const cid of cl.criterionIds) {
+      const cr = criterionMap.get(cid)
+      if (cr && !cr.claimIds.includes(cl.claimId)) {
+        cr.claimIds.push(cl.claimId)
+      }
+    }
+  }
+  for (const cr of cloned.criteria) {
+    if (!cr || !Array.isArray(cr.claimIds)) continue
+    for (const clid of cr.claimIds) {
+      const cl = claimMap.get(clid)
+      if (cl && !cl.criterionIds.includes(cr.criterionId)) {
+        cl.criterionIds.push(cr.criterionId)
+      }
+    }
+  }
+  return cloned as T
 }
